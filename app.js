@@ -6,22 +6,9 @@ const screens = {
   result: $("resultScreen")
 };
 
-const TASKS = {
-  1: {
-    prep: 90,
-    answer: 20,
-    questions: [
-      "минимальный возраст",
-      "стоимость аренды роликовых коньков",
-      "продолжительность занятий",
-      "мероприятия клуба",
-      "специальная одежда для занятий"
-    ]
-  },
-  2: { prep: 120, answer: 120 },
-  3: { prep: 180, answer: 180 }
-};
-
+let variantIndex = [];
+let variant = null;
+const variantCache = new Map();
 let mode = "exam";
 let taskQueue = [];
 let taskIndex = 0;
@@ -38,8 +25,10 @@ let recordings = [];
 let soundEnabled = true;
 let audioContext = null;
 
+const taskData = (task) => variant.tasks[String(task)];
+
 const durationFor = (task, kind) => {
-  if (!$("fastMode").checked) return TASKS[task][kind];
+  if (!$("fastMode").checked) return taskData(task)[`${kind}Seconds`];
   if (task === 1) return kind === "prep" ? 8 : 5;
   return kind === "prep" ? 8 : 10;
 };
@@ -54,6 +43,54 @@ function toast(message) {
   $("toast").classList.remove("hidden");
   clearTimeout(toast.timer);
   toast.timer = setTimeout(() => $("toast").classList.add("hidden"), 3000);
+}
+
+function setStartButtonsEnabled(enabled) {
+  document.querySelectorAll("[data-start]").forEach(button => { button.disabled = !enabled; });
+}
+
+async function initVariants() {
+  try {
+    const response = await fetch("data/variants/index.json");
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    variantIndex = await response.json();
+    $("variantCount").textContent = variantIndex.length;
+    $("variantSelect").innerHTML = variantIndex.map(item => `<option value="${item.id}">${item.label}</option>`).join("");
+    await loadVariant(variantIndex[0].id);
+  } catch (error) {
+    $("variantSource").textContent = "Не удалось загрузить задания";
+    toast("Запустите проект через локальный сервер");
+    console.error("Variant loading failed", error);
+  }
+}
+
+async function loadVariant(id) {
+  setStartButtonsEnabled(false);
+  const item = variantIndex.find(entry => entry.id === id);
+  if (!item) return;
+  try {
+    if (!variantCache.has(id)) {
+      const response = await fetch(item.file);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      variantCache.set(id, await response.json());
+    }
+    variant = variantCache.get(id);
+    updateVariantUI();
+    setStartButtonsEnabled(true);
+  } catch (error) {
+    toast("Не удалось загрузить выбранный вариант");
+    console.error("Variant loading failed", error);
+  }
+}
+
+function updateVariantUI() {
+  $("heroVariant").textContent = `ЕГЭ · ${variant.label}`;
+  $("variantSource").textContent = variant.source;
+  $("totalMinutes").textContent = variant.totalMinutes;
+  $("task1Timing").textContent = `${shortTime(taskData(1).prepSeconds)} + 5 × ${shortTime(taskData(1).answerSeconds)}`;
+  $("task2Timing").textContent = `${shortTime(taskData(2).prepSeconds)} + до ${shortTime(taskData(2).answerSeconds)}`;
+  $("task3Timing").textContent = `${shortTime(taskData(3).prepSeconds)} + до ${shortTime(taskData(3).answerSeconds)}`;
+  $("task3CardTitle").firstChild.textContent = taskData(3).title.startsWith("Сравнение") ? "Сравнение фото" : "Проектная работа";
 }
 
 async function ensureMicrophone(showSuccess = false) {
@@ -103,23 +140,32 @@ function renderSteps() {
 }
 
 function taskMarkup(task) {
+  const data = taskData(task);
   if (task === 1) {
-    const focus = phase === "answer" ? `<div class="question-focus"><b>Вопрос ${questionIndex + 1} из 5</b>Задайте вопрос, чтобы узнать: ${TASKS[1].questions[questionIndex]}.</div>` : "";
-    return `<div class="ad-layout"><div><h1 class="task-title">Пять вопросов к объявлению</h1><p class="task-lead">Вы увидели объявление об открытии роллерклуба. Задайте пять вопросов, чтобы получить дополнительную информацию.</p><ol class="prompt-list">${TASKS[1].questions.map(x => `<li>${x}</li>`).join("")}</ol>${focus}</div><div><p class="chinese-banner">欢迎你们加入轮滑鞋俱乐部!</p><img class="ad-photo" src="assets/task1-ad.jpg" alt="Участники роллерклуба катаются в парке"></div></div>`;
+    const preparationList = phase === "answer" ? "" : `<ol class="prompt-list">${data.questions.map(question => `<li>${question}</li>`).join("")}</ol>`;
+    const answerPrompt = phase === "answer" ? `<div class="question-focus"><b>Вопрос ${questionIndex + 1} из 5</b>Задайте вопрос, чтобы узнать: ${data.questions[questionIndex]}.</div>` : "";
+    return `<div class="ad-layout"><div><h1 class="task-title">${data.title}</h1><p class="task-lead">${data.situation} Задайте пять вопросов, чтобы получить дополнительную информацию.</p>${preparationList}${answerPrompt}</div><div><p class="chinese-banner">${data.banner}</p><img class="ad-photo" src="${data.image}" alt="${data.imageAlt}"></div></div>`;
   }
   if (task === 2) {
-    const photos = [1, 2, 3].map(n => `<button class="photo-choice ${n === selectedPhoto ? "selected" : ""}" data-photo="${n}" type="button"><img src="assets/task2-photo-${n}.jpg" alt="Фотография ${n}"><span>Фотография ${n}</span></button>`).join("");
-    return `<h1 class="task-title">Выберите и опишите фотографию</h1><p class="task-lead">Вы показываете семейный альбом своему другу. Говорите не более 2 минут (10–12 фраз).</p><ul class="prompt-list"><li>когда и где была сделана фотография;</li><li>кто на ней изображён;</li><li>почему Вы сделали эту фотографию;</li><li>почему решили показать другу именно её.</li></ul><div class="starter">我选择第 ${selectedPhoto} 号照片……</div><div class="photo-grid">${photos}</div>`;
+    const photos = data.images.map((image, index) => {
+      const number = index + 1;
+      return `<button class="photo-choice ${number === selectedPhoto ? "selected" : ""}" data-photo="${number}" type="button"><img src="${image}" alt="Фотография ${number}"><span>Фотография ${number}</span></button>`;
+    }).join("");
+    return `<h1 class="task-title">${data.title}</h1><p class="task-lead">${data.lead}</p><ul class="prompt-list">${data.prompts.map(prompt => `<li>${prompt}</li>`).join("")}</ul><div class="starter">${data.starter.replace("{n}", selectedPhoto)}</div><div class="photo-grid">${photos}</div>`;
   }
-  return `<h1 class="task-title">Проект «Времена года»</h1><p class="task-lead">Оставьте другу голосовое сообщение: объясните выбор иллюстраций и поделитесь идеями о проекте. Говорите не более 3 минут (12–15 фраз).</p><ul class="prompt-list"><li>кратко опишите фотографии и укажите различия;</li><li>назовите 1–2 достоинства двух времён года;</li><li>назовите 1–2 недостатка двух времён года;</li><li>скажите, какое время года Вы предпочитаете и почему.</li></ul><div class="photo-grid project-photos"><div class="photo-choice selected"><img src="assets/task3-photo-1.jpg" alt="Семья гуляет осенью"><span>Осень</span></div><div class="photo-choice selected"><img src="assets/task3-photo-2.jpg" alt="Дети катаются зимой на санках"><span>Зима</span></div></div>`;
+  const photos = data.images.map((image, index) => `<div class="photo-choice selected"><img src="${image}" alt="${data.imageLabels[index]}"><span>${data.imageLabels[index]}</span></div>`).join("");
+  return `<h1 class="task-title">${data.title}</h1><p class="task-lead">${data.lead}</p><ul class="prompt-list">${data.prompts.map(prompt => `<li>${prompt}</li>`).join("")}</ul><div class="photo-grid project-photos">${photos}</div>`;
 }
 
 function renderTask() {
   const task = taskQueue[taskIndex];
+  const isLocked = phase === "idle";
   $("taskBadge").textContent = `Задание ${task}`;
-  $("phaseCaption").textContent = phase === "answer" ? "Ответ" : phase === "prep" ? "Подготовка" : "Ознакомление";
-  $("modeLabel").textContent = mode === "exam" ? "Режим: экзамен" : "Режим: тренировка";
+  $("phaseCaption").textContent = phase === "answer" ? "Ответ" : phase === "prep" ? "Подготовка" : "До начала";
+  $("modeLabel").textContent = `${variant.label} · ${mode === "exam" ? "экзамен" : "тренировка"}`;
   $("taskContent").innerHTML = taskMarkup(task);
+  $("taskPaper").classList.toggle("locked", isLocked);
+  $("taskLock").setAttribute("aria-hidden", String(!isLocked));
   document.querySelectorAll("[data-photo]").forEach(button => button.addEventListener("click", () => {
     if (phase === "answer") return;
     selectedPhoto = Number(button.dataset.photo);
@@ -129,11 +175,13 @@ function renderTask() {
 }
 
 function startRun(startMode) {
+  if (!variant) return;
   mode = startMode === "exam" ? "exam" : "practice";
   taskQueue = mode === "exam" ? [1, 2, 3] : [Number(startMode)];
   taskIndex = 0;
   questionIndex = 0;
   selectedPhoto = 1;
+  recordings.forEach(item => URL.revokeObjectURL(item.url));
   recordings = [];
   phase = "idle";
   clearTimer();
@@ -144,12 +192,12 @@ function startRun(startMode) {
 
 function setIdleControls() {
   const task = taskQueue[taskIndex];
-  $("timerEyebrow").textContent = "Задание готово";
+  $("timerEyebrow").textContent = "Задание закрыто";
   $("timerValue").textContent = formatTime(durationFor(task, "prep"));
   $("timerHint").textContent = "на подготовку";
   $("timerRing").style.setProperty("--progress", 1);
   $("timerRing").classList.remove("urgent");
-  $("mainActionBtn").textContent = "Начать подготовку";
+  $("mainActionBtn").textContent = taskIndex ? "Открыть и начать подготовку" : "Начать подготовку";
   $("mainActionBtn").disabled = false;
   $("mainActionBtn").classList.remove("hidden");
   $("skipBtn").classList.add("hidden");
@@ -171,7 +219,6 @@ async function beginAnswer() {
   clearTimer();
   beep(820, .22);
   phase = "answer";
-  questionIndex = taskQueue[taskIndex] === 1 ? questionIndex : 0;
   renderTask();
   $("timerEyebrow").textContent = taskQueue[taskIndex] === 1 ? `Вопрос ${questionIndex + 1} из 5` : "Время ответа";
   $("timerHint").textContent = "идёт запись";
@@ -222,7 +269,7 @@ function stopRecording(label) {
 async function finishAnswerPart() {
   clearTimer();
   const task = taskQueue[taskIndex];
-  const label = task === 1 ? `Задание 1 · вопрос ${questionIndex + 1}` : `Задание ${task}`;
+  const label = task === 1 ? `${variant.label} · задание 1 · вопрос ${questionIndex + 1}` : `${variant.label} · задание ${task}`;
   await stopRecording(label);
   beep(560, .2);
   if (task === 1 && questionIndex < 4) {
@@ -238,10 +285,10 @@ async function advanceTask() {
   if (taskIndex < taskQueue.length - 1) {
     taskIndex += 1;
     questionIndex = 0;
+    selectedPhoto = 1;
     phase = "idle";
     renderTask();
     setIdleControls();
-    $("mainActionBtn").textContent = "Начать следующее задание";
   } else {
     finishRun();
   }
@@ -274,6 +321,10 @@ function formatTime(seconds) {
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
+function shortTime(seconds) {
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
 function setRecordingIndicator(live, text) {
   $("recordingState").classList.toggle("live", live);
   $("recordingState").querySelector("b").textContent = text || (live ? "Идёт запись" : "Запись не идёт");
@@ -304,12 +355,13 @@ function renderRecordings() {
 
 async function exitRun() {
   clearTimer();
-  if (recorder?.state === "recording") await stopRecording(`Задание ${taskQueue[taskIndex]} · незавершённая запись`);
+  if (recorder?.state === "recording") await stopRecording(`${variant.label} · задание ${taskQueue[taskIndex]} · незавершённая запись`);
   phase = "idle";
   showScreen("home");
 }
 
 document.querySelectorAll("[data-start]").forEach(button => button.addEventListener("click", () => startRun(button.dataset.start)));
+$("variantSelect").addEventListener("change", event => loadVariant(event.target.value));
 $("checkMicBtn").addEventListener("click", () => ensureMicrophone(true));
 $("mainActionBtn").addEventListener("click", startPreparation);
 $("skipBtn").addEventListener("click", skipPhase);
@@ -326,3 +378,5 @@ window.addEventListener("beforeunload", () => {
   stream?.getTracks().forEach(track => track.stop());
   recordings.forEach(item => URL.revokeObjectURL(item.url));
 });
+
+initVariants();
