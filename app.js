@@ -15,6 +15,7 @@ let taskIndex = 0;
 let phase = "idle";
 let questionIndex = 0;
 let selectedPhoto = 1;
+let photoChoiceMade = false;
 let timerId = null;
 let deadline = 0;
 let phaseDuration = 0;
@@ -151,7 +152,7 @@ function taskMarkup(task) {
       const number = index + 1;
       return `<button class="photo-choice ${number === selectedPhoto ? "selected" : ""}" data-photo="${number}" type="button"><img src="${image}" alt="Фотография ${number}"><span>Фотография ${number}</span></button>`;
     }).join("");
-    return `<h1 class="task-title">${data.title}</h1><p class="task-lead">${data.lead}</p><ul class="prompt-list">${data.prompts.map(prompt => `<li>${prompt}</li>`).join("")}</ul><div class="starter">${data.starter.replace("{n}", selectedPhoto)}</div><div class="photo-grid">${photos}</div>`;
+    return `<h1 class="task-title">${data.title}</h1><p class="task-lead">${data.lead}</p><ul class="prompt-list">${data.prompts.map(prompt => `<li>${prompt}</li>`).join("")}</ul><div class="starter">${data.starter.replace("{n}", selectedPhoto)}</div><div class="photo-grid ${photoChoiceMade ? "has-selection" : ""}">${photos}</div>`;
   }
   const photos = data.images.map((image, index) => `<div class="photo-choice selected"><img src="${image}" alt="${data.imageLabels[index]}"><span>${data.imageLabels[index]}</span></div>`).join("");
   return `<h1 class="task-title">${data.title}</h1><p class="task-lead">${data.lead}</p><ul class="prompt-list">${data.prompts.map(prompt => `<li>${prompt}</li>`).join("")}</ul><div class="photo-grid project-photos">${photos}</div>`;
@@ -169,6 +170,7 @@ function renderTask() {
   document.querySelectorAll("[data-photo]").forEach(button => button.addEventListener("click", () => {
     if (phase === "answer") return;
     selectedPhoto = Number(button.dataset.photo);
+    photoChoiceMade = true;
     renderTask();
   }));
   renderSteps();
@@ -181,6 +183,7 @@ function startRun(startMode) {
   taskIndex = 0;
   questionIndex = 0;
   selectedPhoto = 1;
+  photoChoiceMade = false;
   recordings.forEach(item => URL.revokeObjectURL(item.url));
   recordings = [];
   phase = "idle";
@@ -286,6 +289,7 @@ async function advanceTask() {
     taskIndex += 1;
     questionIndex = 0;
     selectedPhoto = 1;
+    photoChoiceMade = false;
     phase = "idle";
     renderTask();
     setIdleControls();
