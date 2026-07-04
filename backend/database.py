@@ -28,3 +28,5 @@ def initialize(data_dir: Path, audio_dir: Path, database_path: Path) -> None:
     with connect(database_path) as database:
         apply_migrations(database)
         database.execute("DELETE FROM sessions WHERE expires_at <= ?", (int(time.time()),))
+        database.execute("DELETE FROM account_tokens WHERE expires_at <= ?", (int(time.time()),))
+        database.execute("DELETE FROM auth_rate_limits WHERE updated_at <= ?", (int(time.time()) - 30 * 86400,))

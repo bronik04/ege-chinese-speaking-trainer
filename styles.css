@@ -185,16 +185,29 @@ h1 em { color: var(--crimson); font-weight: inherit; }
 .auth-tabs { display: grid; grid-template-columns: 1fr 1fr; margin-bottom: 20px; border-bottom: 1px solid var(--line); }
 .auth-tabs button { border: 0; border-bottom: 3px solid transparent; background: transparent; padding: 11px; color: var(--ink-soft); font-weight: 700; }
 .auth-tabs button.active { color: var(--crimson); border-bottom-color: var(--gold); }
-#authForm { display: grid; gap: 15px; }
-#authForm label { display: grid; gap: 6px; color: var(--ink-soft); font: 700 10px/1.4 ui-monospace, monospace; text-transform: uppercase; letter-spacing: .1em; }
-#authForm input, #authForm select, .join-group-form input, .create-group-form input { width: 100%; border: 1px solid var(--line); border-radius: 0; background: white; color: var(--ink); padding: 12px; outline: none; }
-#authForm input:focus, #authForm select:focus, .join-group-form input:focus, .create-group-form input:focus { border-color: var(--crimson); box-shadow: 0 0 0 3px rgba(139, 26, 26, .08); }
+#authForm, #passwordResetForm { display: grid; gap: 15px; }
+#authForm label, #passwordResetForm label, .delete-account-form label { display: grid; gap: 6px; color: var(--ink-soft); font: 700 10px/1.4 ui-monospace, monospace; text-transform: uppercase; letter-spacing: .1em; }
+#authForm input, #authForm select, #passwordResetForm input, .delete-account-form input, .join-group-form input, .create-group-form input { width: 100%; border: 1px solid var(--line); border-radius: 0; background: white; color: var(--ink); padding: 12px; outline: none; }
+#authForm input:focus, #authForm select:focus, #passwordResetForm input:focus, .delete-account-form input:focus, .join-group-form input:focus, .create-group-form input:focus { border-color: var(--crimson); box-shadow: 0 0 0 3px rgba(139, 26, 26, .08); }
+.auth-link { border: 0; border-bottom: 1px solid currentColor; background: transparent; color: var(--crimson); padding: 3px 0; margin-top: 12px; font-weight: 700; }
 .auth-message { min-height: 24px; margin: 12px 0 0; color: var(--crimson-bright); font-size: 13px; }
 .auth-user-email { margin: 12px 0 22px; color: var(--ink-soft); }
 .account-name { display: block; margin-top: 18px; color: var(--crimson-deep); font-size: 18px; }
 .role-badge { display: inline-block; margin-top: 12px; padding: 5px 8px; background: var(--gold-pale); color: var(--crimson-deep); font: 700 9px/1 ui-monospace, monospace; text-transform: uppercase; letter-spacing: .12em; }
 .account-actions { display: grid; gap: 12px; margin-top: 24px; justify-items: start; }
 .account-actions .wide { width: 100%; }
+.account-security-card { display: grid; gap: 12px; margin: 18px 0; padding: 14px; border: 1px solid var(--gold); background: var(--gold-pale); }
+.account-security-card div { display: grid; gap: 3px; }
+.account-security-card span, .delete-account-form p { color: var(--ink-soft); font-size: 12px; }
+.account-security-card .secondary-btn { justify-self: start; }
+.account-security-section { display: grid; justify-items: start; gap: 9px; margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--line); }
+.danger-link { color: #9d1717; }
+.delete-account-form { width: 100%; display: grid; gap: 12px; margin-top: 6px; padding: 15px; border: 1px solid #bd5757; background: #fff5f2; }
+.danger-btn { border: 1px solid #8b1a1a; background: #8b1a1a; color: white; padding: 12px 15px; font-weight: 800; }
+.audit-list { width: 100%; display: grid; margin: 4px 0 10px; border-top: 1px solid var(--line); }
+.audit-item { display: grid; gap: 3px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.audit-item b { color: var(--crimson-deep); font-size: 12px; }
+.audit-item span { color: var(--ink-soft); font-size: 11px; }
 .account-stat { margin: 18px 0 26px; padding: 18px 0; border-block: 1px solid var(--line); display: flex; align-items: baseline; gap: 12px; }
 .account-stat b { color: var(--crimson); font: 500 50px/1 "Cormorant Garamond", Georgia, serif; }
 .account-stat span { color: var(--ink-soft); }
