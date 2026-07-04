@@ -25,6 +25,11 @@ let chunks = [];
 let recordings = [];
 let soundEnabled = true;
 let audioContext = null;
+const PROGRESS_KEY = "egeChineseProgressV1";
+let progress = loadLocalProgress();
+let authUser = null;
+let authMode = "login";
+let syncTimer = null;
 
 const taskData = (task) => variant.tasks[String(task)];
 
@@ -46,6 +51,218 @@ function toast(message) {
   toast.timer = setTimeout(() => $("toast").classList.add("hidden"), 3000);
 }
 
+function defaultProgress() {
+  return { version: 1, updatedAt: new Date(0).toISOString(), settings: { lastVariant: null, fastMode: false }, runs: [], activeRun: null };
+}
+
+function loadLocalProgress() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(PROGRESS_KEY));
+    if (saved?.version === 1 && Array.isArray(saved.runs)) {
+      return { ...defaultProgress(), ...saved, settings: { ...defaultProgress().settings, ...saved.settings } };
+    }
+  } catch (_) {}
+  return defaultProgress();
+}
+
+function saveProgressLocal(sync = true) {
+  progress.updatedAt = new Date().toISOString();
+  progress.runs = progress.runs.slice(0, 100);
+  localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress));
+  renderProgress();
+  if (sync && authUser) scheduleProgressSync();
+}
+
+function renderProgress() {
+  const completed = progress.runs.filter(run => run.status === "completed");
+  const tasks = completed.reduce((sum, run) => sum + (run.completedTasks?.length || 0), 0);
+  const latest = progress.runs[0];
+  $("progressSummary").textContent = completed.length ? `${completed.length} тренировок · ${tasks} заданий` : "Тренировок пока нет";
+  $("progressSyncStatus").textContent = authUser
+    ? `Синхронизировано · ${authUser.email}`
+    : latest ? `Последняя: ${formatHistoryDate(latest.completedAt || latest.startedAt)}` : "Сохраняется в этом браузере";
+  $("accountRuns").textContent = completed.length;
+  renderHistory();
+}
+
+function renderHistory() {
+  if (!progress.runs.length) {
+    $("historyList").innerHTML = '<p class="history-empty">Здесь появятся завершённые и прерванные тренировки.</p>';
+    return;
+  }
+  $("historyList").innerHTML = progress.runs.map(run => {
+    const status = run.status === "completed" ? "Завершено" : "Прервано";
+    const taskText = run.mode === "exam" ? "Полный экзамен" : `Задание ${run.tasks?.[0] || ""}`;
+    return `<article class="history-item"><div><b>${run.variantLabel || run.variantId}</b><span>${taskText} · ${status}</span></div><time>${formatHistoryDate(run.completedAt || run.startedAt)}</time></article>`;
+  }).join("");
+}
+
+function formatHistoryDate(value) {
+  if (!value) return "—";
+  return new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
+}
+
+function createRunId() {
+  return crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function markTaskCompleted(task) {
+  if (!progress.activeRun) return;
+  const completed = new Set(progress.activeRun.completedTasks || []);
+  completed.add(task);
+  progress.activeRun.completedTasks = [...completed];
+  progress.activeRun.currentTask = task;
+  saveProgressLocal();
+}
+
+function finalizeActiveRun(status) {
+  if (!progress.activeRun) return;
+  progress.runs.unshift({
+    ...progress.activeRun,
+    status,
+    completedAt: new Date().toISOString(),
+    recordingsCount: recordings.length
+  });
+  progress.activeRun = null;
+  saveProgressLocal();
+}
+
+function recoverInterruptedRun() {
+  if (!progress.activeRun) return;
+  progress.runs.unshift({ ...progress.activeRun, status: "interrupted", completedAt: new Date().toISOString(), recordingsCount: 0 });
+  progress.activeRun = null;
+  saveProgressLocal(false);
+}
+
+function mergeProgress(local, remote) {
+  if (!remote || remote.version !== 1) return local;
+  const runs = new Map();
+  [...(remote.runs || []), ...(local.runs || [])].forEach(run => { if (run?.id) runs.set(run.id, run); });
+  const localIsNewer = new Date(local.updatedAt || 0) >= new Date(remote.updatedAt || 0);
+  return {
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    settings: localIsNewer ? local.settings : remote.settings,
+    runs: [...runs.values()].sort((a, b) => new Date(b.completedAt || b.startedAt) - new Date(a.completedAt || a.startedAt)).slice(0, 100),
+    activeRun: local.activeRun || null
+  };
+}
+
+async function api(path, options = {}) {
+  const response = await fetch(path, {
+    ...options,
+    headers: { "Content-Type": "application/json", ...(options.headers || {}) }
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(payload.error || `HTTP ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+  return payload;
+}
+
+async function initAuth() {
+  try {
+    const payload = await api("/api/auth/me");
+    authUser = payload.user;
+    renderAuth();
+    await syncProgress();
+  } catch (error) {
+    authUser = null;
+    renderAuth();
+    if (error.status !== 401) $("progressSyncStatus").textContent = "Сервер недоступен · локальное сохранение";
+  }
+}
+
+function renderAuth() {
+  $("authButton").classList.toggle("signed-in", Boolean(authUser));
+  $("authButtonText").textContent = authUser ? authUser.email : "Войти";
+  $("authGuestView").classList.toggle("hidden", Boolean(authUser));
+  $("authUserView").classList.toggle("hidden", !authUser);
+  $("authUserEmail").textContent = authUser?.email || "";
+  renderProgress();
+}
+
+function setAuthMode(nextMode) {
+  authMode = nextMode;
+  $("loginTab").classList.toggle("active", authMode === "login");
+  $("registerTab").classList.toggle("active", authMode === "register");
+  $("authSubmitBtn").textContent = authMode === "login" ? "Войти" : "Создать аккаунт";
+  $("authPassword").autocomplete = authMode === "login" ? "current-password" : "new-password";
+  $("authMessage").textContent = "";
+}
+
+function openModal(modal) {
+  modal.classList.remove("hidden");
+  document.body.classList.add("modal-open");
+}
+
+function closeModal(modal) {
+  modal.classList.add("hidden");
+  if ($("authModal").classList.contains("hidden") && $("progressModal").classList.contains("hidden")) document.body.classList.remove("modal-open");
+}
+
+async function submitAuth(event) {
+  event.preventDefault();
+  const email = $("authEmail").value.trim();
+  const password = $("authPassword").value;
+  $("authSubmitBtn").disabled = true;
+  $("authMessage").textContent = "";
+  try {
+    const payload = await api(`/api/auth/${authMode}`, { method: "POST", body: JSON.stringify({ email, password }) });
+    authUser = payload.user;
+    renderAuth();
+    await syncProgress();
+    closeModal($("authModal"));
+    toast(authMode === "login" ? "Вход выполнен" : "Аккаунт создан");
+    $("authForm").reset();
+  } catch (error) {
+    $("authMessage").textContent = error.message === "Failed to fetch" ? "Сервер недоступен. Запустите python3 server.py" : error.message;
+  } finally {
+    $("authSubmitBtn").disabled = false;
+  }
+}
+
+async function logout() {
+  try { await api("/api/auth/logout", { method: "POST", body: "{}" }); } catch (_) {}
+  authUser = null;
+  renderAuth();
+  closeModal($("authModal"));
+  toast("Вы вышли из аккаунта. Локальная история сохранена");
+}
+
+function scheduleProgressSync() {
+  clearTimeout(syncTimer);
+  $("progressSyncStatus").textContent = "Сохраняем на сервере…";
+  syncTimer = setTimeout(() => pushProgress().catch(() => {
+    $("progressSyncStatus").textContent = "Нет связи · сохранено в браузере";
+  }), 350);
+}
+
+async function pushProgress() {
+  if (!authUser) return;
+  await api("/api/progress", { method: "PUT", body: JSON.stringify({ progress }) });
+  $("progressSyncStatus").textContent = `Синхронизировано · ${authUser.email}`;
+}
+
+async function syncProgress() {
+  if (!authUser) return;
+  const payload = await api("/api/progress");
+  progress = mergeProgress(progress, payload.progress);
+  saveProgressLocal(false);
+  await pushProgress();
+}
+
+function clearHistory() {
+  if (!confirm("Удалить всю историю тренировок? Это действие нельзя отменить.")) return;
+  progress.runs = [];
+  progress.activeRun = null;
+  saveProgressLocal();
+  closeModal($("progressModal"));
+  toast("История очищена");
+}
+
 function setStartButtonsEnabled(enabled) {
   document.querySelectorAll("[data-start]").forEach(button => { button.disabled = !enabled; });
 }
@@ -57,7 +274,12 @@ async function initVariants() {
     variantIndex = await response.json();
     $("variantCount").textContent = variantIndex.length;
     $("variantSelect").innerHTML = variantIndex.map(item => `<option value="${item.id}">${item.label}</option>`).join("");
-    await loadVariant(variantIndex[0].id);
+    const preferredVariant = variantIndex.some(item => item.id === progress.settings.lastVariant)
+      ? progress.settings.lastVariant
+      : variantIndex[0].id;
+    $("variantSelect").value = preferredVariant;
+    $("fastMode").checked = Boolean(progress.settings.fastMode);
+    await loadVariant(preferredVariant);
   } catch (error) {
     $("variantSource").textContent = "Не удалось загрузить задания";
     toast("Запустите проект через локальный сервер");
@@ -188,6 +410,19 @@ function startRun(startMode) {
   recordings = [];
   phase = "idle";
   clearTimer();
+  progress.activeRun = {
+    id: createRunId(),
+    variantId: variant.id,
+    variantLabel: variant.label,
+    mode,
+    tasks: [...taskQueue],
+    completedTasks: [],
+    currentTask: taskQueue[0],
+    phase: "idle",
+    fastMode: $("fastMode").checked,
+    startedAt: new Date().toISOString()
+  };
+  saveProgressLocal();
   showScreen("runner");
   renderTask();
   setIdleControls();
@@ -209,6 +444,11 @@ function setIdleControls() {
 
 function startPreparation() {
   phase = "prep";
+  if (progress.activeRun) {
+    progress.activeRun.phase = phase;
+    progress.activeRun.currentTask = taskQueue[taskIndex];
+    saveProgressLocal();
+  }
   renderTask();
   $("timerEyebrow").textContent = "Время на подготовку";
   $("timerHint").textContent = "до начала записи";
@@ -222,6 +462,11 @@ async function beginAnswer() {
   clearTimer();
   beep(820, .22);
   phase = "answer";
+  if (progress.activeRun) {
+    progress.activeRun.phase = phase;
+    progress.activeRun.currentTask = taskQueue[taskIndex];
+    saveProgressLocal();
+  }
   renderTask();
   $("timerEyebrow").textContent = taskQueue[taskIndex] === 1 ? `Вопрос ${questionIndex + 1} из 5` : "Время ответа";
   $("timerHint").textContent = "идёт запись";
@@ -285,6 +530,7 @@ async function finishAnswerPart() {
 
 async function advanceTask() {
   clearTimer();
+  markTaskCompleted(taskQueue[taskIndex]);
   if (taskIndex < taskQueue.length - 1) {
     taskIndex += 1;
     questionIndex = 0;
@@ -342,6 +588,7 @@ async function skipPhase() {
 function finishRun() {
   clearTimer();
   phase = "done";
+  finalizeActiveRun("completed");
   renderRecordings();
   showScreen("result");
 }
@@ -360,17 +607,44 @@ function renderRecordings() {
 async function exitRun() {
   clearTimer();
   if (recorder?.state === "recording") await stopRecording(`${variant.label} · задание ${taskQueue[taskIndex]} · незавершённая запись`);
+  finalizeActiveRun("interrupted");
   phase = "idle";
   showScreen("home");
 }
 
 document.querySelectorAll("[data-start]").forEach(button => button.addEventListener("click", () => startRun(button.dataset.start)));
-$("variantSelect").addEventListener("change", event => loadVariant(event.target.value));
+$("variantSelect").addEventListener("change", event => {
+  progress.settings.lastVariant = event.target.value;
+  saveProgressLocal();
+  loadVariant(event.target.value);
+});
+$("fastMode").addEventListener("change", event => {
+  progress.settings.fastMode = event.target.checked;
+  saveProgressLocal();
+});
 $("checkMicBtn").addEventListener("click", () => ensureMicrophone(true));
 $("mainActionBtn").addEventListener("click", startPreparation);
 $("skipBtn").addEventListener("click", skipPhase);
 $("exitBtn").addEventListener("click", exitRun);
 $("restartBtn").addEventListener("click", () => showScreen("home"));
+$("authButton").addEventListener("click", () => openModal($("authModal")));
+$("authCloseBtn").addEventListener("click", () => closeModal($("authModal")));
+$("progressCloseBtn").addEventListener("click", () => closeModal($("progressModal")));
+$("openProgressBtn").addEventListener("click", () => { renderHistory(); openModal($("progressModal")); });
+$("clearHistoryBtn").addEventListener("click", clearHistory);
+$("loginTab").addEventListener("click", () => setAuthMode("login"));
+$("registerTab").addEventListener("click", () => setAuthMode("register"));
+$("authForm").addEventListener("submit", submitAuth);
+$("logoutBtn").addEventListener("click", logout);
+[$("authModal"), $("progressModal")].forEach(modal => modal.addEventListener("click", event => {
+  if (event.target === modal) closeModal(modal);
+}));
+document.addEventListener("keydown", event => {
+  if (event.key === "Escape") {
+    closeModal($("authModal"));
+    closeModal($("progressModal"));
+  }
+});
 $("soundToggle").addEventListener("click", () => {
   soundEnabled = !soundEnabled;
   $("soundToggle").textContent = soundEnabled ? "Звук включён" : "Звук выключен";
@@ -383,4 +657,8 @@ window.addEventListener("beforeunload", () => {
   recordings.forEach(item => URL.revokeObjectURL(item.url));
 });
 
+recoverInterruptedRun();
+renderProgress();
+setAuthMode("login");
 initVariants();
+initAuth();

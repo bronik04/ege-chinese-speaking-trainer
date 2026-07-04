@@ -31,6 +31,12 @@ button:disabled { cursor: wait; opacity: .48; }
 .brand small, .variant-picker small { display: block; color: var(--ink-soft); font: 700 10px/1.4 ui-monospace, "SFMono-Regular", monospace; text-transform: uppercase; letter-spacing: .13em; }
 .quiet-btn, .back-btn, .text-btn { border: 0; background: transparent; }
 .quiet-btn { color: var(--ink-soft); border-bottom: 1px solid var(--crimson); padding: 5px 0; font: 700 11px/1 ui-monospace, monospace; text-transform: uppercase; letter-spacing: .12em; }
+.header-actions { display: flex; align-items: center; gap: 20px; }
+.account-btn { max-width: min(280px, 44vw); border: 1px solid var(--line); background: var(--cream); padding: 8px 12px; display: flex; align-items: center; gap: 8px; color: var(--crimson-deep); font: 700 11px/1.2 ui-monospace, monospace; text-transform: uppercase; letter-spacing: .08em; }
+.account-btn span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-btn:hover { border-color: var(--crimson); }
+.account-dot { width: 7px; height: 7px; border-radius: 50%; background: #a89980; }
+.account-btn.signed-in .account-dot { background: var(--gold); box-shadow: 0 0 0 4px rgba(201, 162, 39, .15); }
 .screen { min-height: calc(100vh - 140px); }
 
 .home-screen { display: grid; grid-template-columns: .92fr 1.08fr; gap: clamp(46px, 7vw, 110px); align-items: center; padding: 42px 4vw 76px; }
@@ -79,6 +85,11 @@ h1 em { color: var(--crimson); font-weight: inherit; }
 .status-dot.bad { background: var(--crimson-bright); }
 .secondary-btn { border: 1px solid var(--crimson); padding: 10px 14px; background: transparent; color: var(--crimson); white-space: nowrap; font-size: 12px; }
 .secondary-btn:hover { color: var(--cream); background: var(--crimson); }
+.progress-row { padding: 17px 22px; border-top: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.progress-row .eyebrow { margin-bottom: 4px; }
+.progress-row b, .progress-row small { display: block; }
+.progress-row small { color: var(--ink-soft); font-size: 11px; }
+.progress-row .text-btn { margin: 0; white-space: nowrap; }
 
 .runner-screen { padding-bottom: 40px; }
 .exam-steps { min-height: 66px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 20px; }
@@ -159,6 +170,31 @@ h1 em { color: var(--crimson); font-weight: inherit; }
 .checklist-panel input { accent-color: var(--crimson); margin-top: 4px; }
 .checklist-panel .primary-btn { margin-top: 10px; }
 .toast { position: fixed; left: 50%; bottom: 28px; z-index: 20; transform: translateX(-50%); background: var(--crimson-deep); color: var(--gold-pale); padding: 11px 16px; border: 1px solid var(--gold); font-size: 13px; }
+.modal-backdrop { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; padding: 20px; background: rgba(26, 10, 8, .68); backdrop-filter: blur(5px); }
+.auth-dialog { width: min(470px, 100%); max-height: calc(100vh - 40px); overflow: auto; position: relative; padding: 34px; background: var(--paper); border-top: 5px solid var(--crimson); box-shadow: 0 22px 70px rgba(26, 10, 8, .3); }
+.auth-dialog h2 { margin: 0; color: var(--crimson-deep); font: 500 38px/1.05 "Cormorant Garamond", Georgia, serif; }
+.auth-lede { color: var(--ink-soft); margin: 12px 0 22px; }
+.modal-close { position: absolute; right: 15px; top: 12px; border: 0; background: transparent; color: var(--crimson); font: 300 29px/1 Georgia, serif; }
+.auth-tabs { display: grid; grid-template-columns: 1fr 1fr; margin-bottom: 20px; border-bottom: 1px solid var(--line); }
+.auth-tabs button { border: 0; border-bottom: 3px solid transparent; background: transparent; padding: 11px; color: var(--ink-soft); font-weight: 700; }
+.auth-tabs button.active { color: var(--crimson); border-bottom-color: var(--gold); }
+#authForm { display: grid; gap: 15px; }
+#authForm label { display: grid; gap: 6px; color: var(--ink-soft); font: 700 10px/1.4 ui-monospace, monospace; text-transform: uppercase; letter-spacing: .1em; }
+#authForm input { width: 100%; border: 1px solid var(--line); border-radius: 0; background: white; color: var(--ink); padding: 12px; outline: none; }
+#authForm input:focus { border-color: var(--crimson); box-shadow: 0 0 0 3px rgba(139, 26, 26, .08); }
+.auth-message { min-height: 24px; margin: 12px 0 0; color: var(--crimson-bright); font-size: 13px; }
+.auth-user-email { margin: 12px 0 22px; color: var(--ink-soft); }
+.account-stat { margin: 18px 0 26px; padding: 18px 0; border-block: 1px solid var(--line); display: flex; align-items: baseline; gap: 12px; }
+.account-stat b { color: var(--crimson); font: 500 50px/1 "Cormorant Garamond", Georgia, serif; }
+.account-stat span { color: var(--ink-soft); }
+.progress-dialog { width: min(660px, 100%); }
+.history-list { display: grid; margin-top: 22px; }
+.history-item { display: grid; grid-template-columns: 1fr auto; gap: 8px 16px; padding: 15px 0; border-top: 1px solid var(--line); }
+.history-item b { color: var(--crimson-deep); }
+.history-item span, .history-item time { color: var(--ink-soft); font-size: 12px; }
+.history-empty { color: var(--ink-soft); padding: 30px 0; }
+.history-clear { margin-top: 22px; }
+body.modal-open { overflow: hidden; }
 
 @media (max-width: 1020px) {
   .home-screen { grid-template-columns: 1fr; padding-inline: 0; }
@@ -176,6 +212,9 @@ h1 em { color: var(--crimson); font-weight: inherit; }
   .site-header { height: 76px; }
   .brand-mark { width: 40px; height: 40px; flex-basis: 40px; font-size: 21px; }
   .brand small { display: none; }
+  .header-actions { gap: 10px; }
+  .account-btn { padding: 7px 9px; }
+  .quiet-btn { display: none; }
   .home-screen { padding-top: 23px; }
   h1 { font-size: 46px; }
   .facts { gap: 12px; flex-wrap: wrap; }
@@ -183,6 +222,7 @@ h1 em { color: var(--crimson); font-weight: inherit; }
   .mode-card { grid-template-columns: auto 1fr; padding: 23px; }
   .mode-card .primary-btn { grid-column: 1/-1; }
   .practice-heading, .mic-row { align-items: flex-start; flex-direction: column; }
+  .progress-row { align-items: flex-start; flex-direction: column; }
   .exam-steps { grid-template-columns: 1fr auto; }
   .step-list { order: 3; grid-column: 1/-1; width: 100%; }
   .step-pill { min-width: 0; flex: 1; }
@@ -194,4 +234,5 @@ h1 em { color: var(--crimson); font-weight: inherit; }
   .timer-panel { display: block; }
   .timer-ring { width: 176px; height: 176px; }
   .result-screen { padding-inline: 0; }
+  .auth-dialog { padding: 30px 22px; }
 }
