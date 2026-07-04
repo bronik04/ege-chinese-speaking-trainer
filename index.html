@@ -142,7 +142,19 @@
           <label>Пароль<input id="authPassword" name="password" type="password" autocomplete="current-password" minlength="8" maxlength="128" required></label>
           <button class="primary-btn wide" id="authSubmitBtn" type="submit">Войти</button>
         </form>
+        <button class="auth-link" id="forgotPasswordBtn" type="button">Забыли пароль?</button>
         <p class="auth-message" id="authMessage" aria-live="polite"></p>
+      </div>
+      <div class="hidden" id="passwordResetView">
+        <p class="eyebrow">Безопасность</p>
+        <h2>Новый пароль</h2>
+        <p class="auth-lede">Введите новый пароль для аккаунта. После сохранения все прежние сессии завершатся.</p>
+        <form id="passwordResetForm">
+          <label>Новый пароль<input id="passwordResetValue" type="password" autocomplete="new-password" minlength="8" maxlength="128" required></label>
+          <button class="primary-btn wide" type="submit">Сохранить новый пароль</button>
+        </form>
+        <button class="auth-link" id="cancelPasswordResetBtn" type="button">Вернуться ко входу</button>
+        <p class="auth-message" id="passwordResetMessage" aria-live="polite"></p>
       </div>
       <div class="hidden" id="authUserView">
         <p class="eyebrow">Личный кабинет</p>
@@ -150,6 +162,10 @@
         <span class="role-badge" id="accountRole"></span>
         <b class="account-name" id="authUserName"></b>
         <p class="auth-user-email" id="authUserEmail"></p>
+        <div class="account-security-card hidden" id="emailVerificationPanel">
+          <div><b>Email не подтверждён</b><span>Подтвердите адрес, чтобы защитить восстановление доступа.</span></div>
+          <button class="secondary-btn" id="sendVerificationBtn" type="button">Отправить письмо</button>
+        </div>
         <div id="studentAccountTools">
           <div class="account-stat"><b id="accountRuns">0</b><span>завершённых тренировок</span></div>
           <form class="join-group-form" id="joinGroupForm">
@@ -162,6 +178,18 @@
           <button class="primary-btn wide hidden" id="teacherCabinetBtn" type="button">Открыть кабинет преподавателя</button>
           <button class="secondary-btn" id="logoutBtn" type="button">Выйти из аккаунта</button>
         </div>
+        <section class="account-security-section">
+          <p class="mini-heading">Безопасность аккаунта</p>
+          <button class="auth-link" id="showAuditBtn" type="button">Показать журнал действий</button>
+          <div class="audit-list hidden" id="auditList"></div>
+          <button class="auth-link danger-link" id="showDeleteAccountBtn" type="button">Удалить аккаунт</button>
+          <form class="delete-account-form hidden" id="deleteAccountForm">
+            <p>Будут удалены прогресс, группы, работы и сохранённые аудиозаписи. Отменить это действие нельзя.</p>
+            <label>Текущий пароль<input id="deleteAccountPassword" type="password" autocomplete="current-password" minlength="8" maxlength="128" required></label>
+            <button class="danger-btn" type="submit">Удалить аккаунт навсегда</button>
+          </form>
+          <p class="auth-message" id="accountSecurityMessage" aria-live="polite"></p>
+        </section>
       </div>
     </section>
   </div>

@@ -102,7 +102,52 @@ def migration_002_assignments_and_reviews(database: sqlite3.Connection) -> None:
     )
 
 
-MIGRATIONS = [(1, migration_001_core), (2, migration_002_assignments_and_reviews)]
+def migration_003_account_security(database: sqlite3.Connection) -> None:
+    columns = {row["name"] for row in database.execute("PRAGMA table_info(users)")}
+    if "email_verified_at" not in columns:
+        database.execute("ALTER TABLE users ADD COLUMN email_verified_at INTEGER")
+    database.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS account_tokens (
+            token_hash TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            kind TEXT NOT NULL CHECK(kind IN ('email_verification', 'password_reset')),
+            expires_at INTEGER NOT NULL,
+            created_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS auth_rate_limits (
+            kind TEXT NOT NULL,
+            subject_hash TEXT NOT NULL,
+            attempts INTEGER NOT NULL,
+            window_started_at INTEGER NOT NULL,
+            blocked_until INTEGER NOT NULL DEFAULT 0,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY(kind, subject_hash)
+        );
+        CREATE TABLE IF NOT EXISTS audit_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            email TEXT,
+            action TEXT NOT NULL,
+            ip_address TEXT NOT NULL DEFAULT '',
+            user_agent TEXT NOT NULL DEFAULT '',
+            details_json TEXT NOT NULL DEFAULT '{}',
+            created_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS account_tokens_user_idx ON account_tokens(user_id, kind);
+        CREATE INDEX IF NOT EXISTS account_tokens_expiry_idx ON account_tokens(expires_at);
+        CREATE INDEX IF NOT EXISTS rate_limits_updated_idx ON auth_rate_limits(updated_at);
+        CREATE INDEX IF NOT EXISTS audit_user_idx ON audit_log(user_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS audit_email_idx ON audit_log(email, created_at DESC);
+        """
+    )
+
+
+MIGRATIONS = [
+    (1, migration_001_core),
+    (2, migration_002_assignments_and_reviews),
+    (3, migration_003_account_security),
+]
 
 
 def apply_migrations(database: sqlite3.Connection) -> None:

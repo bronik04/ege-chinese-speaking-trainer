@@ -4,6 +4,7 @@ import test from "node:test";
 import { studentAssignmentsMarkup, teacherGroupsMarkup } from "../js/account-view.js";
 import { escapeHtml, mergeProgress } from "../js/progress.js";
 import { formatTime, stepsMarkup, taskMarkup } from "../js/task-view.js";
+import { auditMarkup } from "../js/account-security.js";
 
 test("escapeHtml protects every HTML-sensitive character", () => {
   assert.equal(escapeHtml(`<script data-x="'">&`), "&lt;script data-x=&quot;&#39;&quot;&gt;&amp;");
@@ -65,4 +66,14 @@ test("task markup escapes JSON content and keeps runner state", () => {
   assert.match(html, /Вопрос 2 из 5/);
   assert.equal(formatTime(125), "02:05");
   assert.match(stepsMarkup([1, 2, 3], 1), /done/);
+});
+
+test("audit markup translates actions and escapes network data", () => {
+  const html = auditMarkup([{
+    action: "login_succeeded",
+    ipAddress: "<script>bad</script>",
+    createdAt: 1783166400,
+  }]);
+  assert.match(html, /Выполнен вход/);
+  assert.doesNotMatch(html, /<script>/);
 });

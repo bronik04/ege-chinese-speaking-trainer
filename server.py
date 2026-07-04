@@ -15,15 +15,22 @@ from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
+from backend.accounts import (
+    audit_events,
+    clear_rate_limit,
+    consume_rate_limit,
+    consume_token,
+    issue_token,
+    record_audit,
+)
 from backend.database import connect as database_connect
 from backend.database import initialize as initialize_database
 from backend.grading import validate_scores
+from backend.mailer import send_email
 from backend.queries import student_assignments, teacher_dashboard, teacher_submissions
 from backend.security import (
-    auth_rate_limit,
-    clear_auth_rate_limit,
     password_hash,
     password_matches,
     request_has_same_origin,
@@ -68,6 +75,8 @@ class TrainerHandler(BaseHTTPRequestHandler):
             self.student_assignments()
         elif route == "/api/teacher/submissions":
             self.teacher_submissions()
+        elif route == "/api/account/audit":
+            self.account_audit()
         elif re.fullmatch(r"/api/recordings/\d+", route):
             self.recording_get(int(route.rsplit("/", 1)[1]))
         elif route.startswith("/api/"):
@@ -85,6 +94,14 @@ class TrainerHandler(BaseHTTPRequestHandler):
             self.auth_login()
         elif route == "/api/auth/logout":
             self.auth_logout()
+        elif route == "/api/auth/email/request":
+            self.email_verification_request()
+        elif route == "/api/auth/email/confirm":
+            self.email_verification_confirm()
+        elif route == "/api/auth/password/request":
+            self.password_reset_request()
+        elif route == "/api/auth/password/reset":
+            self.password_reset_confirm()
         elif route == "/api/teacher/groups":
             self.teacher_group_create()
         elif route == "/api/groups/join":
@@ -97,6 +114,15 @@ class TrainerHandler(BaseHTTPRequestHandler):
             self.recording_create(int(match.group(1)))
         elif match := re.fullmatch(r"/api/submissions/(\d+)/review", route):
             self.review_submission(int(match.group(1)))
+        else:
+            self.send_error_json(HTTPStatus.NOT_FOUND, "API route not found")
+
+    def do_DELETE(self) -> None:
+        route = urlparse(self.path).path
+        if not self.same_origin_request():
+            self.send_error_json(HTTPStatus.FORBIDDEN, "Invalid request origin")
+        elif route == "/api/account":
+            self.account_delete()
         else:
             self.send_error_json(HTTPStatus.NOT_FOUND, "API route not found")
 
@@ -134,12 +160,20 @@ class TrainerHandler(BaseHTTPRequestHandler):
                     (email, password_hash(password), display_name, role, int(time.time())),
                 )
                 user_id = cursor.lastrowid
+                verification_token = issue_token(database, "email_verification", user_id)
+                self.audit(database, "account_registered", user_id=user_id, email=email, details={"role": role})
         except sqlite3.IntegrityError:
             self.send_error_json(HTTPStatus.CONFLICT, "Аккаунт с таким email уже существует")
             return
         token = self.create_session(user_id)
-        clear_auth_rate_limit("register", self.client_address[0], email)
-        self.send_json({"user": self.user_payload(user_id, email, display_name, role)}, HTTPStatus.CREATED, token)
+        with connect() as database:
+            clear_rate_limit(database, "register", self.client_address[0], email)
+        delivery = self.send_account_link("email_verification", email, verification_token)
+        self.send_json(
+            {"user": self.user_payload(user_id, email, display_name, role, None), "verificationDelivery": delivery},
+            HTTPStatus.CREATED,
+            token,
+        )
 
     def auth_login(self) -> None:
         payload = self.read_json()
@@ -151,17 +185,25 @@ class TrainerHandler(BaseHTTPRequestHandler):
             return
         with connect() as database:
             user = database.execute(
-                "SELECT id, email, password_hash, display_name, role FROM users WHERE email = ?", (email,)
+                "SELECT id, email, password_hash, display_name, role, email_verified_at FROM users WHERE email = ?",
+                (email,),
             ).fetchone()
         if not user or not password_matches(password, user["password_hash"]):
+            with connect() as database:
+                self.audit(database, "login_failed", user_id=user["id"] if user else None, email=email)
             self.send_error_json(HTTPStatus.UNAUTHORIZED, "Неверный email или пароль")
             return
         token = self.create_session(user["id"])
-        clear_auth_rate_limit("login", self.client_address[0], email)
-        self.send_json({"user": self.user_payload(user["id"], user["email"], user["display_name"], user["role"])}, token=token)
+        with connect() as database:
+            clear_rate_limit(database, "login", self.client_address[0], email)
+            self.audit(database, "login_succeeded", user_id=user["id"], email=email)
+        self.send_json({"user": self.user_payload(
+            user["id"], user["email"], user["display_name"], user["role"], user["email_verified_at"]
+        )}, token=token)
 
     def allow_auth_attempt(self, kind: str, email: str) -> bool:
-        retry_after = auth_rate_limit(kind, self.client_address[0], email)
+        with connect() as database:
+            retry_after = consume_rate_limit(database, kind, self.client_address[0], email)
         if not retry_after:
             return True
         self.send_json(
@@ -175,6 +217,9 @@ class TrainerHandler(BaseHTTPRequestHandler):
         token = self.session_token()
         if token:
             with connect() as database:
+                user = self.user_for_token(database, token)
+                if user:
+                    self.audit(database, "logout", user_id=user["id"], email=user["email"])
                 database.execute("DELETE FROM sessions WHERE token_hash = ?", (token_digest(token),))
         self.send_json({"ok": True}, clear_cookie=True)
 
@@ -184,6 +229,114 @@ class TrainerHandler(BaseHTTPRequestHandler):
             self.send_error_json(HTTPStatus.UNAUTHORIZED, "Authentication required")
             return
         self.send_json({"user": user})
+
+    def email_verification_request(self) -> None:
+        user = self.current_user()
+        if not user:
+            self.send_error_json(HTTPStatus.UNAUTHORIZED, "Authentication required")
+            return
+        if user["emailVerified"]:
+            self.send_error_json(HTTPStatus.CONFLICT, "Email уже подтверждён")
+            return
+        if not self.allow_auth_attempt("email_verification", user["email"]):
+            return
+        with connect() as database:
+            token = issue_token(database, "email_verification", user["id"])
+            self.audit(database, "email_verification_requested", user_id=user["id"], email=user["email"])
+        delivery = self.send_account_link("email_verification", user["email"], token)
+        self.send_json({"ok": True, "delivery": delivery})
+
+    def email_verification_confirm(self) -> None:
+        payload = self.read_json()
+        if payload is None:
+            return
+        token = str(payload.get("token", ""))
+        with connect() as database:
+            user = consume_token(database, "email_verification", token)
+            if not user:
+                self.send_error_json(HTTPStatus.BAD_REQUEST, "Ссылка недействительна или устарела")
+                return
+            verified_at = int(time.time())
+            database.execute("UPDATE users SET email_verified_at = ? WHERE id = ?", (verified_at, user["id"]))
+            self.audit(database, "email_verified", user_id=user["id"], email=user["email"])
+        self.send_json({"ok": True})
+
+    def password_reset_request(self) -> None:
+        payload = self.read_json()
+        if payload is None:
+            return
+        email = str(payload.get("email", "")).strip().lower()
+        if not self.allow_auth_attempt("password_reset", email):
+            return
+        with connect() as database:
+            user = database.execute("SELECT id, email FROM users WHERE email = ?", (email,)).fetchone()
+            if user:
+                token = issue_token(database, "password_reset", user["id"])
+                self.audit(database, "password_reset_requested", user_id=user["id"], email=email)
+            else:
+                token = None
+                self.audit(database, "password_reset_requested_unknown", email=email)
+        if token:
+            self.send_account_link("password_reset", email, token)
+        self.send_json({"ok": True, "message": "Если аккаунт существует, инструкция отправлена"})
+
+    def password_reset_confirm(self) -> None:
+        payload = self.read_json()
+        if payload is None:
+            return
+        token = str(payload.get("token", ""))
+        password = str(payload.get("password", ""))
+        if not 8 <= len(password) <= 128:
+            self.send_error_json(HTTPStatus.BAD_REQUEST, "Пароль должен содержать от 8 до 128 символов")
+            return
+        with connect() as database:
+            user = consume_token(database, "password_reset", token)
+            if not user:
+                self.send_error_json(HTTPStatus.BAD_REQUEST, "Ссылка недействительна или устарела")
+                return
+            database.execute("UPDATE users SET password_hash = ? WHERE id = ?", (password_hash(password), user["id"]))
+            database.execute("DELETE FROM sessions WHERE user_id = ?", (user["id"],))
+            clear_rate_limit(database, "login", self.client_address[0], user["email"])
+            self.audit(database, "password_reset_completed", user_id=user["id"], email=user["email"])
+        self.send_json({"ok": True}, clear_cookie=True)
+
+    def account_audit(self) -> None:
+        user = self.current_user()
+        if not user:
+            self.send_error_json(HTTPStatus.UNAUTHORIZED, "Authentication required")
+            return
+        with connect() as database:
+            events = audit_events(database, user["id"])
+        self.send_json({"events": events})
+
+    def account_delete(self) -> None:
+        user = self.current_user()
+        if not user:
+            self.send_error_json(HTTPStatus.UNAUTHORIZED, "Authentication required")
+            return
+        payload = self.read_json()
+        if payload is None:
+            return
+        password = str(payload.get("password", ""))
+        with connect() as database:
+            row = database.execute("SELECT password_hash FROM users WHERE id = ?", (user["id"],)).fetchone()
+            if not row or not password_matches(password, row["password_hash"]):
+                self.audit(database, "account_deletion_failed", user_id=user["id"], email=user["email"])
+                self.send_error_json(HTTPStatus.UNAUTHORIZED, "Неверный пароль")
+                return
+            files = database.execute(
+                """
+                SELECT recordings.file_name FROM recordings
+                JOIN submissions ON submissions.id = recordings.submission_id
+                JOIN assignments ON assignments.id = submissions.assignment_id
+                WHERE submissions.student_id = ? OR assignments.teacher_id = ?
+                """,
+                (user["id"], user["id"]),
+            ).fetchall()
+            self.audit(database, "account_deleted", user_id=user["id"], email=user["email"])
+            database.execute("DELETE FROM users WHERE id = ?", (user["id"],))
+        self.delete_audio_files([row["file_name"] for row in files])
+        self.send_json({"ok": True}, clear_cookie=True)
 
     def progress_get(self) -> None:
         user = self.current_user()
@@ -245,6 +398,10 @@ class TrainerHandler(BaseHTTPRequestHandler):
                         "INSERT INTO study_groups(teacher_id, name, join_code, created_at) VALUES (?, ?, ?, ?)",
                         (user["id"], name, code, int(time.time())),
                     )
+                    self.audit(
+                        database, "group_created", user_id=user["id"], email=user["email"],
+                        details={"groupId": cursor.lastrowid, "name": name},
+                    )
                     break
                 except sqlite3.IntegrityError:
                     continue
@@ -271,6 +428,10 @@ class TrainerHandler(BaseHTTPRequestHandler):
             database.execute(
                 "INSERT OR IGNORE INTO group_members(group_id, user_id, joined_at) VALUES (?, ?, ?)",
                 (group["id"], user["id"], int(time.time())),
+            )
+            self.audit(
+                database, "group_joined", user_id=user["id"], email=user["email"],
+                details={"groupId": group["id"], "name": group["name"]},
             )
         self.send_json({"group": {"id": group["id"], "name": group["name"]}})
 
@@ -344,6 +505,10 @@ class TrainerHandler(BaseHTTPRequestHandler):
                 """,
                 (group_id, user["id"], title, variant_id, json.dumps(tasks), due_at, int(time.time())),
             )
+            self.audit(
+                database, "assignment_created", user_id=user["id"], email=user["email"],
+                details={"assignmentId": cursor.lastrowid, "groupId": group_id, "variantId": variant_id},
+            )
         self.send_json({"assignment": {"id": cursor.lastrowid, "title": title}}, HTTPStatus.CREATED)
 
     def student_assignments(self) -> None:
@@ -391,6 +556,10 @@ class TrainerHandler(BaseHTTPRequestHandler):
                 VALUES (?, ?, ?, ?, ?)
                 """,
                 (assignment_id, user["id"], attempt, encoded_run, int(time.time())),
+            )
+            self.audit(
+                database, "submission_created", user_id=user["id"], email=user["email"],
+                details={"submissionId": cursor.lastrowid, "assignmentId": assignment_id, "attempt": attempt},
             )
         self.send_json({"submission": {"id": cursor.lastrowid, "attempt": attempt}}, HTTPStatus.CREATED)
 
@@ -444,6 +613,10 @@ class TrainerHandler(BaseHTTPRequestHandler):
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (submission_id, task, question, label, relative, mime_type, len(data), int(time.time())),
+                )
+                self.audit(
+                    database, "recording_uploaded", user_id=user["id"], email=user["email"],
+                    details={"submissionId": submission_id, "task": task, "size": len(data)},
                 )
         except Exception:
             target.unlink(missing_ok=True)
@@ -532,6 +705,10 @@ class TrainerHandler(BaseHTTPRequestHandler):
                 (submission_id, user["id"], json.dumps(scores), total, maximum, comment, now),
             )
             database.execute("UPDATE submissions SET status = 'graded' WHERE id = ?", (submission_id,))
+            self.audit(
+                database, "submission_reviewed", user_id=user["id"], email=user["email"],
+                details={"submissionId": submission_id, "total": total, "maximum": maximum},
+            )
         self.send_json({"review": {"total": total, "maximum": maximum}})
 
     def create_session(self, user_id: int) -> str:
@@ -552,17 +729,98 @@ class TrainerHandler(BaseHTTPRequestHandler):
         with connect() as database:
             row = database.execute(
                 """
-                SELECT users.id, users.email, users.display_name, users.role FROM sessions
+                SELECT users.id, users.email, users.display_name, users.role, users.email_verified_at FROM sessions
                 JOIN users ON users.id = sessions.user_id
                 WHERE sessions.token_hash = ? AND sessions.expires_at > ?
                 """,
                 (token_digest(token), int(time.time())),
             ).fetchone()
-        return self.user_payload(row["id"], row["email"], row["display_name"], row["role"]) if row else None
+        return self.user_payload(
+            row["id"], row["email"], row["display_name"], row["role"], row["email_verified_at"]
+        ) if row else None
 
     @staticmethod
-    def user_payload(user_id: int, email: str, display_name: str, role: str) -> dict:
-        return {"id": user_id, "email": email, "displayName": display_name, "role": role}
+    def user_payload(
+        user_id: int, email: str, display_name: str, role: str, email_verified_at: int | None
+    ) -> dict:
+        return {
+            "id": user_id,
+            "email": email,
+            "displayName": display_name,
+            "role": role,
+            "emailVerified": email_verified_at is not None,
+        }
+
+    @staticmethod
+    def user_for_token(database: sqlite3.Connection, token: str) -> sqlite3.Row | None:
+        return database.execute(
+            """
+            SELECT users.id, users.email FROM sessions
+            JOIN users ON users.id = sessions.user_id
+            WHERE sessions.token_hash = ?
+            """,
+            (token_digest(token),),
+        ).fetchone()
+
+    def audit(
+        self,
+        database: sqlite3.Connection,
+        action: str,
+        *,
+        user_id: int | None = None,
+        email: str | None = None,
+        details: dict | None = None,
+    ) -> None:
+        record_audit(
+            database,
+            action,
+            user_id=user_id,
+            email=email,
+            ip_address=self.client_address[0],
+            user_agent=self.headers.get("User-Agent", ""),
+            details=details,
+        )
+
+    def send_account_link(self, kind: str, email: str, token: str) -> str:
+        public_url = os.environ.get("TRAINER_PUBLIC_URL", "").rstrip("/")
+        if not public_url:
+            origin = self.headers.get("Origin")
+            public_url = origin.rstrip("/") if origin else f"http://{self.headers.get('Host', '127.0.0.1:8080')}"
+        parameter = "verify" if kind == "email_verification" else "reset"
+        url = f"{public_url}/?{parameter}={quote(token)}"
+        if kind == "email_verification":
+            subject = "Подтвердите email — тренажёр ЕГЭ"
+            body = f"Подтвердите адрес электронной почты. Ссылка действует 24 часа:\n\n{url}"
+        else:
+            subject = "Восстановление пароля — тренажёр ЕГЭ"
+            body = f"Создайте новый пароль. Ссылка действует 1 час:\n\n{url}"
+        try:
+            return send_email(DATA_DIR, email, subject, body)
+        except Exception as error:
+            with connect() as database:
+                user = database.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
+                self.audit(
+                    database, "email_delivery_failed", user_id=user["id"] if user else None,
+                    email=email, details={"kind": kind},
+                )
+            print(f"Email delivery failed: {type(error).__name__}")
+            return "failed"
+
+    @staticmethod
+    def delete_audio_files(file_names: list[str]) -> None:
+        audio_root = AUDIO_DIR.resolve()
+        for file_name in file_names:
+            target = (audio_root / file_name).resolve()
+            if audio_root not in target.parents:
+                continue
+            try:
+                target.unlink(missing_ok=True)
+            except OSError:
+                continue
+            try:
+                target.parent.rmdir()
+            except OSError:
+                pass
 
     def require_role(self, role: str) -> dict | None:
         user = self.current_user()

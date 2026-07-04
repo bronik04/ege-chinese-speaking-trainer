@@ -4,16 +4,12 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 import server
-from backend import security
 
 
 class SecurityHelpersTest(unittest.TestCase):
-    def setUp(self):
-        with security.AUTH_ATTEMPTS_LOCK:
-            security.AUTH_ATTEMPTS.clear()
-
     def test_password_hash_round_trip(self):
         encoded = server.password_hash("correct horse battery staple")
         self.assertTrue(server.password_matches("correct horse battery staple", encoded))
@@ -25,13 +21,6 @@ class SecurityHelpersTest(unittest.TestCase):
         self.assertTrue(server.request_has_same_origin(host, None, "http://127.0.0.1:8080/page", "same-origin"))
         self.assertFalse(server.request_has_same_origin(host, None, None, None))
         self.assertFalse(server.request_has_same_origin(host, "https://evil.example", None, "cross-site"))
-
-    def test_login_rate_limit(self):
-        for offset in range(8):
-            self.assertEqual(server.auth_rate_limit("login", "127.0.0.1", "user@example.test", 1000 + offset), 0)
-        self.assertGreater(server.auth_rate_limit("login", "127.0.0.1", "user@example.test", 1008), 0)
-        self.assertEqual(server.auth_rate_limit("login", "127.0.0.1", "other@example.test", 1008), 0)
-
 
 class ApiFlowTest(unittest.TestCase):
     @classmethod
@@ -98,6 +87,57 @@ class ApiFlowTest(unittest.TestCase):
     @staticmethod
     def cookie_from(headers):
         return headers["Set-Cookie"].split(";", 1)[0]
+
+    @classmethod
+    def token_from_outbox(cls, email, parameter):
+        entries = [json.loads(line) for line in (server.DATA_DIR / "outbox.log").read_text().splitlines()]
+        message = next(entry for entry in reversed(entries) if entry["to"] == email and f"?{parameter}=" in entry["body"])
+        url = message["body"].strip().splitlines()[-1]
+        return parse_qs(urlparse(url).query)[parameter][0]
+
+    def test_account_verification_password_reset_and_audit(self):
+        email = "security@example.test"
+        account = {
+            "email": email, "password": "original123", "displayName": "Чэнь Мин", "role": "student",
+        }
+        status, payload, headers = self.request("POST", "/api/auth/register", account)
+        self.assertEqual(status, 201)
+        self.assertFalse(payload["user"]["emailVerified"])
+        cookie = self.cookie_from(headers)
+
+        verification_token = self.token_from_outbox(email, "verify")
+        status, _, _ = self.request(
+            "POST", "/api/auth/email/confirm", {"token": verification_token}
+        )
+        self.assertEqual(status, 200)
+        status, me, _ = self.request("GET", "/api/auth/me", cookie=cookie)
+        self.assertEqual(status, 200)
+        self.assertTrue(me["user"]["emailVerified"])
+
+        status, _, _ = self.request("POST", "/api/auth/password/request", {"email": email})
+        self.assertEqual(status, 200)
+        reset_token = self.token_from_outbox(email, "reset")
+        status, _, _ = self.request(
+            "POST", "/api/auth/password/reset", {"token": reset_token, "password": "replacement123"}
+        )
+        self.assertEqual(status, 200)
+        status, _, _ = self.request("GET", "/api/auth/me", cookie=cookie)
+        self.assertEqual(status, 401)
+        status, _, _ = self.request(
+            "POST", "/api/auth/login", {"email": email, "password": "replacement123"}
+        )
+        self.assertEqual(status, 200)
+
+        status, _, headers = self.request(
+            "POST", "/api/auth/login", {"email": email, "password": "replacement123"}
+        )
+        new_cookie = self.cookie_from(headers)
+        status, audit, _ = self.request("GET", "/api/account/audit", cookie=new_cookie)
+        self.assertEqual(status, 200)
+        actions = {event["action"] for event in audit["events"]}
+        self.assertIn("email_verified", actions)
+        self.assertIn("password_reset_completed", actions)
+        self.assertIn("login_succeeded", actions)
 
     def test_teacher_student_progress_flow(self):
         teacher = {
@@ -179,10 +219,31 @@ class ApiFlowTest(unittest.TestCase):
         self.assertEqual(visible_student["completedRuns"], 1)
         self.assertEqual(visible_student["completedTasks"], 2)
 
+        with server.connect() as database:
+            file_name = database.execute(
+                "SELECT file_name FROM recordings WHERE id = ?", (recording_id,)
+            ).fetchone()["file_name"]
+        audio_path = server.AUDIO_DIR / file_name
+        self.assertTrue(audio_path.is_file())
+        status, _, _ = self.request(
+            "DELETE", "/api/account", {"password": "student123"}, student_cookie
+        )
+        self.assertEqual(status, 200)
+        self.assertFalse(audio_path.exists())
+        status, _, _ = self.request("GET", "/api/auth/me", cookie=student_cookie)
+        self.assertEqual(status, 401)
+        with server.connect() as database:
+            deleted = database.execute("SELECT id FROM users WHERE email = ?", (student["email"],)).fetchone()
+            deletion_event = database.execute(
+                "SELECT user_id FROM audit_log WHERE email = ? AND action = 'account_deleted'", (student["email"],)
+            ).fetchone()
+        self.assertIsNone(deleted)
+        self.assertIsNone(deletion_event["user_id"])
+
     def test_migrations_are_recorded(self):
         with server.connect() as database:
             versions = [row["version"] for row in database.execute("SELECT version FROM schema_migrations ORDER BY version")]
-        self.assertEqual(versions, [1, 2])
+        self.assertEqual(versions, [1, 2, 3])
 
     def test_mutation_without_origin_is_rejected(self):
         status, payload, _ = self.request(

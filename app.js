@@ -9,6 +9,7 @@ import {
   teacherGroupsMarkup, teacherSubmissionsMarkup,
 } from "./js/account-view.js";
 import { formatTime, shortTime, stepsMarkup, taskMarkup } from "./js/task-view.js";
+import { auditMarkup } from "./js/account-security.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -45,6 +46,7 @@ let syncTimer = null;
 let studentAssignments = [];
 let activeAssignment = null;
 let teacherGroupsData = [];
+let passwordResetToken = new URLSearchParams(window.location.search).get("reset");
 
 const taskData = (task) => variant.tasks[String(task)];
 
@@ -161,10 +163,12 @@ async function initAuth() {
 }
 
 function renderAuth() {
+  const resettingPassword = Boolean(passwordResetToken);
   $("authButton").classList.toggle("signed-in", Boolean(authUser));
   $("authButtonText").textContent = authUser ? authUser.email : "Войти";
-  $("authGuestView").classList.toggle("hidden", Boolean(authUser));
-  $("authUserView").classList.toggle("hidden", !authUser);
+  $("authGuestView").classList.toggle("hidden", Boolean(authUser) || resettingPassword);
+  $("authUserView").classList.toggle("hidden", !authUser || resettingPassword);
+  $("passwordResetView").classList.toggle("hidden", !resettingPassword);
   $("authUserEmail").textContent = authUser?.email || "";
   $("authUserName").textContent = authUser?.displayName || "";
   const isTeacher = authUser?.role === "teacher";
@@ -172,6 +176,14 @@ function renderAuth() {
   $("accountTitle").textContent = isTeacher ? "Ваши ученики и группы" : "Прогресс синхронизирован";
   $("studentAccountTools").classList.toggle("hidden", !authUser || isTeacher);
   $("teacherCabinetBtn").classList.toggle("hidden", !isTeacher);
+  $("emailVerificationPanel").classList.toggle("hidden", !authUser || authUser.emailVerified);
+  if (!authUser) {
+    studentAssignments = [];
+    teacherGroupsData = [];
+    $("studentAssignmentsPanel").classList.add("hidden");
+    $("studentAssignmentsList").innerHTML = "";
+    $("studentGroups").innerHTML = "";
+  }
   renderProgress();
 }
 
@@ -229,6 +241,118 @@ async function logout() {
   renderAuth();
   closeModal($("authModal"));
   toast("Вы вышли из аккаунта. Локальная история сохранена");
+}
+
+async function requestPasswordReset() {
+  const emailInput = $("authEmail");
+  if (!emailInput.reportValidity()) return;
+  $("forgotPasswordBtn").disabled = true;
+  try {
+    const payload = await api("/api/auth/password/request", {
+      method: "POST", body: JSON.stringify({ email: emailInput.value.trim() })
+    });
+    $("authMessage").textContent = payload.message;
+  } catch (error) {
+    $("authMessage").textContent = error.message;
+  } finally {
+    $("forgotPasswordBtn").disabled = false;
+  }
+}
+
+async function submitPasswordReset(event) {
+  event.preventDefault();
+  try {
+    await api("/api/auth/password/reset", {
+      method: "POST",
+      body: JSON.stringify({ token: passwordResetToken, password: $("passwordResetValue").value }),
+    });
+    passwordResetToken = null;
+    window.history.replaceState({}, "", window.location.pathname);
+    authUser = null;
+    renderAuth();
+    setAuthMode("login");
+    $("authMessage").textContent = "Пароль изменён. Войдите с новым паролем.";
+  } catch (error) {
+    $("passwordResetMessage").textContent = error.message;
+  }
+}
+
+function cancelPasswordReset() {
+  passwordResetToken = null;
+  window.history.replaceState({}, "", window.location.pathname);
+  renderAuth();
+  setAuthMode("login");
+}
+
+async function sendVerificationEmail() {
+  $("sendVerificationBtn").disabled = true;
+  try {
+    const payload = await api("/api/auth/email/request", { method: "POST", body: "{}" });
+    $("accountSecurityMessage").textContent = payload.delivery === "outbox"
+      ? "Локальная ссылка сохранена в var/outbox.log"
+      : "Письмо отправлено. Проверьте почту.";
+  } catch (error) {
+    $("accountSecurityMessage").textContent = error.message;
+  } finally {
+    $("sendVerificationBtn").disabled = false;
+  }
+}
+
+async function loadAuditLog() {
+  const list = $("auditList");
+  if (!list.classList.contains("hidden")) {
+    list.classList.add("hidden");
+    $("showAuditBtn").textContent = "Показать журнал действий";
+    return;
+  }
+  try {
+    const payload = await api("/api/account/audit");
+    list.innerHTML = auditMarkup(payload.events);
+    list.classList.remove("hidden");
+    $("showAuditBtn").textContent = "Скрыть журнал действий";
+  } catch (error) {
+    $("accountSecurityMessage").textContent = error.message;
+  }
+}
+
+async function deleteAccount(event) {
+  event.preventDefault();
+  if (!confirm("Удалить аккаунт, прогресс и все связанные аудиозаписи без возможности восстановления?")) return;
+  try {
+    await api("/api/account", {
+      method: "DELETE", body: JSON.stringify({ password: $("deleteAccountPassword").value })
+    });
+    localStorage.removeItem(progressStorageKey);
+    authUser = null;
+    switchProgressScope(null);
+    renderAuth();
+    closeModal($("authModal"));
+    toast("Аккаунт и связанные данные удалены");
+  } catch (error) {
+    $("accountSecurityMessage").textContent = error.message;
+  }
+}
+
+async function handleAccountLinks() {
+  const params = new URLSearchParams(window.location.search);
+  const verificationToken = params.get("verify");
+  if (verificationToken) {
+    try {
+      await api("/api/auth/email/confirm", {
+        method: "POST", body: JSON.stringify({ token: verificationToken })
+      });
+      toast("Email успешно подтверждён");
+    } catch (error) {
+      toast(error.message);
+    }
+    params.delete("verify");
+    const query = params.toString();
+    window.history.replaceState({}, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+  }
+  if (passwordResetToken) {
+    renderAuth();
+    openModal($("authModal"));
+  }
 }
 
 async function refreshAccountData() {
@@ -776,6 +900,13 @@ $("clearHistoryBtn").addEventListener("click", clearHistory);
 $("loginTab").addEventListener("click", () => setAuthMode("login"));
 $("registerTab").addEventListener("click", () => setAuthMode("register"));
 $("authForm").addEventListener("submit", submitAuth);
+$("forgotPasswordBtn").addEventListener("click", requestPasswordReset);
+$("passwordResetForm").addEventListener("submit", submitPasswordReset);
+$("cancelPasswordResetBtn").addEventListener("click", cancelPasswordReset);
+$("sendVerificationBtn").addEventListener("click", sendVerificationEmail);
+$("showAuditBtn").addEventListener("click", loadAuditLog);
+$("showDeleteAccountBtn").addEventListener("click", () => $("deleteAccountForm").classList.toggle("hidden"));
+$("deleteAccountForm").addEventListener("submit", deleteAccount);
 $("joinGroupForm").addEventListener("submit", joinGroup);
 $("createGroupForm").addEventListener("submit", createGroup);
 $("createAssignmentForm").addEventListener("submit", createAssignment);
@@ -807,5 +938,11 @@ window.addEventListener("beforeunload", () => {
 recoverInterruptedRun();
 renderProgress();
 setAuthMode("login");
-initVariants();
-initAuth();
+
+async function initialize() {
+  await initVariants();
+  await handleAccountLinks();
+  await initAuth();
+}
+
+initialize();
