@@ -1,0 +1,12 @@
+{
+  "name": "ege-chinese-speaking-trainer",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests-js/*.test.js",
+    "lint:js": "eslint app.js js tests-js"
+  },
+  "devDependencies": {
+    "eslint": "^9.39.0"
+  }
+}

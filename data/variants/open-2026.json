@@ -12,7 +12,7 @@
       "situation": "Вы увидели объявление об открытии роллерклуба и решили получить дополнительную информацию.",
       "banner": "欢迎你们加入轮滑鞋俱乐部!",
       "questions": ["минимальный возраст", "стоимость аренды роликовых коньков", "продолжительность занятий", "мероприятия клуба", "специальная одежда для занятий"],
-      "image": "assets/variants/open-2026/candidate-01.jpg",
+      "image": "assets/variants/open-2026/candidate-01.webp",
       "imageAlt": "Участники роллерклуба катаются в парке"
     },
     "2": {
@@ -22,7 +22,7 @@
       "lead": "Вы показываете семейный альбом своему другу. Говорите не более 2 минут (10–12 фраз).",
       "prompts": ["когда и где была сделана фотография", "кто на ней изображён", "почему Вы сделали эту фотографию", "почему решили показать другу именно её"],
       "starter": "我选择第 {n} 号照片……",
-      "images": ["assets/variants/open-2026/candidate-02.jpg", "assets/variants/open-2026/candidate-03.jpg", "assets/variants/open-2026/candidate-04.jpg"]
+      "images": ["assets/variants/open-2026/candidate-02.webp", "assets/variants/open-2026/candidate-03.webp", "assets/variants/open-2026/candidate-04.webp"]
     },
     "3": {
       "prepSeconds": 180,
@@ -30,7 +30,7 @@
       "title": "Проект «Времена года»",
       "lead": "Оставьте другу голосовое сообщение: объясните выбор иллюстраций и поделитесь идеями о проекте. Говорите не более 3 минут (12–15 фраз).",
       "prompts": ["кратко опишите фотографии и укажите различия", "назовите 1–2 достоинства двух времён года", "назовите 1–2 недостатка двух времён года", "скажите, какое время года Вы предпочитаете и почему"],
-      "images": ["assets/variants/open-2026/candidate-05.jpg", "assets/variants/open-2026/candidate-06.jpg"],
+      "images": ["assets/variants/open-2026/candidate-05.webp", "assets/variants/open-2026/candidate-06.webp"],
       "imageLabels": ["Осень", "Зима"]
     }
   }

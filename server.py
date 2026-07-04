@@ -17,8 +17,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
+from backend.database import connect as database_connect
+from backend.database import initialize as initialize_database
 from backend.grading import validate_scores
-from backend.migrations import apply_migrations
+from backend.queries import student_assignments, teacher_dashboard, teacher_submissions
 from backend.security import (
     auth_rate_limit,
     clear_auth_rate_limit,
@@ -27,7 +29,6 @@ from backend.security import (
     request_has_same_origin,
     token_digest,
 )
-
 
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get("TRAINER_DATA_DIR", ROOT / "var")).resolve()
@@ -40,27 +41,12 @@ EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 GROUP_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 
-class ClosingConnection(sqlite3.Connection):
-    def __exit__(self, exc_type, exc_value, traceback):
-        try:
-            return super().__exit__(exc_type, exc_value, traceback)
-        finally:
-            self.close()
-
-
 def connect() -> sqlite3.Connection:
-    connection = sqlite3.connect(DB_PATH, timeout=10, factory=ClosingConnection)
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA foreign_keys = ON")
-    return connection
+    return database_connect(DB_PATH)
 
 
 def init_database() -> None:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    AUDIO_DIR.mkdir(parents=True, exist_ok=True)
-    with connect() as database:
-        apply_migrations(database)
-        database.execute("DELETE FROM sessions WHERE expires_at <= ?", (int(time.time()),))
+    initialize_database(DATA_DIR, AUDIO_DIR, DB_PATH)
 
 
 class TrainerHandler(BaseHTTPRequestHandler):
@@ -310,39 +296,7 @@ class TrainerHandler(BaseHTTPRequestHandler):
         if not user:
             return
         with connect() as database:
-            groups = database.execute(
-                "SELECT id, name, join_code, created_at FROM study_groups WHERE teacher_id = ? ORDER BY created_at DESC",
-                (user["id"],),
-            ).fetchall()
-            result = []
-            for group in groups:
-                members = database.execute(
-                    """
-                    SELECT users.id, users.display_name, users.email, user_progress.progress_json,
-                           user_progress.updated_at
-                    FROM group_members
-                    JOIN users ON users.id = group_members.user_id
-                    LEFT JOIN user_progress ON user_progress.user_id = users.id
-                    WHERE group_members.group_id = ? ORDER BY users.display_name, users.email
-                    """,
-                    (group["id"],),
-                ).fetchall()
-                students = []
-                for member in members:
-                    document = self.safe_progress(member["progress_json"])
-                    completed = [run for run in document.get("runs", []) if run.get("status") == "completed"]
-                    students.append({
-                        "id": member["id"],
-                        "name": member["display_name"] or member["email"],
-                        "email": member["email"],
-                        "completedRuns": len(completed),
-                        "completedTasks": sum(len(run.get("completedTasks", [])) for run in completed),
-                        "lastActivity": document.get("updatedAt") if member["progress_json"] else None,
-                    })
-                result.append({
-                    "id": group["id"], "name": group["name"], "code": group["join_code"],
-                    "createdAt": group["created_at"], "students": students,
-                })
+            result = teacher_dashboard(database, user["id"])
         self.send_json({"groups": result})
 
     def teacher_assignment_create(self) -> None:
@@ -397,34 +351,7 @@ class TrainerHandler(BaseHTTPRequestHandler):
         if not user:
             return
         with connect() as database:
-            rows = database.execute(
-                """
-                SELECT assignments.id, assignments.title, assignments.variant_id, assignments.tasks_json,
-                       assignments.due_at, assignments.created_at, study_groups.name AS group_name
-                FROM assignments
-                JOIN study_groups ON study_groups.id = assignments.group_id
-                JOIN group_members ON group_members.group_id = assignments.group_id
-                WHERE group_members.user_id = ? ORDER BY assignments.created_at DESC
-                """,
-                (user["id"],),
-            ).fetchall()
-            result = []
-            for row in rows:
-                latest = database.execute(
-                    """
-                    SELECT submissions.id, submissions.status, submissions.attempt_number,
-                           reviews.total_score, reviews.max_score, reviews.comment
-                    FROM submissions LEFT JOIN reviews ON reviews.submission_id = submissions.id
-                    WHERE submissions.assignment_id = ? AND submissions.student_id = ?
-                    ORDER BY submissions.attempt_number DESC LIMIT 1
-                    """,
-                    (row["id"], user["id"]),
-                ).fetchone()
-                result.append({
-                    "id": row["id"], "title": row["title"], "variantId": row["variant_id"],
-                    "tasks": json.loads(row["tasks_json"]), "dueAt": row["due_at"],
-                    "groupName": row["group_name"], "latest": dict(latest) if latest else None,
-                })
+            result = student_assignments(database, user["id"])
         self.send_json({"assignments": result})
 
     def submission_create(self, assignment_id: int) -> None:
@@ -528,39 +455,7 @@ class TrainerHandler(BaseHTTPRequestHandler):
         if not user:
             return
         with connect() as database:
-            rows = database.execute(
-                """
-                SELECT submissions.id, submissions.attempt_number, submissions.status, submissions.submitted_at,
-                       assignments.title, assignments.variant_id, assignments.tasks_json,
-                       users.display_name AS student_name, users.email AS student_email,
-                       study_groups.name AS group_name, reviews.scores_json, reviews.total_score,
-                       reviews.max_score, reviews.comment, reviews.reviewed_at
-                FROM submissions
-                JOIN assignments ON assignments.id = submissions.assignment_id
-                JOIN users ON users.id = submissions.student_id
-                JOIN study_groups ON study_groups.id = assignments.group_id
-                LEFT JOIN reviews ON reviews.submission_id = submissions.id
-                WHERE assignments.teacher_id = ? ORDER BY submissions.submitted_at DESC
-                """,
-                (user["id"],),
-            ).fetchall()
-            result = []
-            for row in rows:
-                recordings = database.execute(
-                    "SELECT id, task_number, question_number, label, mime_type, size_bytes FROM recordings WHERE submission_id = ? ORDER BY task_number, question_number, id",
-                    (row["id"],),
-                ).fetchall()
-                result.append({
-                    "id": row["id"], "attempt": row["attempt_number"], "status": row["status"],
-                    "submittedAt": row["submitted_at"], "title": row["title"],
-                    "variantId": row["variant_id"], "tasks": json.loads(row["tasks_json"]),
-                    "studentName": row["student_name"] or row["student_email"],
-                    "studentEmail": row["student_email"], "groupName": row["group_name"],
-                    "recordings": [{**dict(recording), "url": f"/api/recordings/{recording['id']}"} for recording in recordings],
-                    "review": ({"scores": json.loads(row["scores_json"]), "total": row["total_score"],
-                                "maximum": row["max_score"], "comment": row["comment"],
-                                "reviewedAt": row["reviewed_at"]} if row["scores_json"] else None),
-                })
+            result = teacher_submissions(database, user["id"])
         self.send_json({"submissions": result})
 
     def recording_get(self, recording_id: int) -> None:
@@ -638,16 +533,6 @@ class TrainerHandler(BaseHTTPRequestHandler):
             )
             database.execute("UPDATE submissions SET status = 'graded' WHERE id = ?", (submission_id,))
         self.send_json({"review": {"total": total, "maximum": maximum}})
-
-    @staticmethod
-    def safe_progress(value: str | None) -> dict:
-        if not value:
-            return {"runs": []}
-        try:
-            parsed = json.loads(value)
-            return parsed if isinstance(parsed, dict) else {"runs": []}
-        except json.JSONDecodeError:
-            return {"runs": []}
 
     def create_session(self, user_id: int) -> str:
         token = secrets.token_urlsafe(32)

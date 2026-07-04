@@ -1,8 +1,6 @@
 import json
-import re
 import unittest
 from pathlib import Path
-
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -37,7 +35,14 @@ class VariantsTest(unittest.TestCase):
                 with self.subTest(variant=item["id"], image=reference):
                     path = ROOT / reference
                     self.assertTrue(path.is_file())
-                    self.assertRegex(path.name, r"^candidate-\d{2}\.jpg$")
+                    self.assertRegex(path.name, r"^candidate-\d{2}\.webp$")
+                    self.assertEqual(path.read_bytes()[:4], b"RIFF")
+
+    def test_variant_images_are_optimized(self):
+        images = list((ROOT / "assets/variants").glob("*/*.webp"))
+        self.assertEqual(len(images), 42)
+        self.assertFalse(list((ROOT / "assets/variants").glob("*/*.jpg")))
+        self.assertLess(sum(image.stat().st_size for image in images), 3_000_000)
 
 
 if __name__ == "__main__":

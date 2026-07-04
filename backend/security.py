@@ -7,7 +7,6 @@ import threading
 import time
 from urllib.parse import urlparse
 
-
 PASSWORD_ITERATIONS = 260_000
 AUTH_RATE_LIMITS = {"login": (8, 60), "register": (5, 300)}
 AUTH_ATTEMPTS: dict[tuple[str, str, str], list[float]] = {}

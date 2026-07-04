@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 CRITERIA = {
     1: {f"question{number}": 1 for number in range(1, 6)},
     2: {"content": 3, "organization": 2, "language": 2},

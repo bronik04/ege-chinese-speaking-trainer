@@ -3,7 +3,12 @@ import {
   PROGRESS_ACCOUNT_PREFIX, PROGRESS_GUEST_KEY, createRunId, defaultProgress,
   escapeHtml, formatHistoryDate, loadLocalProgress, mergeProgress,
 } from "./js/progress.js";
-import { collectReviewScores, reviewFields } from "./js/review.js";
+import { collectReviewScores } from "./js/review.js";
+import {
+  assignmentOptionsMarkup, studentAssignmentsMarkup, studentGroupsMarkup,
+  teacherGroupsMarkup, teacherSubmissionsMarkup,
+} from "./js/account-view.js";
+import { formatTime, shortTime, stepsMarkup, taskMarkup } from "./js/task-view.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -239,9 +244,7 @@ async function loadStudentGroups() {
   if (authUser?.role !== "student") return;
   try {
     const payload = await api("/api/student/groups");
-    $("studentGroups").innerHTML = payload.groups.length
-      ? `<p class="mini-heading">Мои группы</p>${payload.groups.map(group => `<div class="student-group"><b>${escapeHtml(group.name)}</b><span>${escapeHtml(group.teacher_name || "Преподаватель")}</span></div>`).join("")}`
-      : '<p class="student-groups-empty">Вы пока не состоите в учебной группе.</p>';
+    $("studentGroups").innerHTML = studentGroupsMarkup(payload.groups);
   } catch (_) {
     $("studentGroups").innerHTML = "";
   }
@@ -281,14 +284,7 @@ async function loadStudentAssignments() {
     const payload = await api("/api/student/assignments");
     studentAssignments = payload.assignments;
     $("studentAssignmentsPanel").classList.toggle("hidden", !studentAssignments.length);
-    $("studentAssignmentsList").innerHTML = studentAssignments.map(assignment => {
-      const latest = assignment.latest;
-      const status = latest?.status === "graded"
-        ? `Проверено: ${latest.total_score}/${latest.max_score}`
-        : latest ? "Отправлено на проверку" : "Не выполнено";
-      const due = assignment.dueAt ? ` · до ${formatHistoryDate(assignment.dueAt * 1000)}` : "";
-      return `<article class="assignment-card"><div><p class="eyebrow">${escapeHtml(assignment.groupName)}</p><h3>${escapeHtml(assignment.title)}</h3><span>Задания ${assignment.tasks.join(", ")}${due}</span><small>${status}</small>${latest?.comment ? `<blockquote>${escapeHtml(latest.comment)}</blockquote>` : ""}</div><button class="secondary-btn" type="button" data-start-assignment="${assignment.id}">${latest ? "Новая попытка" : "Начать"}</button></article>`;
-    }).join("");
+    $("studentAssignmentsList").innerHTML = studentAssignmentsMarkup(studentAssignments);
     document.querySelectorAll("[data-start-assignment]").forEach(button => button.addEventListener("click", () => startAssignedRun(Number(button.dataset.startAssignment))));
   } catch (_) {
     $("studentAssignmentsPanel").classList.add("hidden");
@@ -308,10 +304,9 @@ async function startAssignedRun(assignmentId) {
 }
 
 function renderAssignmentOptions() {
-  $("assignmentGroup").innerHTML = teacherGroupsData.length
-    ? teacherGroupsData.map(group => `<option value="${group.id}">${escapeHtml(group.name)}</option>`).join("")
-    : '<option value="">Сначала создайте группу</option>';
-  $("assignmentVariant").innerHTML = variantIndex.map(item => `<option value="${item.id}">${escapeHtml(item.label)}</option>`).join("");
+  const markup = assignmentOptionsMarkup(teacherGroupsData, variantIndex);
+  $("assignmentGroup").innerHTML = markup.groups;
+  $("assignmentVariant").innerHTML = markup.variants;
   $("createAssignmentBtn").disabled = !teacherGroupsData.length;
 }
 
@@ -345,16 +340,7 @@ async function loadTeacherSubmissions() {
 }
 
 function renderTeacherSubmissions(submissions) {
-  $("teacherSubmissions").innerHTML = submissions.length ? submissions.map(submission => `
-    <article class="submission-card">
-      <header><div><p class="eyebrow">${escapeHtml(submission.groupName)} · попытка ${submission.attempt}</p><h3>${escapeHtml(submission.studentName)}</h3><span>${escapeHtml(submission.title)}</span></div><b class="submission-status ${submission.status}">${submission.status === "graded" ? `${submission.review.total}/${submission.review.maximum}` : "На проверке"}</b></header>
-      <div class="submission-audio">${submission.recordings.length ? submission.recordings.map(recording => `<label><span>${escapeHtml(recording.label)}</span><audio controls preload="none" src="${recording.url}"></audio></label>`).join("") : '<p>Аудиозаписи отсутствуют.</p>'}</div>
-      <form class="review-form" data-review-submission="${submission.id}" data-review-tasks="${submission.tasks.join(",")}">
-        ${reviewFields(submission.tasks, submission.review?.scores)}
-        <label class="review-comment">Комментарий<textarea name="comment" maxlength="3000" rows="3">${escapeHtml(submission.review?.comment || "")}</textarea></label>
-        <button class="primary-btn" type="submit">${submission.review ? "Обновить оценку" : "Сохранить оценку"}</button>
-      </form>
-    </article>`).join("") : '<div class="teacher-empty"><b>Работ на проверку пока нет</b><span>После выполнения назначений здесь появятся аудиозаписи учеников.</span></div>';
+  $("teacherSubmissions").innerHTML = teacherSubmissionsMarkup(submissions);
 }
 
 async function submitReview(event) {
@@ -374,15 +360,8 @@ async function submitReview(event) {
 }
 
 function renderTeacherGroups(groups) {
-  if (!groups.length) {
-    $("teacherGroups").innerHTML = '<div class="teacher-empty"><b>Групп пока нет</b><span>Создайте первую группу — здесь появится статистика учеников.</span></div>';
-    return;
-  }
-  $("teacherGroups").innerHTML = groups.map(group => `
-    <article class="teacher-group-card">
-      <header><div><h3>${escapeHtml(group.name)}</h3><span>${group.students.length} ${group.students.length === 1 ? "ученик" : "учеников"}</span></div><button class="group-code" type="button" data-copy-code="${escapeHtml(group.code)}" title="Скопировать код"><small>Код группы</small><b>${escapeHtml(group.code)}</b></button></header>
-      ${group.students.length ? `<div class="student-table"><div class="student-table-head"><span>Ученик</span><span>Тренировки</span><span>Задания</span><span>Последняя активность</span></div>${group.students.map(student => `<div class="student-row"><span><b>${escapeHtml(student.name)}</b><small>${escapeHtml(student.email)}</small></span><strong>${student.completedRuns}</strong><strong>${student.completedTasks}</strong><time>${student.lastActivity ? formatHistoryDate(student.lastActivity) : "—"}</time></div>`).join("")}</div>` : '<p class="group-empty">Передайте код ученикам — после подключения они появятся здесь.</p>'}
-    </article>`).join("");
+  $("teacherGroups").innerHTML = teacherGroupsMarkup(groups);
+  if (!groups.length) return;
   document.querySelectorAll("[data-copy-code]").forEach(button => button.addEventListener("click", async () => {
     await navigator.clipboard.writeText(button.dataset.copyCode);
     toast("Код группы скопирован");
@@ -527,28 +506,7 @@ function beep(frequency = 740, duration = .16) {
 }
 
 function renderSteps() {
-  $("stepList").innerHTML = taskQueue.map((task, index) => {
-    const state = index < taskIndex ? "done" : index === taskIndex ? "active" : "";
-    return `<span class="step-pill ${state}">${index < taskIndex ? "✓ " : ""}Задание ${task}</span>`;
-  }).join("");
-}
-
-function taskMarkup(task) {
-  const data = taskData(task);
-  if (task === 1) {
-    const preparationList = phase === "answer" ? "" : `<ol class="prompt-list">${data.questions.map(question => `<li>${question}</li>`).join("")}</ol>`;
-    const answerPrompt = phase === "answer" ? `<div class="question-focus"><b>Вопрос ${questionIndex + 1} из 5</b>Задайте вопрос, чтобы узнать: ${data.questions[questionIndex]}.</div>` : "";
-    return `<div class="ad-layout"><div><h1 class="task-title">${data.title}</h1><p class="task-lead">${data.situation} Задайте пять вопросов, чтобы получить дополнительную информацию.</p>${preparationList}${answerPrompt}</div><div><p class="chinese-banner">${data.banner}</p><img class="ad-photo" src="${data.image}" alt="${data.imageAlt}"></div></div>`;
-  }
-  if (task === 2) {
-    const photos = data.images.map((image, index) => {
-      const number = index + 1;
-      return `<button class="photo-choice ${number === selectedPhoto ? "selected" : ""}" data-photo="${number}" type="button"><img src="${image}" alt="Фотография ${number}"><span>Фотография ${number}</span></button>`;
-    }).join("");
-    return `<h1 class="task-title">${data.title}</h1><p class="task-lead">${data.lead}</p><ul class="prompt-list">${data.prompts.map(prompt => `<li>${prompt}</li>`).join("")}</ul><div class="starter">${data.starter.replace("{n}", selectedPhoto)}</div><div class="photo-grid ${photoChoiceMade ? "has-selection" : ""}">${photos}</div>`;
-  }
-  const photos = data.images.map((image, index) => `<div class="photo-choice selected"><img src="${image}" alt="${data.imageLabels[index]}"><span>${data.imageLabels[index]}</span></div>`).join("");
-  return `<h1 class="task-title">${data.title}</h1><p class="task-lead">${data.lead}</p><ul class="prompt-list">${data.prompts.map(prompt => `<li>${prompt}</li>`).join("")}</ul><div class="photo-grid project-photos">${photos}</div>`;
+  $("stepList").innerHTML = stepsMarkup(taskQueue, taskIndex);
 }
 
 function renderTask() {
@@ -557,7 +515,7 @@ function renderTask() {
   $("taskBadge").textContent = `Задание ${task}`;
   $("phaseCaption").textContent = phase === "answer" ? "Ответ" : phase === "prep" ? "Подготовка" : "До начала";
   $("modeLabel").textContent = `${variant.label} · ${mode === "exam" ? "экзамен" : mode === "assignment" ? "задание преподавателя" : "тренировка"}`;
-  $("taskContent").innerHTML = taskMarkup(task);
+  $("taskContent").innerHTML = taskMarkup(task, taskData(task), { phase, questionIndex, selectedPhoto, photoChoiceMade });
   $("taskPaper").classList.toggle("locked", isLocked);
   $("taskLock").setAttribute("aria-hidden", String(!isLocked));
   document.querySelectorAll("[data-photo]").forEach(button => button.addEventListener("click", () => {
@@ -738,14 +696,6 @@ function startTimer(seconds, onComplete) {
 function clearTimer() {
   if (timerId) clearInterval(timerId);
   timerId = null;
-}
-
-function formatTime(seconds) {
-  return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
-}
-
-function shortTime(seconds) {
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
 function setRecordingIndicator(live, text) {
