@@ -67,6 +67,10 @@
           <div><p class="eyebrow">Ваш прогресс</p><b id="progressSummary">Тренировок пока нет</b><small id="progressSyncStatus">Сохраняется в этом браузере</small></div>
           <button class="text-btn" id="openProgressBtn" type="button">Подробнее →</button>
         </div>
+        <section class="student-assignments hidden" id="studentAssignmentsPanel">
+          <div><p class="eyebrow">От преподавателя</p><h2>Мои задания</h2></div>
+          <div class="assignment-list" id="studentAssignmentsList"></div>
+        </section>
       </div>
     </section>
 
@@ -101,7 +105,7 @@
       <div class="result-heading">
         <p class="eyebrow">Тренировка завершена</p>
         <h1>答案都在这里。</h1>
-        <p>Прослушайте записи и отметьте, что получилось. Аудио не отправлялось на сервер.</p>
+        <p id="submissionStatus">Прослушайте записи и отметьте, что получилось.</p>
       </div>
       <div class="result-layout">
         <div class="recordings-panel">
@@ -172,8 +176,24 @@
         <label>Название группы<input id="groupName" type="text" minlength="2" maxlength="80" placeholder="11 класс · Понедельник" required></label>
         <button class="primary-btn" type="submit">Создать группу</button>
       </form>
+      <section class="assignment-create-panel">
+        <p class="eyebrow">Новое назначение</p>
+        <form class="create-assignment-form" id="createAssignmentForm">
+          <label>Группа<select id="assignmentGroup" required></select></label>
+          <label>Вариант<select id="assignmentVariant" required></select></label>
+          <label>Состав<select id="assignmentTasks"><option value="exam">Полный экзамен</option><option value="1">Только задание 1</option><option value="2">Только задание 2</option><option value="3">Только задание 3</option></select></label>
+          <label>Срок<input id="assignmentDue" type="datetime-local"></label>
+          <label class="assignment-title-field">Название<input id="assignmentTitle" type="text" minlength="2" maxlength="100" placeholder="Тренировка к понедельнику" required></label>
+          <button class="primary-btn" id="createAssignmentBtn" type="submit">Назначить</button>
+        </form>
+      </section>
       <p class="auth-message" id="teacherMessage" aria-live="polite"></p>
       <div class="teacher-groups" id="teacherGroups"></div>
+      <section class="teacher-review-section">
+        <div><p class="eyebrow">Проверка</p><h2>Работы учеников</h2></div>
+        <p class="auth-message" id="teacherReviewMessage" aria-live="polite"></p>
+        <div class="teacher-submissions" id="teacherSubmissions"></div>
+      </section>
     </section>
   </div>
 
@@ -188,6 +208,6 @@
   </div>
 
   <div class="toast hidden" id="toast" role="status"></div>
-  <script src="app.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>

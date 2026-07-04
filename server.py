@@ -4,72 +4,52 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
-import hmac
 import json
 import mimetypes
 import os
 import re
 import secrets
 import sqlite3
-import threading
 import time
 from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
+
+from backend.grading import validate_scores
+from backend.migrations import apply_migrations
+from backend.security import (
+    auth_rate_limit,
+    clear_auth_rate_limit,
+    password_hash,
+    password_matches,
+    request_has_same_origin,
+    token_digest,
+)
 
 
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get("TRAINER_DATA_DIR", ROOT / "var")).resolve()
 DB_PATH = DATA_DIR / "trainer.sqlite3"
+AUDIO_DIR = DATA_DIR / "audio"
 SESSION_DAYS = 30
 MAX_BODY = 1_000_000
+MAX_AUDIO_BODY = 15_000_000
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
-PASSWORD_ITERATIONS = 260_000
 GROUP_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-AUTH_RATE_LIMITS = {"login": (8, 60), "register": (5, 300)}
-_AUTH_ATTEMPTS: dict[tuple[str, str, str], list[float]] = {}
-_AUTH_ATTEMPTS_LOCK = threading.Lock()
 
 
-def auth_rate_limit(kind: str, client_ip: str, email: str, now: float | None = None) -> int:
-    """Record an auth attempt and return retry seconds, or zero when allowed."""
-    limit, window = AUTH_RATE_LIMITS[kind]
-    moment = time.time() if now is None else now
-    key = (kind, client_ip, email.strip().lower()[:254])
-    with _AUTH_ATTEMPTS_LOCK:
-        recent = [stamp for stamp in _AUTH_ATTEMPTS.get(key, []) if moment - stamp < window]
-        if len(recent) >= limit:
-            _AUTH_ATTEMPTS[key] = recent
-            return max(1, int(window - (moment - recent[0]) + 0.999))
-        recent.append(moment)
-        _AUTH_ATTEMPTS[key] = recent
-        if len(_AUTH_ATTEMPTS) > 10_000:
-            _AUTH_ATTEMPTS.pop(next(iter(_AUTH_ATTEMPTS)))
-    return 0
-
-
-def clear_auth_rate_limit(kind: str, client_ip: str, email: str) -> None:
-    key = (kind, client_ip, email.strip().lower()[:254])
-    with _AUTH_ATTEMPTS_LOCK:
-        _AUTH_ATTEMPTS.pop(key, None)
-
-
-def request_has_same_origin(host: str | None, origin: str | None, referer: str | None, fetch_site: str | None) -> bool:
-    """Validate browser metadata for every state-changing request."""
-    if not host or (fetch_site and fetch_site not in {"same-origin", "none"}):
-        return False
-    source = origin or referer
-    if not source:
-        return False
-    parsed = urlparse(source)
-    return parsed.scheme in {"http", "https"} and parsed.netloc.lower() == host.lower()
+class ClosingConnection(sqlite3.Connection):
+    def __exit__(self, exc_type, exc_value, traceback):
+        try:
+            return super().__exit__(exc_type, exc_value, traceback)
+        finally:
+            self.close()
 
 
 def connect() -> sqlite3.Connection:
-    connection = sqlite3.connect(DB_PATH, timeout=10)
+    connection = sqlite3.connect(DB_PATH, timeout=10, factory=ClosingConnection)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
     return connection
@@ -77,74 +57,10 @@ def connect() -> sqlite3.Connection:
 
 def init_database() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+    AUDIO_DIR.mkdir(parents=True, exist_ok=True)
     with connect() as database:
-        database.executescript(
-            """
-            PRAGMA journal_mode = WAL;
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                email TEXT NOT NULL UNIQUE COLLATE NOCASE,
-                password_hash TEXT NOT NULL,
-                display_name TEXT NOT NULL DEFAULT '',
-                role TEXT NOT NULL DEFAULT 'student' CHECK(role IN ('student', 'teacher')),
-                created_at INTEGER NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS sessions (
-                token_hash TEXT PRIMARY KEY,
-                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                expires_at INTEGER NOT NULL,
-                created_at INTEGER NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS user_progress (
-                user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-                progress_json TEXT NOT NULL,
-                updated_at INTEGER NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS study_groups (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                teacher_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                name TEXT NOT NULL,
-                join_code TEXT NOT NULL UNIQUE,
-                created_at INTEGER NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS group_members (
-                group_id INTEGER NOT NULL REFERENCES study_groups(id) ON DELETE CASCADE,
-                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                joined_at INTEGER NOT NULL,
-                PRIMARY KEY(group_id, user_id)
-            );
-            CREATE INDEX IF NOT EXISTS sessions_expiry_idx ON sessions(expires_at);
-            CREATE INDEX IF NOT EXISTS groups_teacher_idx ON study_groups(teacher_id);
-            CREATE INDEX IF NOT EXISTS members_user_idx ON group_members(user_id);
-            """
-        )
-        columns = {row["name"] for row in database.execute("PRAGMA table_info(users)")}
-        if "display_name" not in columns:
-            database.execute("ALTER TABLE users ADD COLUMN display_name TEXT NOT NULL DEFAULT ''")
-        if "role" not in columns:
-            database.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'student'")
+        apply_migrations(database)
         database.execute("DELETE FROM sessions WHERE expires_at <= ?", (int(time.time()),))
-
-
-def password_hash(password: str) -> str:
-    salt = secrets.token_bytes(16)
-    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, PASSWORD_ITERATIONS)
-    return f"{PASSWORD_ITERATIONS}${salt.hex()}${digest.hex()}"
-
-
-def password_matches(password: str, encoded: str) -> bool:
-    try:
-        iterations_text, salt_hex, digest_hex = encoded.split("$", 2)
-        digest = hashlib.pbkdf2_hmac(
-            "sha256", password.encode(), bytes.fromhex(salt_hex), int(iterations_text)
-        )
-        return hmac.compare_digest(digest.hex(), digest_hex)
-    except (ValueError, TypeError):
-        return False
-
-
-def token_digest(token: str) -> str:
-    return hashlib.sha256(token.encode()).hexdigest()
 
 
 class TrainerHandler(BaseHTTPRequestHandler):
@@ -162,6 +78,12 @@ class TrainerHandler(BaseHTTPRequestHandler):
             self.teacher_dashboard()
         elif route == "/api/student/groups":
             self.student_groups()
+        elif route == "/api/student/assignments":
+            self.student_assignments()
+        elif route == "/api/teacher/submissions":
+            self.teacher_submissions()
+        elif re.fullmatch(r"/api/recordings/\d+", route):
+            self.recording_get(int(route.rsplit("/", 1)[1]))
         elif route.startswith("/api/"):
             self.send_error_json(HTTPStatus.NOT_FOUND, "API route not found")
         else:
@@ -181,6 +103,14 @@ class TrainerHandler(BaseHTTPRequestHandler):
             self.teacher_group_create()
         elif route == "/api/groups/join":
             self.group_join()
+        elif route == "/api/teacher/assignments":
+            self.teacher_assignment_create()
+        elif match := re.fullmatch(r"/api/assignments/(\d+)/submissions", route):
+            self.submission_create(int(match.group(1)))
+        elif match := re.fullmatch(r"/api/submissions/(\d+)/recordings", route):
+            self.recording_create(int(match.group(1)))
+        elif match := re.fullmatch(r"/api/submissions/(\d+)/review", route):
+            self.review_submission(int(match.group(1)))
         else:
             self.send_error_json(HTTPStatus.NOT_FOUND, "API route not found")
 
@@ -414,6 +344,300 @@ class TrainerHandler(BaseHTTPRequestHandler):
                     "createdAt": group["created_at"], "students": students,
                 })
         self.send_json({"groups": result})
+
+    def teacher_assignment_create(self) -> None:
+        user = self.require_role("teacher")
+        if not user:
+            return
+        payload = self.read_json()
+        if payload is None:
+            return
+        try:
+            group_id = int(payload.get("groupId"))
+        except (TypeError, ValueError):
+            self.send_error_json(HTTPStatus.BAD_REQUEST, "Выберите учебную группу")
+            return
+        title = str(payload.get("title", "")).strip()
+        variant_id = str(payload.get("variantId", "")).strip()
+        raw_tasks = payload.get("tasks", [])
+        due_at = payload.get("dueAt")
+        if not 2 <= len(title) <= 100 or not re.fullmatch(r"[a-z0-9-]{3,40}", variant_id):
+            self.send_error_json(HTTPStatus.BAD_REQUEST, "Проверьте название и вариант")
+            return
+        if not isinstance(raw_tasks, list) or not raw_tasks:
+            self.send_error_json(HTTPStatus.BAD_REQUEST, "Выберите хотя бы одно задание")
+            return
+        try:
+            tasks = sorted(set(int(task) for task in raw_tasks))
+            due_at = int(due_at) if due_at is not None else None
+        except (TypeError, ValueError):
+            self.send_error_json(HTTPStatus.BAD_REQUEST, "Некорректные параметры задания")
+            return
+        if any(task not in {1, 2, 3} for task in tasks):
+            self.send_error_json(HTTPStatus.BAD_REQUEST, "Допустимы задания 1–3")
+            return
+        with connect() as database:
+            group = database.execute(
+                "SELECT id FROM study_groups WHERE id = ? AND teacher_id = ?", (group_id, user["id"])
+            ).fetchone()
+            if not group:
+                self.send_error_json(HTTPStatus.NOT_FOUND, "Группа не найдена")
+                return
+            cursor = database.execute(
+                """
+                INSERT INTO assignments(group_id, teacher_id, title, variant_id, tasks_json, due_at, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (group_id, user["id"], title, variant_id, json.dumps(tasks), due_at, int(time.time())),
+            )
+        self.send_json({"assignment": {"id": cursor.lastrowid, "title": title}}, HTTPStatus.CREATED)
+
+    def student_assignments(self) -> None:
+        user = self.require_role("student")
+        if not user:
+            return
+        with connect() as database:
+            rows = database.execute(
+                """
+                SELECT assignments.id, assignments.title, assignments.variant_id, assignments.tasks_json,
+                       assignments.due_at, assignments.created_at, study_groups.name AS group_name
+                FROM assignments
+                JOIN study_groups ON study_groups.id = assignments.group_id
+                JOIN group_members ON group_members.group_id = assignments.group_id
+                WHERE group_members.user_id = ? ORDER BY assignments.created_at DESC
+                """,
+                (user["id"],),
+            ).fetchall()
+            result = []
+            for row in rows:
+                latest = database.execute(
+                    """
+                    SELECT submissions.id, submissions.status, submissions.attempt_number,
+                           reviews.total_score, reviews.max_score, reviews.comment
+                    FROM submissions LEFT JOIN reviews ON reviews.submission_id = submissions.id
+                    WHERE submissions.assignment_id = ? AND submissions.student_id = ?
+                    ORDER BY submissions.attempt_number DESC LIMIT 1
+                    """,
+                    (row["id"], user["id"]),
+                ).fetchone()
+                result.append({
+                    "id": row["id"], "title": row["title"], "variantId": row["variant_id"],
+                    "tasks": json.loads(row["tasks_json"]), "dueAt": row["due_at"],
+                    "groupName": row["group_name"], "latest": dict(latest) if latest else None,
+                })
+        self.send_json({"assignments": result})
+
+    def submission_create(self, assignment_id: int) -> None:
+        user = self.require_role("student")
+        if not user:
+            return
+        payload = self.read_json()
+        if payload is None:
+            return
+        run = payload.get("run")
+        if not isinstance(run, dict):
+            self.send_error_json(HTTPStatus.BAD_REQUEST, "Некорректная попытка")
+            return
+        encoded_run = json.dumps(run, ensure_ascii=False, separators=(",", ":"))
+        if len(encoded_run) > 100_000:
+            self.send_error_json(HTTPStatus.BAD_REQUEST, "Данные попытки слишком велики")
+            return
+        with connect() as database:
+            assignment = database.execute(
+                """
+                SELECT assignments.id FROM assignments
+                JOIN group_members ON group_members.group_id = assignments.group_id
+                WHERE assignments.id = ? AND group_members.user_id = ?
+                """,
+                (assignment_id, user["id"]),
+            ).fetchone()
+            if not assignment:
+                self.send_error_json(HTTPStatus.NOT_FOUND, "Задание не найдено")
+                return
+            attempt = database.execute(
+                "SELECT COALESCE(MAX(attempt_number), 0) + 1 AS number FROM submissions WHERE assignment_id = ? AND student_id = ?",
+                (assignment_id, user["id"]),
+            ).fetchone()["number"]
+            cursor = database.execute(
+                """
+                INSERT INTO submissions(assignment_id, student_id, attempt_number, run_json, submitted_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (assignment_id, user["id"], attempt, encoded_run, int(time.time())),
+            )
+        self.send_json({"submission": {"id": cursor.lastrowid, "attempt": attempt}}, HTTPStatus.CREATED)
+
+    def recording_create(self, submission_id: int) -> None:
+        user = self.require_role("student")
+        if not user:
+            return
+        query = parse_qs(urlparse(self.path).query)
+        try:
+            task = int(query.get("task", [""])[0])
+            question_value = query.get("question", [None])[0]
+            question = int(question_value) if question_value else None
+        except (TypeError, ValueError):
+            self.send_error_json(HTTPStatus.BAD_REQUEST, "Некорректный номер записи")
+            return
+        label = str(query.get("label", [f"Задание {task}"])[0])[:160]
+        mime_type = self.headers.get("Content-Type", "").split(";", 1)[0].lower()
+        extensions = {"audio/webm": "webm", "audio/mp4": "m4a", "audio/ogg": "ogg", "audio/wav": "wav"}
+        if task not in {1, 2, 3} or mime_type not in extensions:
+            self.send_error_json(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, "Неподдерживаемый формат аудио")
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            length = 0
+        if not 0 < length <= MAX_AUDIO_BODY:
+            self.send_error_json(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "Запись превышает 15 МБ")
+            return
+        with connect() as database:
+            row = database.execute(
+                """
+                SELECT submissions.id, assignments.tasks_json FROM submissions
+                JOIN assignments ON assignments.id = submissions.assignment_id
+                WHERE submissions.id = ? AND submissions.student_id = ?
+                """,
+                (submission_id, user["id"]),
+            ).fetchone()
+            if not row or task not in json.loads(row["tasks_json"]):
+                self.send_error_json(HTTPStatus.FORBIDDEN, "Запись не относится к этой попытке")
+                return
+        data = self.rfile.read(length)
+        relative = f"{submission_id}/{secrets.token_urlsafe(18)}.{extensions[mime_type]}"
+        target = (AUDIO_DIR / relative).resolve()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+        try:
+            with connect() as database:
+                cursor = database.execute(
+                    """
+                    INSERT INTO recordings(submission_id, task_number, question_number, label, file_name, mime_type, size_bytes, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (submission_id, task, question, label, relative, mime_type, len(data), int(time.time())),
+                )
+        except Exception:
+            target.unlink(missing_ok=True)
+            raise
+        self.send_json({"recording": {"id": cursor.lastrowid}}, HTTPStatus.CREATED)
+
+    def teacher_submissions(self) -> None:
+        user = self.require_role("teacher")
+        if not user:
+            return
+        with connect() as database:
+            rows = database.execute(
+                """
+                SELECT submissions.id, submissions.attempt_number, submissions.status, submissions.submitted_at,
+                       assignments.title, assignments.variant_id, assignments.tasks_json,
+                       users.display_name AS student_name, users.email AS student_email,
+                       study_groups.name AS group_name, reviews.scores_json, reviews.total_score,
+                       reviews.max_score, reviews.comment, reviews.reviewed_at
+                FROM submissions
+                JOIN assignments ON assignments.id = submissions.assignment_id
+                JOIN users ON users.id = submissions.student_id
+                JOIN study_groups ON study_groups.id = assignments.group_id
+                LEFT JOIN reviews ON reviews.submission_id = submissions.id
+                WHERE assignments.teacher_id = ? ORDER BY submissions.submitted_at DESC
+                """,
+                (user["id"],),
+            ).fetchall()
+            result = []
+            for row in rows:
+                recordings = database.execute(
+                    "SELECT id, task_number, question_number, label, mime_type, size_bytes FROM recordings WHERE submission_id = ? ORDER BY task_number, question_number, id",
+                    (row["id"],),
+                ).fetchall()
+                result.append({
+                    "id": row["id"], "attempt": row["attempt_number"], "status": row["status"],
+                    "submittedAt": row["submitted_at"], "title": row["title"],
+                    "variantId": row["variant_id"], "tasks": json.loads(row["tasks_json"]),
+                    "studentName": row["student_name"] or row["student_email"],
+                    "studentEmail": row["student_email"], "groupName": row["group_name"],
+                    "recordings": [{**dict(recording), "url": f"/api/recordings/{recording['id']}"} for recording in recordings],
+                    "review": ({"scores": json.loads(row["scores_json"]), "total": row["total_score"],
+                                "maximum": row["max_score"], "comment": row["comment"],
+                                "reviewedAt": row["reviewed_at"]} if row["scores_json"] else None),
+                })
+        self.send_json({"submissions": result})
+
+    def recording_get(self, recording_id: int) -> None:
+        user = self.current_user()
+        if not user:
+            self.send_error_json(HTTPStatus.UNAUTHORIZED, "Authentication required")
+            return
+        with connect() as database:
+            row = database.execute(
+                """
+                SELECT recordings.file_name, recordings.mime_type, recordings.size_bytes,
+                       submissions.student_id, assignments.teacher_id
+                FROM recordings JOIN submissions ON submissions.id = recordings.submission_id
+                JOIN assignments ON assignments.id = submissions.assignment_id
+                WHERE recordings.id = ?
+                """,
+                (recording_id,),
+            ).fetchone()
+        if not row or user["id"] not in {row["student_id"], row["teacher_id"]}:
+            self.send_error_json(HTTPStatus.NOT_FOUND, "Запись не найдена")
+            return
+        audio_root = AUDIO_DIR.resolve()
+        target = (audio_root / row["file_name"]).resolve()
+        if audio_root not in target.parents or not target.is_file():
+            self.send_error_json(HTTPStatus.NOT_FOUND, "Файл записи не найден")
+            return
+        data = target.read_bytes()
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", row["mime_type"])
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "private, no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def review_submission(self, submission_id: int) -> None:
+        user = self.require_role("teacher")
+        if not user:
+            return
+        payload = self.read_json()
+        if payload is None:
+            return
+        comment = str(payload.get("comment", "")).strip()
+        if len(comment) > 3000:
+            self.send_error_json(HTTPStatus.BAD_REQUEST, "Комментарий слишком длинный")
+            return
+        with connect() as database:
+            row = database.execute(
+                """
+                SELECT assignments.tasks_json FROM submissions
+                JOIN assignments ON assignments.id = submissions.assignment_id
+                WHERE submissions.id = ? AND assignments.teacher_id = ?
+                """,
+                (submission_id, user["id"]),
+            ).fetchone()
+            if not row:
+                self.send_error_json(HTTPStatus.NOT_FOUND, "Работа не найдена")
+                return
+            tasks = json.loads(row["tasks_json"])
+            try:
+                scores, total, maximum = validate_scores(payload.get("scores"), tasks)
+            except ValueError as error:
+                self.send_error_json(HTTPStatus.BAD_REQUEST, str(error))
+                return
+            now = int(time.time())
+            database.execute(
+                """
+                INSERT INTO reviews(submission_id, teacher_id, scores_json, total_score, max_score, comment, reviewed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(submission_id) DO UPDATE SET scores_json = excluded.scores_json,
+                    total_score = excluded.total_score, max_score = excluded.max_score,
+                    comment = excluded.comment, reviewed_at = excluded.reviewed_at
+                """,
+                (submission_id, user["id"], json.dumps(scores), total, maximum, comment, now),
+            )
+            database.execute("UPDATE submissions SET status = 'graded' WHERE id = ?", (submission_id,))
+        self.send_json({"review": {"total": total, "maximum": maximum}})
 
     @staticmethod
     def safe_progress(value: str | None) -> dict:
