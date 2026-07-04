@@ -51,6 +51,12 @@ function toast(message) {
   toast.timer = setTimeout(() => $("toast").classList.add("hidden"), 3000);
 }
 
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>'"]/g, character => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;"
+  })[character]);
+}
+
 function defaultProgress() {
   return { version: 1, updatedAt: new Date(0).toISOString(), settings: { lastVariant: null, fastMode: false }, runs: [], activeRun: null };
 }
@@ -168,6 +174,7 @@ async function initAuth() {
     authUser = payload.user;
     renderAuth();
     await syncProgress();
+    await refreshAccountData();
   } catch (error) {
     authUser = null;
     renderAuth();
@@ -181,6 +188,12 @@ function renderAuth() {
   $("authGuestView").classList.toggle("hidden", Boolean(authUser));
   $("authUserView").classList.toggle("hidden", !authUser);
   $("authUserEmail").textContent = authUser?.email || "";
+  $("authUserName").textContent = authUser?.displayName || "";
+  const isTeacher = authUser?.role === "teacher";
+  $("accountRole").textContent = isTeacher ? "Преподаватель" : "Ученик";
+  $("accountTitle").textContent = isTeacher ? "Ваши ученики и группы" : "Прогресс синхронизирован";
+  $("studentAccountTools").classList.toggle("hidden", !authUser || isTeacher);
+  $("teacherCabinetBtn").classList.toggle("hidden", !isTeacher);
   renderProgress();
 }
 
@@ -190,6 +203,8 @@ function setAuthMode(nextMode) {
   $("registerTab").classList.toggle("active", authMode === "register");
   $("authSubmitBtn").textContent = authMode === "login" ? "Войти" : "Создать аккаунт";
   $("authPassword").autocomplete = authMode === "login" ? "current-password" : "new-password";
+  document.querySelectorAll(".register-only").forEach(element => element.classList.toggle("hidden", authMode !== "register"));
+  $("authName").required = authMode === "register";
   $("authMessage").textContent = "";
 }
 
@@ -200,20 +215,23 @@ function openModal(modal) {
 
 function closeModal(modal) {
   modal.classList.add("hidden");
-  if ($("authModal").classList.contains("hidden") && $("progressModal").classList.contains("hidden")) document.body.classList.remove("modal-open");
+  if ($("authModal").classList.contains("hidden") && $("progressModal").classList.contains("hidden") && $("teacherModal").classList.contains("hidden")) document.body.classList.remove("modal-open");
 }
 
 async function submitAuth(event) {
   event.preventDefault();
   const email = $("authEmail").value.trim();
   const password = $("authPassword").value;
+  const displayName = $("authName").value.trim();
+  const role = $("authRole").value;
   $("authSubmitBtn").disabled = true;
   $("authMessage").textContent = "";
   try {
-    const payload = await api(`/api/auth/${authMode}`, { method: "POST", body: JSON.stringify({ email, password }) });
+    const payload = await api(`/api/auth/${authMode}`, { method: "POST", body: JSON.stringify({ email, password, displayName, role }) });
     authUser = payload.user;
     renderAuth();
     await syncProgress();
+    await refreshAccountData();
     closeModal($("authModal"));
     toast(authMode === "login" ? "Вход выполнен" : "Аккаунт создан");
     $("authForm").reset();
@@ -230,6 +248,79 @@ async function logout() {
   renderAuth();
   closeModal($("authModal"));
   toast("Вы вышли из аккаунта. Локальная история сохранена");
+}
+
+async function refreshAccountData() {
+  if (!authUser) return;
+  if (authUser.role === "teacher") {
+    await loadTeacherDashboard();
+  } else {
+    await loadStudentGroups();
+  }
+}
+
+async function loadStudentGroups() {
+  if (authUser?.role !== "student") return;
+  try {
+    const payload = await api("/api/student/groups");
+    $("studentGroups").innerHTML = payload.groups.length
+      ? `<p class="mini-heading">Мои группы</p>${payload.groups.map(group => `<div class="student-group"><b>${escapeHtml(group.name)}</b><span>${escapeHtml(group.teacher_name || "Преподаватель")}</span></div>`).join("")}`
+      : '<p class="student-groups-empty">Вы пока не состоите в учебной группе.</p>';
+  } catch (_) {
+    $("studentGroups").innerHTML = "";
+  }
+}
+
+async function joinGroup(event) {
+  event.preventDefault();
+  const code = $("joinGroupCode").value.trim().toUpperCase();
+  try {
+    const payload = await api("/api/groups/join", { method: "POST", body: JSON.stringify({ code }) });
+    $("joinGroupForm").reset();
+    await loadStudentGroups();
+    toast(`Вы вступили в группу «${payload.group.name}»`);
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
+async function loadTeacherDashboard() {
+  if (authUser?.role !== "teacher") return;
+  try {
+    const payload = await api("/api/teacher/dashboard");
+    renderTeacherGroups(payload.groups);
+  } catch (error) {
+    $("teacherMessage").textContent = error.message;
+  }
+}
+
+function renderTeacherGroups(groups) {
+  if (!groups.length) {
+    $("teacherGroups").innerHTML = '<div class="teacher-empty"><b>Групп пока нет</b><span>Создайте первую группу — здесь появится статистика учеников.</span></div>';
+    return;
+  }
+  $("teacherGroups").innerHTML = groups.map(group => `
+    <article class="teacher-group-card">
+      <header><div><h3>${escapeHtml(group.name)}</h3><span>${group.students.length} ${group.students.length === 1 ? "ученик" : "учеников"}</span></div><button class="group-code" type="button" data-copy-code="${escapeHtml(group.code)}" title="Скопировать код"><small>Код группы</small><b>${escapeHtml(group.code)}</b></button></header>
+      ${group.students.length ? `<div class="student-table"><div class="student-table-head"><span>Ученик</span><span>Тренировки</span><span>Задания</span><span>Последняя активность</span></div>${group.students.map(student => `<div class="student-row"><span><b>${escapeHtml(student.name)}</b><small>${escapeHtml(student.email)}</small></span><strong>${student.completedRuns}</strong><strong>${student.completedTasks}</strong><time>${student.lastActivity ? formatHistoryDate(student.lastActivity) : "—"}</time></div>`).join("")}</div>` : '<p class="group-empty">Передайте код ученикам — после подключения они появятся здесь.</p>'}
+    </article>`).join("");
+  document.querySelectorAll("[data-copy-code]").forEach(button => button.addEventListener("click", async () => {
+    await navigator.clipboard.writeText(button.dataset.copyCode);
+    toast("Код группы скопирован");
+  }));
+}
+
+async function createGroup(event) {
+  event.preventDefault();
+  $("teacherMessage").textContent = "";
+  try {
+    const payload = await api("/api/teacher/groups", { method: "POST", body: JSON.stringify({ name: $("groupName").value.trim() }) });
+    $("createGroupForm").reset();
+    await loadTeacherDashboard();
+    toast(`Группа «${payload.group.name}» создана`);
+  } catch (error) {
+    $("teacherMessage").textContent = error.message;
+  }
 }
 
 function scheduleProgressSync() {
@@ -630,19 +721,24 @@ $("restartBtn").addEventListener("click", () => showScreen("home"));
 $("authButton").addEventListener("click", () => openModal($("authModal")));
 $("authCloseBtn").addEventListener("click", () => closeModal($("authModal")));
 $("progressCloseBtn").addEventListener("click", () => closeModal($("progressModal")));
+$("teacherCloseBtn").addEventListener("click", () => closeModal($("teacherModal")));
 $("openProgressBtn").addEventListener("click", () => { renderHistory(); openModal($("progressModal")); });
 $("clearHistoryBtn").addEventListener("click", clearHistory);
 $("loginTab").addEventListener("click", () => setAuthMode("login"));
 $("registerTab").addEventListener("click", () => setAuthMode("register"));
 $("authForm").addEventListener("submit", submitAuth);
+$("joinGroupForm").addEventListener("submit", joinGroup);
+$("createGroupForm").addEventListener("submit", createGroup);
+$("teacherCabinetBtn").addEventListener("click", async () => { await loadTeacherDashboard(); closeModal($("authModal")); openModal($("teacherModal")); });
 $("logoutBtn").addEventListener("click", logout);
-[$("authModal"), $("progressModal")].forEach(modal => modal.addEventListener("click", event => {
+[$("authModal"), $("progressModal"), $("teacherModal")].forEach(modal => modal.addEventListener("click", event => {
   if (event.target === modal) closeModal(modal);
 }));
 document.addEventListener("keydown", event => {
   if (event.key === "Escape") {
     closeModal($("authModal"));
     closeModal($("progressModal"));
+    closeModal($("teacherModal"));
   }
 });
 $("soundToggle").addEventListener("click", () => {

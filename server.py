@@ -27,6 +27,7 @@ SESSION_DAYS = 30
 MAX_BODY = 1_000_000
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 PASSWORD_ITERATIONS = 260_000
+GROUP_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 
 def connect() -> sqlite3.Connection:
@@ -46,6 +47,8 @@ def init_database() -> None:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 email TEXT NOT NULL UNIQUE COLLATE NOCASE,
                 password_hash TEXT NOT NULL,
+                display_name TEXT NOT NULL DEFAULT '',
+                role TEXT NOT NULL DEFAULT 'student' CHECK(role IN ('student', 'teacher')),
                 created_at INTEGER NOT NULL
             );
             CREATE TABLE IF NOT EXISTS sessions (
@@ -59,9 +62,29 @@ def init_database() -> None:
                 progress_json TEXT NOT NULL,
                 updated_at INTEGER NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS study_groups (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                teacher_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                name TEXT NOT NULL,
+                join_code TEXT NOT NULL UNIQUE,
+                created_at INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS group_members (
+                group_id INTEGER NOT NULL REFERENCES study_groups(id) ON DELETE CASCADE,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                joined_at INTEGER NOT NULL,
+                PRIMARY KEY(group_id, user_id)
+            );
             CREATE INDEX IF NOT EXISTS sessions_expiry_idx ON sessions(expires_at);
+            CREATE INDEX IF NOT EXISTS groups_teacher_idx ON study_groups(teacher_id);
+            CREATE INDEX IF NOT EXISTS members_user_idx ON group_members(user_id);
             """
         )
+        columns = {row["name"] for row in database.execute("PRAGMA table_info(users)")}
+        if "display_name" not in columns:
+            database.execute("ALTER TABLE users ADD COLUMN display_name TEXT NOT NULL DEFAULT ''")
+        if "role" not in columns:
+            database.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'student'")
         database.execute("DELETE FROM sessions WHERE expires_at <= ?", (int(time.time()),))
 
 
@@ -97,6 +120,10 @@ class TrainerHandler(BaseHTTPRequestHandler):
             self.auth_me()
         elif route == "/api/progress":
             self.progress_get()
+        elif route == "/api/teacher/dashboard":
+            self.teacher_dashboard()
+        elif route == "/api/student/groups":
+            self.student_groups()
         elif route.startswith("/api/"):
             self.send_error_json(HTTPStatus.NOT_FOUND, "API route not found")
         else:
@@ -112,6 +139,10 @@ class TrainerHandler(BaseHTTPRequestHandler):
             self.auth_login()
         elif route == "/api/auth/logout":
             self.auth_logout()
+        elif route == "/api/teacher/groups":
+            self.teacher_group_create()
+        elif route == "/api/groups/join":
+            self.group_join()
         else:
             self.send_error_json(HTTPStatus.NOT_FOUND, "API route not found")
 
@@ -132,18 +163,26 @@ class TrainerHandler(BaseHTTPRequestHandler):
         if error:
             self.send_error_json(HTTPStatus.BAD_REQUEST, error)
             return
+        role = str(payload.get("role", "student"))
+        display_name = str(payload.get("displayName", "")).strip()
+        if role not in {"student", "teacher"}:
+            self.send_error_json(HTTPStatus.BAD_REQUEST, "Выберите тип аккаунта")
+            return
+        if not 2 <= len(display_name) <= 80:
+            self.send_error_json(HTTPStatus.BAD_REQUEST, "Укажите имя длиной от 2 до 80 символов")
+            return
         try:
             with connect() as database:
                 cursor = database.execute(
-                    "INSERT INTO users(email, password_hash, created_at) VALUES (?, ?, ?)",
-                    (email, password_hash(password), int(time.time())),
+                    "INSERT INTO users(email, password_hash, display_name, role, created_at) VALUES (?, ?, ?, ?, ?)",
+                    (email, password_hash(password), display_name, role, int(time.time())),
                 )
                 user_id = cursor.lastrowid
         except sqlite3.IntegrityError:
             self.send_error_json(HTTPStatus.CONFLICT, "Аккаунт с таким email уже существует")
             return
         token = self.create_session(user_id)
-        self.send_json({"user": {"id": user_id, "email": email}}, HTTPStatus.CREATED, token)
+        self.send_json({"user": self.user_payload(user_id, email, display_name, role)}, HTTPStatus.CREATED, token)
 
     def auth_login(self) -> None:
         payload = self.read_json()
@@ -153,13 +192,13 @@ class TrainerHandler(BaseHTTPRequestHandler):
         password = str(payload.get("password", ""))
         with connect() as database:
             user = database.execute(
-                "SELECT id, email, password_hash FROM users WHERE email = ?", (email,)
+                "SELECT id, email, password_hash, display_name, role FROM users WHERE email = ?", (email,)
             ).fetchone()
         if not user or not password_matches(password, user["password_hash"]):
             self.send_error_json(HTTPStatus.UNAUTHORIZED, "Неверный email или пароль")
             return
         token = self.create_session(user["id"])
-        self.send_json({"user": {"id": user["id"], "email": user["email"]}}, token=token)
+        self.send_json({"user": self.user_payload(user["id"], user["email"], user["display_name"], user["role"])}, token=token)
 
     def auth_logout(self) -> None:
         token = self.session_token()
@@ -216,6 +255,121 @@ class TrainerHandler(BaseHTTPRequestHandler):
             )
         self.send_json({"ok": True, "updatedAt": now})
 
+    def teacher_group_create(self) -> None:
+        user = self.require_role("teacher")
+        if not user:
+            return
+        payload = self.read_json()
+        if payload is None:
+            return
+        name = str(payload.get("name", "")).strip()
+        if not 2 <= len(name) <= 80:
+            self.send_error_json(HTTPStatus.BAD_REQUEST, "Название группы должно содержать от 2 до 80 символов")
+            return
+        with connect() as database:
+            for _ in range(10):
+                code = "".join(secrets.choice(GROUP_CODE_ALPHABET) for _ in range(6))
+                try:
+                    cursor = database.execute(
+                        "INSERT INTO study_groups(teacher_id, name, join_code, created_at) VALUES (?, ?, ?, ?)",
+                        (user["id"], name, code, int(time.time())),
+                    )
+                    break
+                except sqlite3.IntegrityError:
+                    continue
+            else:
+                self.send_error_json(HTTPStatus.INTERNAL_SERVER_ERROR, "Не удалось создать код группы")
+                return
+        self.send_json({"group": {"id": cursor.lastrowid, "name": name, "code": code}}, HTTPStatus.CREATED)
+
+    def group_join(self) -> None:
+        user = self.require_role("student")
+        if not user:
+            return
+        payload = self.read_json()
+        if payload is None:
+            return
+        code = str(payload.get("code", "")).strip().upper().replace(" ", "")
+        with connect() as database:
+            group = database.execute(
+                "SELECT id, name FROM study_groups WHERE join_code = ?", (code,)
+            ).fetchone()
+            if not group:
+                self.send_error_json(HTTPStatus.NOT_FOUND, "Группа с таким кодом не найдена")
+                return
+            database.execute(
+                "INSERT OR IGNORE INTO group_members(group_id, user_id, joined_at) VALUES (?, ?, ?)",
+                (group["id"], user["id"], int(time.time())),
+            )
+        self.send_json({"group": {"id": group["id"], "name": group["name"]}})
+
+    def student_groups(self) -> None:
+        user = self.require_role("student")
+        if not user:
+            return
+        with connect() as database:
+            rows = database.execute(
+                """
+                SELECT study_groups.id, study_groups.name, users.display_name AS teacher_name
+                FROM group_members
+                JOIN study_groups ON study_groups.id = group_members.group_id
+                JOIN users ON users.id = study_groups.teacher_id
+                WHERE group_members.user_id = ? ORDER BY study_groups.name
+                """,
+                (user["id"],),
+            ).fetchall()
+        self.send_json({"groups": [dict(row) for row in rows]})
+
+    def teacher_dashboard(self) -> None:
+        user = self.require_role("teacher")
+        if not user:
+            return
+        with connect() as database:
+            groups = database.execute(
+                "SELECT id, name, join_code, created_at FROM study_groups WHERE teacher_id = ? ORDER BY created_at DESC",
+                (user["id"],),
+            ).fetchall()
+            result = []
+            for group in groups:
+                members = database.execute(
+                    """
+                    SELECT users.id, users.display_name, users.email, user_progress.progress_json,
+                           user_progress.updated_at
+                    FROM group_members
+                    JOIN users ON users.id = group_members.user_id
+                    LEFT JOIN user_progress ON user_progress.user_id = users.id
+                    WHERE group_members.group_id = ? ORDER BY users.display_name, users.email
+                    """,
+                    (group["id"],),
+                ).fetchall()
+                students = []
+                for member in members:
+                    document = self.safe_progress(member["progress_json"])
+                    completed = [run for run in document.get("runs", []) if run.get("status") == "completed"]
+                    students.append({
+                        "id": member["id"],
+                        "name": member["display_name"] or member["email"],
+                        "email": member["email"],
+                        "completedRuns": len(completed),
+                        "completedTasks": sum(len(run.get("completedTasks", [])) for run in completed),
+                        "lastActivity": document.get("updatedAt") if member["progress_json"] else None,
+                    })
+                result.append({
+                    "id": group["id"], "name": group["name"], "code": group["join_code"],
+                    "createdAt": group["created_at"], "students": students,
+                })
+        self.send_json({"groups": result})
+
+    @staticmethod
+    def safe_progress(value: str | None) -> dict:
+        if not value:
+            return {"runs": []}
+        try:
+            parsed = json.loads(value)
+            return parsed if isinstance(parsed, dict) else {"runs": []}
+        except json.JSONDecodeError:
+            return {"runs": []}
+
     def create_session(self, user_id: int) -> str:
         token = secrets.token_urlsafe(32)
         now = int(time.time())
@@ -234,13 +388,27 @@ class TrainerHandler(BaseHTTPRequestHandler):
         with connect() as database:
             row = database.execute(
                 """
-                SELECT users.id, users.email FROM sessions
+                SELECT users.id, users.email, users.display_name, users.role FROM sessions
                 JOIN users ON users.id = sessions.user_id
                 WHERE sessions.token_hash = ? AND sessions.expires_at > ?
                 """,
                 (token_digest(token), int(time.time())),
             ).fetchone()
-        return {"id": row["id"], "email": row["email"]} if row else None
+        return self.user_payload(row["id"], row["email"], row["display_name"], row["role"]) if row else None
+
+    @staticmethod
+    def user_payload(user_id: int, email: str, display_name: str, role: str) -> dict:
+        return {"id": user_id, "email": email, "displayName": display_name, "role": role}
+
+    def require_role(self, role: str) -> dict | None:
+        user = self.current_user()
+        if not user:
+            self.send_error_json(HTTPStatus.UNAUTHORIZED, "Authentication required")
+            return None
+        if user["role"] != role:
+            self.send_error_json(HTTPStatus.FORBIDDEN, "Недостаточно прав")
+            return None
+        return user
 
     def session_token(self) -> str | None:
         cookie = SimpleCookie(self.headers.get("Cookie", ""))

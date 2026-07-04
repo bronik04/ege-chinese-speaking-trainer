@@ -180,10 +180,12 @@ h1 em { color: var(--crimson); font-weight: inherit; }
 .auth-tabs button.active { color: var(--crimson); border-bottom-color: var(--gold); }
 #authForm { display: grid; gap: 15px; }
 #authForm label { display: grid; gap: 6px; color: var(--ink-soft); font: 700 10px/1.4 ui-monospace, monospace; text-transform: uppercase; letter-spacing: .1em; }
-#authForm input { width: 100%; border: 1px solid var(--line); border-radius: 0; background: white; color: var(--ink); padding: 12px; outline: none; }
-#authForm input:focus { border-color: var(--crimson); box-shadow: 0 0 0 3px rgba(139, 26, 26, .08); }
+#authForm input, #authForm select, .join-group-form input, .create-group-form input { width: 100%; border: 1px solid var(--line); border-radius: 0; background: white; color: var(--ink); padding: 12px; outline: none; }
+#authForm input:focus, #authForm select:focus, .join-group-form input:focus, .create-group-form input:focus { border-color: var(--crimson); box-shadow: 0 0 0 3px rgba(139, 26, 26, .08); }
 .auth-message { min-height: 24px; margin: 12px 0 0; color: var(--crimson-bright); font-size: 13px; }
 .auth-user-email { margin: 12px 0 22px; color: var(--ink-soft); }
+.account-name { display: block; margin-top: 18px; color: var(--crimson-deep); font-size: 18px; }
+.role-badge { display: inline-block; margin-top: 12px; padding: 5px 8px; background: var(--gold-pale); color: var(--crimson-deep); font: 700 9px/1 ui-monospace, monospace; text-transform: uppercase; letter-spacing: .12em; }
 .account-stat { margin: 18px 0 26px; padding: 18px 0; border-block: 1px solid var(--line); display: flex; align-items: baseline; gap: 12px; }
 .account-stat b { color: var(--crimson); font: 500 50px/1 "Cormorant Garamond", Georgia, serif; }
 .account-stat span { color: var(--ink-soft); }
@@ -194,6 +196,33 @@ h1 em { color: var(--crimson); font-weight: inherit; }
 .history-item span, .history-item time { color: var(--ink-soft); font-size: 12px; }
 .history-empty { color: var(--ink-soft); padding: 30px 0; }
 .history-clear { margin-top: 22px; }
+.join-group-form, .create-group-form { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 10px; margin: 20px 0; }
+.join-group-form label, .create-group-form label { display: grid; gap: 6px; color: var(--ink-soft); font: 700 10px/1.4 ui-monospace, monospace; text-transform: uppercase; letter-spacing: .1em; }
+.join-group-form input { text-transform: uppercase; letter-spacing: .18em; }
+.student-groups { display: grid; gap: 8px; margin-bottom: 24px; }
+.mini-heading { margin: 2px 0 4px; color: var(--ink-soft); font: 700 9px/1 ui-monospace, monospace; text-transform: uppercase; letter-spacing: .12em; }
+.student-group { display: flex; justify-content: space-between; gap: 14px; padding: 10px 0; border-top: 1px solid var(--line); }
+.student-group span, .student-groups-empty { color: var(--ink-soft); font-size: 12px; }
+.teacher-dialog { width: min(980px, 100%); }
+.teacher-dialog > h2 { font-size: clamp(34px, 5vw, 50px); }
+.teacher-groups { min-width: 0; display: grid; gap: 18px; margin-top: 18px; }
+.teacher-group-card { width: 100%; min-width: 0; overflow: hidden; border: 1px solid var(--line); background: white; }
+.teacher-group-card > header { min-height: auto; padding: 18px 20px; display: flex; align-items: center; justify-content: space-between; gap: 20px; border-bottom: 1px solid var(--line); }
+.teacher-group-card h3 { margin: 0 0 3px; color: var(--crimson-deep); font: 600 25px/1.1 "Cormorant Garamond", Georgia, serif; }
+.teacher-group-card header span, .group-empty, .teacher-empty span { color: var(--ink-soft); font-size: 12px; }
+.group-code { border: 1px solid var(--gold); background: var(--gold-pale); padding: 8px 12px; color: var(--crimson-deep); }
+.group-code small, .group-code b { display: block; }
+.group-code small { color: var(--ink-soft); font: 700 8px/1 ui-monospace, monospace; text-transform: uppercase; letter-spacing: .1em; }
+.group-code b { margin-top: 5px; font: 700 16px/1 ui-monospace, monospace; letter-spacing: .14em; }
+.student-table { width: 100%; min-width: 0; }
+.student-table-head, .student-row { display: grid; grid-template-columns: minmax(190px, 1fr) 95px 75px 150px; align-items: center; gap: 12px; padding: 11px 20px; }
+.student-table-head { color: var(--ink-soft); background: var(--cream); font: 700 8px/1.2 ui-monospace, monospace; text-transform: uppercase; letter-spacing: .08em; }
+.student-row { border-top: 1px solid var(--line); }
+.student-row span b, .student-row span small { display: block; }
+.student-row span small, .student-row time { color: var(--ink-soft); font-size: 11px; }
+.student-row strong { color: var(--crimson); font-size: 17px; }
+.group-empty, .teacher-empty { padding: 24px 20px; }
+.teacher-empty { display: grid; gap: 5px; border: 1px dashed var(--line); }
 body.modal-open { overflow: hidden; }
 
 @media (max-width: 1020px) {
@@ -235,4 +264,8 @@ body.modal-open { overflow: hidden; }
   .timer-ring { width: 176px; height: 176px; }
   .result-screen { padding-inline: 0; }
   .auth-dialog { padding: 30px 22px; }
+  .create-group-form, .join-group-form { grid-template-columns: 1fr; align-items: stretch; }
+  .teacher-group-card > header { align-items: flex-start; }
+  .student-table { overflow-x: auto; }
+  .student-table-head, .student-row { min-width: 650px; }
 }
