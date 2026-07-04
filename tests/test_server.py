@@ -29,6 +29,8 @@ class ApiFlowTest(unittest.TestCase):
         server.DATA_DIR = Path(cls.temp_dir.name)
         server.DB_PATH = server.DATA_DIR / "trainer.sqlite3"
         server.AUDIO_DIR = server.DATA_DIR / "audio"
+        cls.original_validate_duration = server.validate_duration
+        server.validate_duration = lambda path, task: 1.0
         server.init_database()
         cls.httpd = server.ThreadingHTTPServer(("127.0.0.1", 0), server.TrainerHandler)
         cls.httpd.daemon_threads = True
@@ -42,6 +44,7 @@ class ApiFlowTest(unittest.TestCase):
         cls.httpd.shutdown()
         cls.httpd.server_close()
         cls.thread.join(timeout=2)
+        server.validate_duration = cls.original_validate_duration
         cls.temp_dir.cleanup()
 
     def request(self, method, path, payload=None, cookie=None, include_origin=True):
@@ -174,6 +177,18 @@ class ApiFlowTest(unittest.TestCase):
         status, assignments, _ = self.request("GET", "/api/student/assignments", cookie=student_cookie)
         self.assertEqual(status, 200)
         self.assertEqual(assignments["assignments"][0]["id"], assignment_id)
+        status, teacher_assignments, _ = self.request("GET", "/api/teacher/assignments", cookie=teacher_cookie)
+        self.assertEqual(status, 200)
+        self.assertEqual(teacher_assignments["assignments"][0]["id"], assignment_id)
+        status, _, _ = self.request(
+            "PUT", f"/api/teacher/assignments/{assignment_id}", {"title": "Обновлённый вариант", "dueAt": None}, teacher_cookie
+        )
+        self.assertEqual(status, 200)
+        status, repeated, _ = self.request(
+            "POST", f"/api/teacher/assignments/{assignment_id}/resend", {}, teacher_cookie
+        )
+        self.assertEqual(status, 201)
+        self.assertNotEqual(repeated["assignment"]["id"], assignment_id)
 
         status, submission_payload, _ = self.request(
             "POST", f"/api/assignments/{assignment_id}/submissions",
@@ -194,6 +209,15 @@ class ApiFlowTest(unittest.TestCase):
         status, teacher_submissions, _ = self.request("GET", "/api/teacher/submissions", cookie=teacher_cookie)
         self.assertEqual(status, 200)
         self.assertEqual(teacher_submissions["submissions"][0]["recordings"][0]["id"], recording_id)
+        status, history, _ = self.request(
+            "GET", f"/api/teacher/submissions/{submission_id}", cookie=teacher_cookie
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(history["attempts"][0]["id"], submission_id)
+        status, csv_data, csv_type = self.request_bytes("/api/teacher/export.csv?status=submitted", teacher_cookie)
+        self.assertEqual(status, 200)
+        self.assertIn("text/csv", csv_type)
+        self.assertIn("Обновлённый вариант".encode(), csv_data)
         review_scores = {
             "1": {"question1": 1, "question2": 1, "question3": 1, "question4": 1, "question5": 1},
             "2": {"content": 3, "organization": 2, "language": 2},
@@ -243,7 +267,7 @@ class ApiFlowTest(unittest.TestCase):
     def test_migrations_are_recorded(self):
         with server.connect() as database:
             versions = [row["version"] for row in database.execute("SELECT version FROM schema_migrations ORDER BY version")]
-        self.assertEqual(versions, [1, 2, 3])
+        self.assertEqual(versions, [1, 2, 3, 4])
 
     def test_mutation_without_origin_is_rejected(self):
         status, payload, _ = self.request(

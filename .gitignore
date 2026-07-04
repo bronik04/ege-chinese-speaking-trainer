@@ -5,3 +5,5 @@ var/
 node_modules/
 .coverage
 htmlcov/
+.env
+backups/

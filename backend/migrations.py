@@ -143,10 +143,22 @@ def migration_003_account_security(database: sqlite3.Connection) -> None:
     )
 
 
+def migration_004_assignment_delivery(database: sqlite3.Connection) -> None:
+    columns = {row["name"] for row in database.execute("PRAGMA table_info(assignments)")}
+    if "updated_at" not in columns:
+        database.execute("ALTER TABLE assignments ADD COLUMN updated_at INTEGER")
+    if "source_assignment_id" not in columns:
+        database.execute("ALTER TABLE assignments ADD COLUMN source_assignment_id INTEGER REFERENCES assignments(id)")
+    recording_columns = {row["name"] for row in database.execute("PRAGMA table_info(recordings)")}
+    if "duration_seconds" not in recording_columns:
+        database.execute("ALTER TABLE recordings ADD COLUMN duration_seconds REAL")
+
+
 MIGRATIONS = [
     (1, migration_001_core),
     (2, migration_002_assignments_and_reviews),
     (3, migration_003_account_security),
+    (4, migration_004_assignment_delivery),
 ]
 
 

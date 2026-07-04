@@ -215,10 +215,21 @@
           <button class="primary-btn" id="createAssignmentBtn" type="submit">Назначить</button>
         </form>
       </section>
+      <section class="teacher-assignment-section">
+        <div><p class="eyebrow">Назначения</p><h2>Выданные задания</h2></div>
+        <div class="teacher-assignments" id="teacherAssignments"></div>
+      </section>
       <p class="auth-message" id="teacherMessage" aria-live="polite"></p>
       <div class="teacher-groups" id="teacherGroups"></div>
       <section class="teacher-review-section">
-        <div><p class="eyebrow">Проверка</p><h2>Работы учеников</h2></div>
+        <div class="review-heading"><div><p class="eyebrow">Проверка</p><h2>Работы учеников</h2></div><b class="queue-count" id="reviewQueueCount">0 на проверке</b></div>
+        <form class="submission-filters" id="submissionFilters">
+          <label>Группа<select id="submissionGroupFilter"><option value="">Все группы</option></select></label>
+          <label>Ученик<input id="submissionStudentFilter" type="search" placeholder="Имя или email"></label>
+          <label>Статус<select id="submissionStatusFilter"><option value="">Все</option><option value="submitted">На проверке</option><option value="graded">Проверено</option></select></label>
+          <button class="secondary-btn" type="submit">Применить</button>
+        </form>
+        <div class="export-actions"><a id="exportCsvBtn" href="/api/teacher/export.csv">CSV</a><a id="exportPdfBtn" href="/api/teacher/export.pdf">PDF</a></div>
         <p class="auth-message" id="teacherReviewMessage" aria-live="polite"></p>
         <div class="teacher-submissions" id="teacherSubmissions"></div>
       </section>

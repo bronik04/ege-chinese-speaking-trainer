@@ -21,6 +21,7 @@ export default [{
       fetch: "readonly",
       localStorage: "readonly",
       navigator: "readonly",
+      prompt: "readonly",
       setInterval: "readonly",
       setTimeout: "readonly",
       window: "readonly"

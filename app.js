@@ -46,6 +46,7 @@ let syncTimer = null;
 let studentAssignments = [];
 let activeAssignment = null;
 let teacherGroupsData = [];
+let teacherAssignmentsData = [];
 let passwordResetToken = new URLSearchParams(window.location.search).get("reset");
 
 const taskData = (task) => variant.tasks[String(task)];
@@ -358,7 +359,7 @@ async function handleAccountLinks() {
 async function refreshAccountData() {
   if (!authUser) return;
   if (authUser.role === "teacher") {
-    await Promise.all([loadTeacherDashboard(), loadTeacherSubmissions()]);
+    await Promise.all([loadTeacherDashboard(), loadTeacherSubmissions(), loadTeacherAssignments()]);
   } else {
     await Promise.all([loadStudentGroups(), loadStudentAssignments()]);
   }
@@ -432,6 +433,7 @@ function renderAssignmentOptions() {
   $("assignmentGroup").innerHTML = markup.groups;
   $("assignmentVariant").innerHTML = markup.variants;
   $("createAssignmentBtn").disabled = !teacherGroupsData.length;
+  $("submissionGroupFilter").innerHTML = '<option value="">Все группы</option>' + teacherGroupsData.map(group => `<option value="${group.id}">${escapeHtml(group.name)}</option>`).join("");
 }
 
 async function createAssignment(event) {
@@ -448,6 +450,7 @@ async function createAssignment(event) {
     $("createAssignmentForm").reset();
     renderAssignmentOptions();
     toast("Задание назначено группе");
+    await loadTeacherAssignments();
   } catch (error) {
     $("teacherMessage").textContent = error.message;
   }
@@ -456,11 +459,55 @@ async function createAssignment(event) {
 async function loadTeacherSubmissions() {
   if (authUser?.role !== "teacher") return;
   try {
-    const payload = await api("/api/teacher/submissions");
+    const params = new URLSearchParams({ group: $("submissionGroupFilter").value, student: $("submissionStudentFilter").value.trim(), status: $("submissionStatusFilter").value });
+    const payload = await api(`/api/teacher/submissions?${params}`);
     renderTeacherSubmissions(payload.submissions);
+    $("reviewQueueCount").textContent = `${payload.submissions.filter(item => item.status === "submitted").length} на проверке`;
+    $("exportCsvBtn").href = `/api/teacher/export.csv?${params}`;
+    $("exportPdfBtn").href = `/api/teacher/export.pdf?${params}`;
   } catch (error) {
     $("teacherReviewMessage").textContent = error.message;
   }
+}
+
+async function loadTeacherAssignments() {
+  if (authUser?.role !== "teacher") return;
+  const payload = await api("/api/teacher/assignments");
+  teacherAssignmentsData = payload.assignments;
+  $("teacherAssignments").innerHTML = teacherAssignmentsData.length ? teacherAssignmentsData.map(item => `
+    <article class="teacher-assignment-item"><div><b>${escapeHtml(item.title)}</b><span>${escapeHtml(item.groupName)} · ${escapeHtml(item.variantId)} · задания ${item.tasks.join(", ")} · работ ${item.submissionCount}</span></div>
+    <div class="teacher-assignment-actions"><button type="button" data-edit-assignment="${item.id}">Изменить</button><button type="button" data-resend-assignment="${item.id}">Выдать повторно</button></div></article>`).join("") : '<p class="teacher-empty">Назначений пока нет.</p>';
+}
+
+async function handleAssignmentAction(event) {
+  const editId = Number(event.target.dataset.editAssignment || 0);
+  const resendId = Number(event.target.dataset.resendAssignment || 0);
+  if (editId) {
+    const item = teacherAssignmentsData.find(entry => entry.id === editId);
+    const title = prompt("Новое название задания", item.title);
+    if (!title) return;
+    await api(`/api/teacher/assignments/${editId}`, { method: "PUT", body: JSON.stringify({ title, dueAt: item.dueAt }) });
+    toast("Задание обновлено");
+  } else if (resendId) {
+    if (!confirm("Создать новое назначение на основе этого задания?")) return;
+    await api(`/api/teacher/assignments/${resendId}/resend`, { method: "POST", body: "{}" });
+    toast("Повторное задание создано");
+  } else return;
+  await loadTeacherAssignments();
+}
+
+async function showAttemptHistory(event) {
+  const button = event.target.closest("[data-attempt-history]");
+  if (!button) return;
+  const payload = await api(`/api/teacher/submissions/${button.dataset.attemptHistory}`);
+  const card = button.closest(".submission-card");
+  let panel = card.querySelector(".attempt-history");
+  if (!panel) {
+    panel = document.createElement("div");
+    panel.className = "attempt-history";
+    card.append(panel);
+  }
+  panel.textContent = payload.attempts.map(item => `Попытка ${item.attempt}: ${item.status === "graded" ? `${item.review.total}/${item.review.maximum}` : "на проверке"}`).join(" · ");
 }
 
 function renderTeacherSubmissions(submissions) {
@@ -911,7 +958,10 @@ $("joinGroupForm").addEventListener("submit", joinGroup);
 $("createGroupForm").addEventListener("submit", createGroup);
 $("createAssignmentForm").addEventListener("submit", createAssignment);
 $("teacherSubmissions").addEventListener("submit", submitReview);
-$("teacherCabinetBtn").addEventListener("click", async () => { await Promise.all([loadTeacherDashboard(), loadTeacherSubmissions()]); closeModal($("authModal")); openModal($("teacherModal")); });
+$("teacherSubmissions").addEventListener("click", showAttemptHistory);
+$("teacherAssignments").addEventListener("click", event => handleAssignmentAction(event).catch(error => toast(error.message)));
+$("submissionFilters").addEventListener("submit", event => { event.preventDefault(); loadTeacherSubmissions(); });
+$("teacherCabinetBtn").addEventListener("click", async () => { await Promise.all([loadTeacherDashboard(), loadTeacherSubmissions(), loadTeacherAssignments()]); closeModal($("authModal")); openModal($("teacherModal")); });
 $("logoutBtn").addEventListener("click", logout);
 [$("authModal"), $("progressModal"), $("teacherModal")].forEach(modal => modal.addEventListener("click", event => {
   if (event.target === modal) closeModal(modal);
