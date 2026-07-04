@@ -1,3 +1,10 @@
+import { api, uploadAudio } from "./js/api.js";
+import {
+  PROGRESS_ACCOUNT_PREFIX, PROGRESS_GUEST_KEY, createRunId, defaultProgress,
+  escapeHtml, formatHistoryDate, loadLocalProgress, mergeProgress,
+} from "./js/progress.js";
+import { collectReviewScores, reviewFields } from "./js/review.js";
+
 const $ = (id) => document.getElementById(id);
 
 const screens = {
@@ -25,6 +32,14 @@ let chunks = [];
 let recordings = [];
 let soundEnabled = true;
 let audioContext = null;
+let progressStorageKey = PROGRESS_GUEST_KEY;
+let progress = loadLocalProgress(progressStorageKey);
+let authUser = null;
+let authMode = "login";
+let syncTimer = null;
+let studentAssignments = [];
+let activeAssignment = null;
+let teacherGroupsData = [];
 
 const taskData = (task) => variant.tasks[String(task)];
 
@@ -46,6 +61,378 @@ function toast(message) {
   toast.timer = setTimeout(() => $("toast").classList.add("hidden"), 3000);
 }
 
+function switchProgressScope(user, { adoptGuest = false } = {}) {
+  const nextKey = user ? `${PROGRESS_ACCOUNT_PREFIX}${user.id}` : PROGRESS_GUEST_KEY;
+  if (nextKey === progressStorageKey) return;
+  const hasScopedProgress = localStorage.getItem(nextKey) !== null;
+  if (user && adoptGuest && !hasScopedProgress && progressStorageKey === PROGRESS_GUEST_KEY) {
+    const guestProgress = loadLocalProgress(PROGRESS_GUEST_KEY);
+    const shouldTransfer = guestProgress.runs.length > 0 || Boolean(guestProgress.activeRun);
+    progress = shouldTransfer ? guestProgress : defaultProgress();
+    if (shouldTransfer) localStorage.removeItem(PROGRESS_GUEST_KEY);
+  } else {
+    progress = loadLocalProgress(nextKey);
+  }
+  progressStorageKey = nextKey;
+  localStorage.setItem(progressStorageKey, JSON.stringify(progress));
+}
+
+function saveProgressLocal(sync = true) {
+  progress.updatedAt = new Date().toISOString();
+  progress.runs = progress.runs.slice(0, 100);
+  localStorage.setItem(progressStorageKey, JSON.stringify(progress));
+  renderProgress();
+  if (sync && authUser) scheduleProgressSync();
+}
+
+function renderProgress() {
+  const completed = progress.runs.filter(run => run.status === "completed");
+  const tasks = completed.reduce((sum, run) => sum + (run.completedTasks?.length || 0), 0);
+  const latest = progress.runs[0];
+  $("progressSummary").textContent = completed.length ? `${completed.length} тренировок · ${tasks} заданий` : "Тренировок пока нет";
+  $("progressSyncStatus").textContent = authUser
+    ? `Синхронизировано · ${authUser.email}`
+    : latest ? `Последняя: ${formatHistoryDate(latest.completedAt || latest.startedAt)}` : "Сохраняется в этом браузере";
+  $("accountRuns").textContent = completed.length;
+  renderHistory();
+}
+
+function renderHistory() {
+  if (!progress.runs.length) {
+    $("historyList").innerHTML = '<p class="history-empty">Здесь появятся завершённые и прерванные тренировки.</p>';
+    return;
+  }
+  $("historyList").innerHTML = progress.runs.map(run => {
+    const status = run.status === "completed" ? "Завершено" : "Прервано";
+    const taskText = run.mode === "exam" ? "Полный экзамен" : `Задание ${run.tasks?.[0] || ""}`;
+    const variantName = escapeHtml(run.variantLabel || run.variantId || "Вариант");
+    return `<article class="history-item"><div class="history-copy"><b>${variantName}</b><span>${escapeHtml(taskText)} · ${status}</span></div><time>${escapeHtml(formatHistoryDate(run.completedAt || run.startedAt))}</time></article>`;
+  }).join("");
+}
+
+function markTaskCompleted(task) {
+  if (!progress.activeRun) return;
+  const completed = new Set(progress.activeRun.completedTasks || []);
+  completed.add(task);
+  progress.activeRun.completedTasks = [...completed];
+  progress.activeRun.currentTask = task;
+  saveProgressLocal();
+}
+
+function finalizeActiveRun(status) {
+  if (!progress.activeRun) return;
+  progress.runs.unshift({
+    ...progress.activeRun,
+    status,
+    completedAt: new Date().toISOString(),
+    recordingsCount: recordings.length
+  });
+  progress.activeRun = null;
+  saveProgressLocal();
+}
+
+function recoverInterruptedRun() {
+  if (!progress.activeRun) return;
+  progress.runs.unshift({ ...progress.activeRun, status: "interrupted", completedAt: new Date().toISOString(), recordingsCount: 0 });
+  progress.activeRun = null;
+  saveProgressLocal(false);
+}
+
+async function initAuth() {
+  try {
+    const payload = await api("/api/auth/me");
+    authUser = payload.user;
+    switchProgressScope(authUser);
+    renderAuth();
+  } catch (error) {
+    authUser = null;
+    switchProgressScope(null);
+    renderAuth();
+    if (error.status !== 401) $("progressSyncStatus").textContent = "Сервер недоступен · локальное сохранение";
+    return;
+  }
+  try { await syncProgress(); } catch (_) { $("progressSyncStatus").textContent = "Нет связи · сохранено в браузере"; }
+  try { await refreshAccountData(); } catch (_) {}
+}
+
+function renderAuth() {
+  $("authButton").classList.toggle("signed-in", Boolean(authUser));
+  $("authButtonText").textContent = authUser ? authUser.email : "Войти";
+  $("authGuestView").classList.toggle("hidden", Boolean(authUser));
+  $("authUserView").classList.toggle("hidden", !authUser);
+  $("authUserEmail").textContent = authUser?.email || "";
+  $("authUserName").textContent = authUser?.displayName || "";
+  const isTeacher = authUser?.role === "teacher";
+  $("accountRole").textContent = isTeacher ? "Преподаватель" : "Ученик";
+  $("accountTitle").textContent = isTeacher ? "Ваши ученики и группы" : "Прогресс синхронизирован";
+  $("studentAccountTools").classList.toggle("hidden", !authUser || isTeacher);
+  $("teacherCabinetBtn").classList.toggle("hidden", !isTeacher);
+  renderProgress();
+}
+
+function setAuthMode(nextMode) {
+  authMode = nextMode;
+  $("loginTab").classList.toggle("active", authMode === "login");
+  $("registerTab").classList.toggle("active", authMode === "register");
+  $("authSubmitBtn").textContent = authMode === "login" ? "Войти" : "Создать аккаунт";
+  $("authPassword").autocomplete = authMode === "login" ? "current-password" : "new-password";
+  document.querySelectorAll(".register-only").forEach(element => element.classList.toggle("hidden", authMode !== "register"));
+  $("authName").required = authMode === "register";
+  $("authMessage").textContent = "";
+}
+
+function openModal(modal) {
+  modal.classList.remove("hidden");
+  document.body.classList.add("modal-open");
+}
+
+function closeModal(modal) {
+  modal.classList.add("hidden");
+  if ($("authModal").classList.contains("hidden") && $("progressModal").classList.contains("hidden") && $("teacherModal").classList.contains("hidden")) document.body.classList.remove("modal-open");
+}
+
+async function submitAuth(event) {
+  event.preventDefault();
+  const email = $("authEmail").value.trim();
+  const password = $("authPassword").value;
+  const displayName = $("authName").value.trim();
+  const role = $("authRole").value;
+  $("authSubmitBtn").disabled = true;
+  $("authMessage").textContent = "";
+  try {
+    const payload = await api(`/api/auth/${authMode}`, { method: "POST", body: JSON.stringify({ email, password, displayName, role }) });
+    authUser = payload.user;
+    switchProgressScope(authUser, { adoptGuest: authMode === "register" });
+    renderAuth();
+    try { await syncProgress(); } catch (_) { $("progressSyncStatus").textContent = "Нет связи · сохранено в браузере"; }
+    try { await refreshAccountData(); } catch (_) {}
+    closeModal($("authModal"));
+    toast(authMode === "login" ? "Вход выполнен" : "Аккаунт создан");
+    $("authForm").reset();
+  } catch (error) {
+    $("authMessage").textContent = error.message === "Failed to fetch" ? "Сервер недоступен. Запустите python3 server.py" : error.message;
+  } finally {
+    $("authSubmitBtn").disabled = false;
+  }
+}
+
+async function logout() {
+  try { await api("/api/auth/logout", { method: "POST", body: "{}" }); } catch (_) {}
+  clearTimeout(syncTimer);
+  authUser = null;
+  switchProgressScope(null);
+  renderAuth();
+  closeModal($("authModal"));
+  toast("Вы вышли из аккаунта. Локальная история сохранена");
+}
+
+async function refreshAccountData() {
+  if (!authUser) return;
+  if (authUser.role === "teacher") {
+    await Promise.all([loadTeacherDashboard(), loadTeacherSubmissions()]);
+  } else {
+    await Promise.all([loadStudentGroups(), loadStudentAssignments()]);
+  }
+}
+
+async function loadStudentGroups() {
+  if (authUser?.role !== "student") return;
+  try {
+    const payload = await api("/api/student/groups");
+    $("studentGroups").innerHTML = payload.groups.length
+      ? `<p class="mini-heading">Мои группы</p>${payload.groups.map(group => `<div class="student-group"><b>${escapeHtml(group.name)}</b><span>${escapeHtml(group.teacher_name || "Преподаватель")}</span></div>`).join("")}`
+      : '<p class="student-groups-empty">Вы пока не состоите в учебной группе.</p>';
+  } catch (_) {
+    $("studentGroups").innerHTML = "";
+  }
+}
+
+async function joinGroup(event) {
+  event.preventDefault();
+  const code = $("joinGroupCode").value.trim().toUpperCase();
+  try {
+    const payload = await api("/api/groups/join", { method: "POST", body: JSON.stringify({ code }) });
+    $("joinGroupForm").reset();
+    await Promise.all([loadStudentGroups(), loadStudentAssignments()]);
+    toast(`Вы вступили в группу «${payload.group.name}»`);
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
+async function loadTeacherDashboard() {
+  if (authUser?.role !== "teacher") return;
+  try {
+    const payload = await api("/api/teacher/dashboard");
+    teacherGroupsData = payload.groups;
+    renderTeacherGroups(payload.groups);
+    renderAssignmentOptions();
+  } catch (error) {
+    $("teacherMessage").textContent = error.message;
+  }
+}
+
+async function loadStudentAssignments() {
+  if (authUser?.role !== "student") {
+    $("studentAssignmentsPanel").classList.add("hidden");
+    return;
+  }
+  try {
+    const payload = await api("/api/student/assignments");
+    studentAssignments = payload.assignments;
+    $("studentAssignmentsPanel").classList.toggle("hidden", !studentAssignments.length);
+    $("studentAssignmentsList").innerHTML = studentAssignments.map(assignment => {
+      const latest = assignment.latest;
+      const status = latest?.status === "graded"
+        ? `Проверено: ${latest.total_score}/${latest.max_score}`
+        : latest ? "Отправлено на проверку" : "Не выполнено";
+      const due = assignment.dueAt ? ` · до ${formatHistoryDate(assignment.dueAt * 1000)}` : "";
+      return `<article class="assignment-card"><div><p class="eyebrow">${escapeHtml(assignment.groupName)}</p><h3>${escapeHtml(assignment.title)}</h3><span>Задания ${assignment.tasks.join(", ")}${due}</span><small>${status}</small>${latest?.comment ? `<blockquote>${escapeHtml(latest.comment)}</blockquote>` : ""}</div><button class="secondary-btn" type="button" data-start-assignment="${assignment.id}">${latest ? "Новая попытка" : "Начать"}</button></article>`;
+    }).join("");
+    document.querySelectorAll("[data-start-assignment]").forEach(button => button.addEventListener("click", () => startAssignedRun(Number(button.dataset.startAssignment))));
+  } catch (_) {
+    $("studentAssignmentsPanel").classList.add("hidden");
+  }
+}
+
+async function startAssignedRun(assignmentId) {
+  const assignment = studentAssignments.find(item => item.id === assignmentId);
+  if (!assignment) return;
+  await loadVariant(assignment.variantId);
+  if (variant?.id !== assignment.variantId) {
+    toast("Не удалось загрузить вариант задания");
+    return;
+  }
+  $("variantSelect").value = assignment.variantId;
+  startRun(assignment.tasks.length === 3 ? "exam" : String(assignment.tasks[0]), assignment);
+}
+
+function renderAssignmentOptions() {
+  $("assignmentGroup").innerHTML = teacherGroupsData.length
+    ? teacherGroupsData.map(group => `<option value="${group.id}">${escapeHtml(group.name)}</option>`).join("")
+    : '<option value="">Сначала создайте группу</option>';
+  $("assignmentVariant").innerHTML = variantIndex.map(item => `<option value="${item.id}">${escapeHtml(item.label)}</option>`).join("");
+  $("createAssignmentBtn").disabled = !teacherGroupsData.length;
+}
+
+async function createAssignment(event) {
+  event.preventDefault();
+  const selected = $("assignmentTasks").value;
+  const tasks = selected === "exam" ? [1, 2, 3] : [Number(selected)];
+  const dueValue = $("assignmentDue").value;
+  const dueAt = dueValue ? Math.floor(new Date(dueValue).getTime() / 1000) : null;
+  try {
+    await api("/api/teacher/assignments", { method: "POST", body: JSON.stringify({
+      groupId: Number($("assignmentGroup").value), title: $("assignmentTitle").value.trim(),
+      variantId: $("assignmentVariant").value, tasks, dueAt,
+    }) });
+    $("createAssignmentForm").reset();
+    renderAssignmentOptions();
+    toast("Задание назначено группе");
+  } catch (error) {
+    $("teacherMessage").textContent = error.message;
+  }
+}
+
+async function loadTeacherSubmissions() {
+  if (authUser?.role !== "teacher") return;
+  try {
+    const payload = await api("/api/teacher/submissions");
+    renderTeacherSubmissions(payload.submissions);
+  } catch (error) {
+    $("teacherReviewMessage").textContent = error.message;
+  }
+}
+
+function renderTeacherSubmissions(submissions) {
+  $("teacherSubmissions").innerHTML = submissions.length ? submissions.map(submission => `
+    <article class="submission-card">
+      <header><div><p class="eyebrow">${escapeHtml(submission.groupName)} · попытка ${submission.attempt}</p><h3>${escapeHtml(submission.studentName)}</h3><span>${escapeHtml(submission.title)}</span></div><b class="submission-status ${submission.status}">${submission.status === "graded" ? `${submission.review.total}/${submission.review.maximum}` : "На проверке"}</b></header>
+      <div class="submission-audio">${submission.recordings.length ? submission.recordings.map(recording => `<label><span>${escapeHtml(recording.label)}</span><audio controls preload="none" src="${recording.url}"></audio></label>`).join("") : '<p>Аудиозаписи отсутствуют.</p>'}</div>
+      <form class="review-form" data-review-submission="${submission.id}" data-review-tasks="${submission.tasks.join(",")}">
+        ${reviewFields(submission.tasks, submission.review?.scores)}
+        <label class="review-comment">Комментарий<textarea name="comment" maxlength="3000" rows="3">${escapeHtml(submission.review?.comment || "")}</textarea></label>
+        <button class="primary-btn" type="submit">${submission.review ? "Обновить оценку" : "Сохранить оценку"}</button>
+      </form>
+    </article>`).join("") : '<div class="teacher-empty"><b>Работ на проверку пока нет</b><span>После выполнения назначений здесь появятся аудиозаписи учеников.</span></div>';
+}
+
+async function submitReview(event) {
+  const form = event.target.closest("[data-review-submission]");
+  if (!form) return;
+  event.preventDefault();
+  const tasks = form.dataset.reviewTasks.split(",").map(Number);
+  try {
+    const payload = await api(`/api/submissions/${form.dataset.reviewSubmission}/review`, {
+      method: "POST", body: JSON.stringify({ scores: collectReviewScores(form, tasks), comment: form.elements.comment.value.trim() })
+    });
+    toast(`Оценка сохранена: ${payload.review.total}/${payload.review.maximum}`);
+    await loadTeacherSubmissions();
+  } catch (error) {
+    $("teacherReviewMessage").textContent = error.message;
+  }
+}
+
+function renderTeacherGroups(groups) {
+  if (!groups.length) {
+    $("teacherGroups").innerHTML = '<div class="teacher-empty"><b>Групп пока нет</b><span>Создайте первую группу — здесь появится статистика учеников.</span></div>';
+    return;
+  }
+  $("teacherGroups").innerHTML = groups.map(group => `
+    <article class="teacher-group-card">
+      <header><div><h3>${escapeHtml(group.name)}</h3><span>${group.students.length} ${group.students.length === 1 ? "ученик" : "учеников"}</span></div><button class="group-code" type="button" data-copy-code="${escapeHtml(group.code)}" title="Скопировать код"><small>Код группы</small><b>${escapeHtml(group.code)}</b></button></header>
+      ${group.students.length ? `<div class="student-table"><div class="student-table-head"><span>Ученик</span><span>Тренировки</span><span>Задания</span><span>Последняя активность</span></div>${group.students.map(student => `<div class="student-row"><span><b>${escapeHtml(student.name)}</b><small>${escapeHtml(student.email)}</small></span><strong>${student.completedRuns}</strong><strong>${student.completedTasks}</strong><time>${student.lastActivity ? formatHistoryDate(student.lastActivity) : "—"}</time></div>`).join("")}</div>` : '<p class="group-empty">Передайте код ученикам — после подключения они появятся здесь.</p>'}
+    </article>`).join("");
+  document.querySelectorAll("[data-copy-code]").forEach(button => button.addEventListener("click", async () => {
+    await navigator.clipboard.writeText(button.dataset.copyCode);
+    toast("Код группы скопирован");
+  }));
+}
+
+async function createGroup(event) {
+  event.preventDefault();
+  $("teacherMessage").textContent = "";
+  try {
+    const payload = await api("/api/teacher/groups", { method: "POST", body: JSON.stringify({ name: $("groupName").value.trim() }) });
+    $("createGroupForm").reset();
+    await loadTeacherDashboard();
+    toast(`Группа «${payload.group.name}» создана`);
+  } catch (error) {
+    $("teacherMessage").textContent = error.message;
+  }
+}
+
+function scheduleProgressSync() {
+  clearTimeout(syncTimer);
+  $("progressSyncStatus").textContent = "Сохраняем на сервере…";
+  syncTimer = setTimeout(() => pushProgress().catch(() => {
+    $("progressSyncStatus").textContent = "Нет связи · сохранено в браузере";
+  }), 350);
+}
+
+async function pushProgress() {
+  if (!authUser) return;
+  await api("/api/progress", { method: "PUT", body: JSON.stringify({ progress }) });
+  $("progressSyncStatus").textContent = `Синхронизировано · ${authUser.email}`;
+}
+
+async function syncProgress() {
+  if (!authUser) return;
+  const payload = await api("/api/progress");
+  progress = mergeProgress(progress, payload.progress);
+  saveProgressLocal(false);
+  await pushProgress();
+}
+
+function clearHistory() {
+  if (!confirm("Удалить всю историю тренировок? Это действие нельзя отменить.")) return;
+  progress.runs = [];
+  progress.activeRun = null;
+  saveProgressLocal();
+  closeModal($("progressModal"));
+  toast("История очищена");
+}
+
 function setStartButtonsEnabled(enabled) {
   document.querySelectorAll("[data-start]").forEach(button => { button.disabled = !enabled; });
 }
@@ -57,7 +444,13 @@ async function initVariants() {
     variantIndex = await response.json();
     $("variantCount").textContent = variantIndex.length;
     $("variantSelect").innerHTML = variantIndex.map(item => `<option value="${item.id}">${item.label}</option>`).join("");
-    await loadVariant(variantIndex[0].id);
+    const preferredVariant = variantIndex.some(item => item.id === progress.settings.lastVariant)
+      ? progress.settings.lastVariant
+      : variantIndex[0].id;
+    $("variantSelect").value = preferredVariant;
+    $("fastMode").checked = Boolean(progress.settings.fastMode);
+    await loadVariant(preferredVariant);
+    if (authUser?.role === "teacher") renderAssignmentOptions();
   } catch (error) {
     $("variantSource").textContent = "Не удалось загрузить задания";
     toast("Запустите проект через локальный сервер");
@@ -163,7 +556,7 @@ function renderTask() {
   const isLocked = phase === "idle";
   $("taskBadge").textContent = `Задание ${task}`;
   $("phaseCaption").textContent = phase === "answer" ? "Ответ" : phase === "prep" ? "Подготовка" : "До начала";
-  $("modeLabel").textContent = `${variant.label} · ${mode === "exam" ? "экзамен" : "тренировка"}`;
+  $("modeLabel").textContent = `${variant.label} · ${mode === "exam" ? "экзамен" : mode === "assignment" ? "задание преподавателя" : "тренировка"}`;
   $("taskContent").innerHTML = taskMarkup(task);
   $("taskPaper").classList.toggle("locked", isLocked);
   $("taskLock").setAttribute("aria-hidden", String(!isLocked));
@@ -176,10 +569,11 @@ function renderTask() {
   renderSteps();
 }
 
-function startRun(startMode) {
+function startRun(startMode, assignment = null) {
   if (!variant) return;
-  mode = startMode === "exam" ? "exam" : "practice";
-  taskQueue = mode === "exam" ? [1, 2, 3] : [Number(startMode)];
+  activeAssignment = assignment;
+  mode = assignment ? "assignment" : startMode === "exam" ? "exam" : "practice";
+  taskQueue = assignment ? [...assignment.tasks] : mode === "exam" ? [1, 2, 3] : [Number(startMode)];
   taskIndex = 0;
   questionIndex = 0;
   selectedPhoto = 1;
@@ -188,6 +582,20 @@ function startRun(startMode) {
   recordings = [];
   phase = "idle";
   clearTimer();
+  progress.activeRun = {
+    id: createRunId(),
+    variantId: variant.id,
+    variantLabel: variant.label,
+    mode,
+    tasks: [...taskQueue],
+    completedTasks: [],
+    currentTask: taskQueue[0],
+    phase: "idle",
+    fastMode: $("fastMode").checked,
+    assignmentId: assignment?.id || null,
+    startedAt: new Date().toISOString()
+  };
+  saveProgressLocal();
   showScreen("runner");
   renderTask();
   setIdleControls();
@@ -209,6 +617,11 @@ function setIdleControls() {
 
 function startPreparation() {
   phase = "prep";
+  if (progress.activeRun) {
+    progress.activeRun.phase = phase;
+    progress.activeRun.currentTask = taskQueue[taskIndex];
+    saveProgressLocal();
+  }
   renderTask();
   $("timerEyebrow").textContent = "Время на подготовку";
   $("timerHint").textContent = "до начала записи";
@@ -222,6 +635,11 @@ async function beginAnswer() {
   clearTimer();
   beep(820, .22);
   phase = "answer";
+  if (progress.activeRun) {
+    progress.activeRun.phase = phase;
+    progress.activeRun.currentTask = taskQueue[taskIndex];
+    saveProgressLocal();
+  }
   renderTask();
   $("timerEyebrow").textContent = taskQueue[taskIndex] === 1 ? `Вопрос ${questionIndex + 1} из 5` : "Время ответа";
   $("timerHint").textContent = "идёт запись";
@@ -254,14 +672,14 @@ async function startRecording() {
   }
 }
 
-function stopRecording(label) {
+function stopRecording(label, task = taskQueue[taskIndex], question = null) {
   return new Promise(resolve => {
     if (!recorder || recorder.state === "inactive") return resolve();
     const current = recorder;
     current.onstop = () => {
       const type = current.mimeType || "audio/webm";
       const blob = new Blob(chunks, { type });
-      if (blob.size) recordings.push({ label, blob, url: URL.createObjectURL(blob), type });
+      if (blob.size) recordings.push({ label, task, question, blob, url: URL.createObjectURL(blob), type });
       setRecordingIndicator(false);
       resolve();
     };
@@ -273,7 +691,7 @@ async function finishAnswerPart() {
   clearTimer();
   const task = taskQueue[taskIndex];
   const label = task === 1 ? `${variant.label} · задание 1 · вопрос ${questionIndex + 1}` : `${variant.label} · задание ${task}`;
-  await stopRecording(label);
+  await stopRecording(label, task, task === 1 ? questionIndex + 1 : null);
   beep(560, .2);
   if (task === 1 && questionIndex < 4) {
     questionIndex += 1;
@@ -285,6 +703,7 @@ async function finishAnswerPart() {
 
 async function advanceTask() {
   clearTimer();
+  markTaskCompleted(taskQueue[taskIndex]);
   if (taskIndex < taskQueue.length - 1) {
     taskIndex += 1;
     questionIndex = 0;
@@ -294,7 +713,7 @@ async function advanceTask() {
     renderTask();
     setIdleControls();
   } else {
-    finishRun();
+    await finishRun();
   }
 }
 
@@ -339,11 +758,28 @@ async function skipPhase() {
   if (phase === "answer") return finishAnswerPart();
 }
 
-function finishRun() {
+async function finishRun() {
   clearTimer();
   phase = "done";
+  finalizeActiveRun("completed");
   renderRecordings();
   showScreen("result");
+  if (activeAssignment && authUser?.role === "student") {
+    $("submissionStatus").textContent = "Отправляем работу преподавателю…";
+    try {
+      const payload = await api(`/api/assignments/${activeAssignment.id}/submissions`, {
+        method: "POST", body: JSON.stringify({ run: progress.runs[0] })
+      });
+      for (const recording of recordings) await uploadAudio(payload.submission.id, recording);
+      $("submissionStatus").textContent = `Работа отправлена · попытка ${payload.submission.attempt}`;
+      toast("Работа и аудиозаписи отправлены преподавателю");
+      await loadStudentAssignments();
+    } catch (error) {
+      $("submissionStatus").textContent = `Не удалось отправить: ${error.message}. Записи доступны ниже.`;
+    }
+  } else {
+    $("submissionStatus").textContent = "Аудио хранится только в этой вкладке.";
+  }
 }
 
 function renderRecordings() {
@@ -360,17 +796,52 @@ function renderRecordings() {
 async function exitRun() {
   clearTimer();
   if (recorder?.state === "recording") await stopRecording(`${variant.label} · задание ${taskQueue[taskIndex]} · незавершённая запись`);
+  finalizeActiveRun("interrupted");
   phase = "idle";
+  activeAssignment = null;
   showScreen("home");
 }
 
 document.querySelectorAll("[data-start]").forEach(button => button.addEventListener("click", () => startRun(button.dataset.start)));
-$("variantSelect").addEventListener("change", event => loadVariant(event.target.value));
+$("variantSelect").addEventListener("change", event => {
+  progress.settings.lastVariant = event.target.value;
+  saveProgressLocal();
+  loadVariant(event.target.value);
+});
+$("fastMode").addEventListener("change", event => {
+  progress.settings.fastMode = event.target.checked;
+  saveProgressLocal();
+});
 $("checkMicBtn").addEventListener("click", () => ensureMicrophone(true));
 $("mainActionBtn").addEventListener("click", startPreparation);
 $("skipBtn").addEventListener("click", skipPhase);
 $("exitBtn").addEventListener("click", exitRun);
-$("restartBtn").addEventListener("click", () => showScreen("home"));
+$("restartBtn").addEventListener("click", () => { activeAssignment = null; showScreen("home"); });
+$("authButton").addEventListener("click", () => openModal($("authModal")));
+$("authCloseBtn").addEventListener("click", () => closeModal($("authModal")));
+$("progressCloseBtn").addEventListener("click", () => closeModal($("progressModal")));
+$("teacherCloseBtn").addEventListener("click", () => closeModal($("teacherModal")));
+$("openProgressBtn").addEventListener("click", () => { renderHistory(); openModal($("progressModal")); });
+$("clearHistoryBtn").addEventListener("click", clearHistory);
+$("loginTab").addEventListener("click", () => setAuthMode("login"));
+$("registerTab").addEventListener("click", () => setAuthMode("register"));
+$("authForm").addEventListener("submit", submitAuth);
+$("joinGroupForm").addEventListener("submit", joinGroup);
+$("createGroupForm").addEventListener("submit", createGroup);
+$("createAssignmentForm").addEventListener("submit", createAssignment);
+$("teacherSubmissions").addEventListener("submit", submitReview);
+$("teacherCabinetBtn").addEventListener("click", async () => { await Promise.all([loadTeacherDashboard(), loadTeacherSubmissions()]); closeModal($("authModal")); openModal($("teacherModal")); });
+$("logoutBtn").addEventListener("click", logout);
+[$("authModal"), $("progressModal"), $("teacherModal")].forEach(modal => modal.addEventListener("click", event => {
+  if (event.target === modal) closeModal(modal);
+}));
+document.addEventListener("keydown", event => {
+  if (event.key === "Escape") {
+    closeModal($("authModal"));
+    closeModal($("progressModal"));
+    closeModal($("teacherModal"));
+  }
+});
 $("soundToggle").addEventListener("click", () => {
   soundEnabled = !soundEnabled;
   $("soundToggle").textContent = soundEnabled ? "Звук включён" : "Звук выключен";
@@ -383,4 +854,8 @@ window.addEventListener("beforeunload", () => {
   recordings.forEach(item => URL.revokeObjectURL(item.url));
 });
 
+recoverInterruptedRun();
+renderProgress();
+setAuthMode("login");
 initVariants();
+initAuth();

@@ -15,7 +15,10 @@
       <span class="brand-mark">口</span>
       <span><b>口试</b><small>устная часть · китайский язык</small></span>
     </a>
-    <button class="quiet-btn" id="soundToggle" type="button" aria-pressed="true">Звук включён</button>
+    <div class="header-actions">
+      <button class="account-btn" id="authButton" type="button"><span class="account-dot"></span><span id="authButtonText">Войти</span></button>
+      <button class="quiet-btn" id="soundToggle" type="button" aria-pressed="true">Звук включён</button>
+    </div>
   </header>
 
   <main class="app-shell">
@@ -60,6 +63,14 @@
           <div><span class="status-dot" id="micDot"></span><b id="micStatus">Микрофон ещё не проверен</b><small>Записи остаются только на этом устройстве</small></div>
           <button class="secondary-btn" id="checkMicBtn" type="button">Проверить микрофон</button>
         </div>
+        <div class="progress-row">
+          <div><p class="eyebrow">Ваш прогресс</p><b id="progressSummary">Тренировок пока нет</b><small id="progressSyncStatus">Сохраняется в этом браузере</small></div>
+          <button class="text-btn" id="openProgressBtn" type="button">Подробнее →</button>
+        </div>
+        <section class="student-assignments hidden" id="studentAssignmentsPanel">
+          <div><p class="eyebrow">От преподавателя</p><h2>Мои задания</h2></div>
+          <div class="assignment-list" id="studentAssignmentsList"></div>
+        </section>
       </div>
     </section>
 
@@ -94,7 +105,7 @@
       <div class="result-heading">
         <p class="eyebrow">Тренировка завершена</p>
         <h1>答案都在这里。</h1>
-        <p>Прослушайте записи и отметьте, что получилось. Аудио не отправлялось на сервер.</p>
+        <p id="submissionStatus">Прослушайте записи и отметьте, что получилось.</p>
       </div>
       <div class="result-layout">
         <div class="recordings-panel">
@@ -113,7 +124,90 @@
     </section>
   </main>
 
+  <div class="modal-backdrop hidden" id="authModal">
+    <section class="auth-dialog" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+      <button class="modal-close" id="authCloseBtn" type="button" aria-label="Закрыть">×</button>
+      <div id="authGuestView">
+        <p class="eyebrow">Личный кабинет</p>
+        <h2 id="authTitle">Сохраняйте результат</h2>
+        <p class="auth-lede">После входа история тренировок синхронизируется с локальной базой данных.</p>
+        <div class="auth-tabs" role="tablist">
+          <button class="active" id="loginTab" type="button">Вход</button>
+          <button id="registerTab" type="button">Регистрация</button>
+        </div>
+        <form id="authForm">
+          <label class="register-only hidden" id="authNameLabel">Имя и фамилия<input id="authName" name="displayName" type="text" autocomplete="name" minlength="2" maxlength="80"></label>
+          <label class="register-only hidden" id="authRoleLabel">Тип аккаунта<select id="authRole" name="role"><option value="student">Ученик</option><option value="teacher">Преподаватель</option></select></label>
+          <label>Email<input id="authEmail" name="email" type="email" autocomplete="email" required></label>
+          <label>Пароль<input id="authPassword" name="password" type="password" autocomplete="current-password" minlength="8" maxlength="128" required></label>
+          <button class="primary-btn wide" id="authSubmitBtn" type="submit">Войти</button>
+        </form>
+        <p class="auth-message" id="authMessage" aria-live="polite"></p>
+      </div>
+      <div class="hidden" id="authUserView">
+        <p class="eyebrow">Личный кабинет</p>
+        <h2 id="accountTitle">Прогресс синхронизирован</h2>
+        <span class="role-badge" id="accountRole"></span>
+        <b class="account-name" id="authUserName"></b>
+        <p class="auth-user-email" id="authUserEmail"></p>
+        <div id="studentAccountTools">
+          <div class="account-stat"><b id="accountRuns">0</b><span>завершённых тренировок</span></div>
+          <form class="join-group-form" id="joinGroupForm">
+            <label>Код группы<input id="joinGroupCode" type="text" minlength="6" maxlength="6" placeholder="ABC123" required></label>
+            <button class="secondary-btn" type="submit">Вступить</button>
+          </form>
+          <div class="student-groups" id="studentGroups"></div>
+        </div>
+        <div class="account-actions">
+          <button class="primary-btn wide hidden" id="teacherCabinetBtn" type="button">Открыть кабинет преподавателя</button>
+          <button class="secondary-btn" id="logoutBtn" type="button">Выйти из аккаунта</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="modal-backdrop hidden" id="teacherModal">
+    <section class="auth-dialog teacher-dialog" role="dialog" aria-modal="true" aria-labelledby="teacherTitle">
+      <button class="modal-close" id="teacherCloseBtn" type="button" aria-label="Закрыть">×</button>
+      <p class="eyebrow">Кабинет преподавателя</p>
+      <h2 id="teacherTitle">Учебные группы</h2>
+      <p class="auth-lede">Создайте группу и передайте ученикам шестизначный код.</p>
+      <form class="create-group-form" id="createGroupForm">
+        <label>Название группы<input id="groupName" type="text" minlength="2" maxlength="80" placeholder="11 класс · Понедельник" required></label>
+        <button class="primary-btn" type="submit">Создать группу</button>
+      </form>
+      <section class="assignment-create-panel">
+        <p class="eyebrow">Новое назначение</p>
+        <form class="create-assignment-form" id="createAssignmentForm">
+          <label>Группа<select id="assignmentGroup" required></select></label>
+          <label>Вариант<select id="assignmentVariant" required></select></label>
+          <label>Состав<select id="assignmentTasks"><option value="exam">Полный экзамен</option><option value="1">Только задание 1</option><option value="2">Только задание 2</option><option value="3">Только задание 3</option></select></label>
+          <label>Срок<input id="assignmentDue" type="datetime-local"></label>
+          <label class="assignment-title-field">Название<input id="assignmentTitle" type="text" minlength="2" maxlength="100" placeholder="Тренировка к понедельнику" required></label>
+          <button class="primary-btn" id="createAssignmentBtn" type="submit">Назначить</button>
+        </form>
+      </section>
+      <p class="auth-message" id="teacherMessage" aria-live="polite"></p>
+      <div class="teacher-groups" id="teacherGroups"></div>
+      <section class="teacher-review-section">
+        <div><p class="eyebrow">Проверка</p><h2>Работы учеников</h2></div>
+        <p class="auth-message" id="teacherReviewMessage" aria-live="polite"></p>
+        <div class="teacher-submissions" id="teacherSubmissions"></div>
+      </section>
+    </section>
+  </div>
+
+  <div class="modal-backdrop hidden" id="progressModal">
+    <section class="auth-dialog progress-dialog" role="dialog" aria-modal="true" aria-labelledby="progressTitle">
+      <button class="modal-close" id="progressCloseBtn" type="button" aria-label="Закрыть">×</button>
+      <p class="eyebrow">История</p>
+      <h2 id="progressTitle">Ваши тренировки</h2>
+      <div class="history-list" id="historyList"></div>
+      <button class="secondary-btn history-clear" id="clearHistoryBtn" type="button">Очистить историю</button>
+    </section>
+  </div>
+
   <div class="toast hidden" id="toast" role="status"></div>
-  <script src="app.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>
