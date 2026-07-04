@@ -12,6 +12,7 @@ import os
 import re
 import secrets
 import sqlite3
+import threading
 import time
 from http import HTTPStatus
 from http.cookies import SimpleCookie
@@ -28,6 +29,43 @@ MAX_BODY = 1_000_000
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 PASSWORD_ITERATIONS = 260_000
 GROUP_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+AUTH_RATE_LIMITS = {"login": (8, 60), "register": (5, 300)}
+_AUTH_ATTEMPTS: dict[tuple[str, str, str], list[float]] = {}
+_AUTH_ATTEMPTS_LOCK = threading.Lock()
+
+
+def auth_rate_limit(kind: str, client_ip: str, email: str, now: float | None = None) -> int:
+    """Record an auth attempt and return retry seconds, or zero when allowed."""
+    limit, window = AUTH_RATE_LIMITS[kind]
+    moment = time.time() if now is None else now
+    key = (kind, client_ip, email.strip().lower()[:254])
+    with _AUTH_ATTEMPTS_LOCK:
+        recent = [stamp for stamp in _AUTH_ATTEMPTS.get(key, []) if moment - stamp < window]
+        if len(recent) >= limit:
+            _AUTH_ATTEMPTS[key] = recent
+            return max(1, int(window - (moment - recent[0]) + 0.999))
+        recent.append(moment)
+        _AUTH_ATTEMPTS[key] = recent
+        if len(_AUTH_ATTEMPTS) > 10_000:
+            _AUTH_ATTEMPTS.pop(next(iter(_AUTH_ATTEMPTS)))
+    return 0
+
+
+def clear_auth_rate_limit(kind: str, client_ip: str, email: str) -> None:
+    key = (kind, client_ip, email.strip().lower()[:254])
+    with _AUTH_ATTEMPTS_LOCK:
+        _AUTH_ATTEMPTS.pop(key, None)
+
+
+def request_has_same_origin(host: str | None, origin: str | None, referer: str | None, fetch_site: str | None) -> bool:
+    """Validate browser metadata for every state-changing request."""
+    if not host or (fetch_site and fetch_site not in {"same-origin", "none"}):
+        return False
+    source = origin or referer
+    if not source:
+        return False
+    parsed = urlparse(source)
+    return parsed.scheme in {"http", "https"} and parsed.netloc.lower() == host.lower()
 
 
 def connect() -> sqlite3.Connection:
@@ -160,6 +198,8 @@ class TrainerHandler(BaseHTTPRequestHandler):
         if payload is None:
             return
         email, password, error = self.validate_credentials(payload)
+        if not self.allow_auth_attempt("register", email):
+            return
         if error:
             self.send_error_json(HTTPStatus.BAD_REQUEST, error)
             return
@@ -182,6 +222,7 @@ class TrainerHandler(BaseHTTPRequestHandler):
             self.send_error_json(HTTPStatus.CONFLICT, "Аккаунт с таким email уже существует")
             return
         token = self.create_session(user_id)
+        clear_auth_rate_limit("register", self.client_address[0], email)
         self.send_json({"user": self.user_payload(user_id, email, display_name, role)}, HTTPStatus.CREATED, token)
 
     def auth_login(self) -> None:
@@ -190,6 +231,8 @@ class TrainerHandler(BaseHTTPRequestHandler):
             return
         email = str(payload.get("email", "")).strip().lower()
         password = str(payload.get("password", ""))
+        if not self.allow_auth_attempt("login", email):
+            return
         with connect() as database:
             user = database.execute(
                 "SELECT id, email, password_hash, display_name, role FROM users WHERE email = ?", (email,)
@@ -198,7 +241,19 @@ class TrainerHandler(BaseHTTPRequestHandler):
             self.send_error_json(HTTPStatus.UNAUTHORIZED, "Неверный email или пароль")
             return
         token = self.create_session(user["id"])
+        clear_auth_rate_limit("login", self.client_address[0], email)
         self.send_json({"user": self.user_payload(user["id"], user["email"], user["display_name"], user["role"])}, token=token)
+
+    def allow_auth_attempt(self, kind: str, email: str) -> bool:
+        retry_after = auth_rate_limit(kind, self.client_address[0], email)
+        if not retry_after:
+            return True
+        self.send_json(
+            {"error": "Слишком много попыток. Попробуйте позже", "retryAfter": retry_after},
+            HTTPStatus.TOO_MANY_REQUESTS,
+            extra_headers={"Retry-After": str(retry_after)},
+        )
+        return False
 
     def auth_logout(self) -> None:
         token = self.session_token()
@@ -443,12 +498,12 @@ class TrainerHandler(BaseHTTPRequestHandler):
         return payload
 
     def same_origin_request(self) -> bool:
-        origin = self.headers.get("Origin")
-        host = self.headers.get("Host")
-        if not origin or not host:
-            return True
-        parsed = urlparse(origin)
-        return parsed.netloc == host and parsed.scheme in {"http", "https"}
+        return request_has_same_origin(
+            self.headers.get("Host"),
+            self.headers.get("Origin"),
+            self.headers.get("Referer"),
+            self.headers.get("Sec-Fetch-Site"),
+        )
 
     def serve_static(self, route: str) -> None:
         relative = unquote(route).lstrip("/") or "index.html"
@@ -478,6 +533,7 @@ class TrainerHandler(BaseHTTPRequestHandler):
         status: HTTPStatus = HTTPStatus.OK,
         token: str | None = None,
         clear_cookie: bool = False,
+        extra_headers: dict[str, str] | None = None,
     ) -> None:
         encoded = json.dumps(payload, ensure_ascii=False).encode()
         self.send_response(status)
@@ -485,6 +541,8 @@ class TrainerHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(encoded)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
+        for name, value in (extra_headers or {}).items():
+            self.send_header(name, value)
         if token:
             cookie = f"trainer_session={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={SESSION_DAYS * 86400}"
             if os.environ.get("TRAINER_SECURE_COOKIE") == "1":

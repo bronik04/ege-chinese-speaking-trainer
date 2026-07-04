@@ -25,8 +25,10 @@ let chunks = [];
 let recordings = [];
 let soundEnabled = true;
 let audioContext = null;
-const PROGRESS_KEY = "egeChineseProgressV1";
-let progress = loadLocalProgress();
+const PROGRESS_GUEST_KEY = "egeChineseProgressV1";
+const PROGRESS_ACCOUNT_PREFIX = `${PROGRESS_GUEST_KEY}:user:`;
+let progressStorageKey = PROGRESS_GUEST_KEY;
+let progress = loadLocalProgress(progressStorageKey);
 let authUser = null;
 let authMode = "login";
 let syncTimer = null;
@@ -61,9 +63,9 @@ function defaultProgress() {
   return { version: 1, updatedAt: new Date(0).toISOString(), settings: { lastVariant: null, fastMode: false }, runs: [], activeRun: null };
 }
 
-function loadLocalProgress() {
+function loadLocalProgress(storageKey = progressStorageKey) {
   try {
-    const saved = JSON.parse(localStorage.getItem(PROGRESS_KEY));
+    const saved = JSON.parse(localStorage.getItem(storageKey));
     if (saved?.version === 1 && Array.isArray(saved.runs)) {
       return { ...defaultProgress(), ...saved, settings: { ...defaultProgress().settings, ...saved.settings } };
     }
@@ -71,10 +73,26 @@ function loadLocalProgress() {
   return defaultProgress();
 }
 
+function switchProgressScope(user, { adoptGuest = false } = {}) {
+  const nextKey = user ? `${PROGRESS_ACCOUNT_PREFIX}${user.id}` : PROGRESS_GUEST_KEY;
+  if (nextKey === progressStorageKey) return;
+  const hasScopedProgress = localStorage.getItem(nextKey) !== null;
+  if (user && adoptGuest && !hasScopedProgress && progressStorageKey === PROGRESS_GUEST_KEY) {
+    const guestProgress = loadLocalProgress(PROGRESS_GUEST_KEY);
+    const shouldTransfer = guestProgress.runs.length > 0 || Boolean(guestProgress.activeRun);
+    progress = shouldTransfer ? guestProgress : defaultProgress();
+    if (shouldTransfer) localStorage.removeItem(PROGRESS_GUEST_KEY);
+  } else {
+    progress = loadLocalProgress(nextKey);
+  }
+  progressStorageKey = nextKey;
+  localStorage.setItem(progressStorageKey, JSON.stringify(progress));
+}
+
 function saveProgressLocal(sync = true) {
   progress.updatedAt = new Date().toISOString();
   progress.runs = progress.runs.slice(0, 100);
-  localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress));
+  localStorage.setItem(progressStorageKey, JSON.stringify(progress));
   renderProgress();
   if (sync && authUser) scheduleProgressSync();
 }
@@ -99,7 +117,8 @@ function renderHistory() {
   $("historyList").innerHTML = progress.runs.map(run => {
     const status = run.status === "completed" ? "Завершено" : "Прервано";
     const taskText = run.mode === "exam" ? "Полный экзамен" : `Задание ${run.tasks?.[0] || ""}`;
-    return `<article class="history-item"><div><b>${run.variantLabel || run.variantId}</b><span>${taskText} · ${status}</span></div><time>${formatHistoryDate(run.completedAt || run.startedAt)}</time></article>`;
+    const variantName = escapeHtml(run.variantLabel || run.variantId || "Вариант");
+    return `<article class="history-item"><div class="history-copy"><b>${variantName}</b><span>${escapeHtml(taskText)} · ${status}</span></div><time>${escapeHtml(formatHistoryDate(run.completedAt || run.startedAt))}</time></article>`;
   }).join("");
 }
 
@@ -172,14 +191,17 @@ async function initAuth() {
   try {
     const payload = await api("/api/auth/me");
     authUser = payload.user;
+    switchProgressScope(authUser);
     renderAuth();
-    await syncProgress();
-    await refreshAccountData();
   } catch (error) {
     authUser = null;
+    switchProgressScope(null);
     renderAuth();
     if (error.status !== 401) $("progressSyncStatus").textContent = "Сервер недоступен · локальное сохранение";
+    return;
   }
+  try { await syncProgress(); } catch (_) { $("progressSyncStatus").textContent = "Нет связи · сохранено в браузере"; }
+  try { await refreshAccountData(); } catch (_) {}
 }
 
 function renderAuth() {
@@ -229,9 +251,10 @@ async function submitAuth(event) {
   try {
     const payload = await api(`/api/auth/${authMode}`, { method: "POST", body: JSON.stringify({ email, password, displayName, role }) });
     authUser = payload.user;
+    switchProgressScope(authUser, { adoptGuest: authMode === "register" });
     renderAuth();
-    await syncProgress();
-    await refreshAccountData();
+    try { await syncProgress(); } catch (_) { $("progressSyncStatus").textContent = "Нет связи · сохранено в браузере"; }
+    try { await refreshAccountData(); } catch (_) {}
     closeModal($("authModal"));
     toast(authMode === "login" ? "Вход выполнен" : "Аккаунт создан");
     $("authForm").reset();
@@ -244,7 +267,9 @@ async function submitAuth(event) {
 
 async function logout() {
   try { await api("/api/auth/logout", { method: "POST", body: "{}" }); } catch (_) {}
+  clearTimeout(syncTimer);
   authUser = null;
+  switchProgressScope(null);
   renderAuth();
   closeModal($("authModal"));
   toast("Вы вышли из аккаунта. Локальная история сохранена");
