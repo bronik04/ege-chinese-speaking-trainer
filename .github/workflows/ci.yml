@@ -31,3 +31,5 @@ jobs:
         run: |
           coverage run -m unittest discover -s tests -v
           coverage report
+      - name: Validate Docker image
+        run: docker build -t chinese-speaking-trainer:test .

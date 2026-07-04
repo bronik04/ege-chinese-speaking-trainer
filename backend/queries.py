@@ -83,11 +83,30 @@ def student_assignments(database: sqlite3.Connection, student_id: int) -> list[d
     return result
 
 
-def teacher_submissions(database: sqlite3.Connection, teacher_id: int) -> list[dict]:
+def teacher_submissions(
+    database: sqlite3.Connection,
+    teacher_id: int,
+    group_id: int | None = None,
+    student: str = "",
+    status: str = "",
+) -> list[dict]:
+    filters = ["assignments.teacher_id = ?"]
+    parameters: list[object] = [teacher_id]
+    if group_id:
+        filters.append("study_groups.id = ?")
+        parameters.append(group_id)
+    if student:
+        filters.append("(users.display_name LIKE ? OR users.email LIKE ?)")
+        pattern = f"%{student[:100]}%"
+        parameters.extend([pattern, pattern])
+    if status in {"submitted", "graded"}:
+        filters.append("submissions.status = ?")
+        parameters.append(status)
     rows = database.execute(
-        """
+        f"""
         SELECT submissions.id, submissions.attempt_number, submissions.status, submissions.submitted_at,
                assignments.title, assignments.variant_id, assignments.tasks_json,
+               assignments.id AS assignment_id, users.id AS student_id, study_groups.id AS group_id,
                users.display_name AS student_name, users.email AS student_email,
                study_groups.name AS group_name, reviews.scores_json, reviews.total_score,
                reviews.max_score, reviews.comment, reviews.reviewed_at
@@ -96,9 +115,10 @@ def teacher_submissions(database: sqlite3.Connection, teacher_id: int) -> list[d
         JOIN users ON users.id = submissions.student_id
         JOIN study_groups ON study_groups.id = assignments.group_id
         LEFT JOIN reviews ON reviews.submission_id = submissions.id
-        WHERE assignments.teacher_id = ? ORDER BY submissions.submitted_at DESC
+        WHERE {' AND '.join(filters)}
+        ORDER BY CASE submissions.status WHEN 'submitted' THEN 0 ELSE 1 END, submissions.submitted_at DESC
         """,
-        (teacher_id,),
+        parameters,
     ).fetchall()
     result = []
     for row in rows:
@@ -108,6 +128,7 @@ def teacher_submissions(database: sqlite3.Connection, teacher_id: int) -> list[d
         ).fetchall()
         result.append({
             "id": row["id"], "attempt": row["attempt_number"], "status": row["status"],
+            "assignmentId": row["assignment_id"], "studentId": row["student_id"], "groupId": row["group_id"],
             "submittedAt": row["submitted_at"], "title": row["title"],
             "variantId": row["variant_id"], "tasks": json.loads(row["tasks_json"]),
             "studentName": row["student_name"] or row["student_email"],
@@ -118,3 +139,42 @@ def teacher_submissions(database: sqlite3.Connection, teacher_id: int) -> list[d
                         "reviewedAt": row["reviewed_at"]} if row["scores_json"] else None),
         })
     return result
+
+
+def teacher_assignments(database: sqlite3.Connection, teacher_id: int) -> list[dict]:
+    rows = database.execute(
+        """
+        SELECT assignments.id, assignments.title, assignments.variant_id, assignments.tasks_json,
+               assignments.due_at, assignments.created_at, assignments.updated_at,
+               assignments.source_assignment_id, study_groups.id AS group_id, study_groups.name AS group_name,
+               COUNT(submissions.id) AS submission_count
+        FROM assignments JOIN study_groups ON study_groups.id = assignments.group_id
+        LEFT JOIN submissions ON submissions.assignment_id = assignments.id
+        WHERE assignments.teacher_id = ?
+        GROUP BY assignments.id ORDER BY assignments.created_at DESC
+        """,
+        (teacher_id,),
+    ).fetchall()
+    return [{
+        "id": row["id"], "title": row["title"], "variantId": row["variant_id"],
+        "tasks": json.loads(row["tasks_json"]), "dueAt": row["due_at"], "createdAt": row["created_at"],
+        "updatedAt": row["updated_at"], "sourceAssignmentId": row["source_assignment_id"],
+        "groupId": row["group_id"], "groupName": row["group_name"], "submissionCount": row["submission_count"],
+    } for row in rows]
+
+
+def submission_history(database: sqlite3.Connection, teacher_id: int, submission_id: int) -> dict | None:
+    target = database.execute(
+        """
+        SELECT submissions.assignment_id, submissions.student_id FROM submissions
+        JOIN assignments ON assignments.id = submissions.assignment_id
+        WHERE submissions.id = ? AND assignments.teacher_id = ?
+        """, (submission_id, teacher_id),
+    ).fetchone()
+    if not target:
+        return None
+    attempts = teacher_submissions(database, teacher_id)
+    return {
+        "attempts": [item for item in attempts if item["assignmentId"] == target["assignment_id"]
+                     and item["studentId"] == target["student_id"]]
+    }

@@ -10,6 +10,7 @@ import os
 import re
 import secrets
 import sqlite3
+import subprocess
 import time
 from http import HTTPStatus
 from http.cookies import SimpleCookie
@@ -25,11 +26,19 @@ from backend.accounts import (
     issue_token,
     record_audit,
 )
+from backend.audio import validate_duration
 from backend.database import connect as database_connect
 from backend.database import initialize as initialize_database
+from backend.exports import submissions_csv, submissions_pdf
 from backend.grading import validate_scores
 from backend.mailer import send_email
-from backend.queries import student_assignments, teacher_dashboard, teacher_submissions
+from backend.queries import (
+    student_assignments,
+    submission_history,
+    teacher_assignments,
+    teacher_dashboard,
+    teacher_submissions,
+)
 from backend.security import (
     password_hash,
     password_matches,
@@ -42,8 +51,8 @@ DATA_DIR = Path(os.environ.get("TRAINER_DATA_DIR", ROOT / "var")).resolve()
 DB_PATH = DATA_DIR / "trainer.sqlite3"
 AUDIO_DIR = DATA_DIR / "audio"
 SESSION_DAYS = 30
-MAX_BODY = 1_000_000
-MAX_AUDIO_BODY = 15_000_000
+MAX_BODY = int(os.environ.get("TRAINER_MAX_JSON_BYTES", "1000000"))
+MAX_AUDIO_BODY = int(os.environ.get("TRAINER_MAX_AUDIO_BYTES", "15000000"))
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 GROUP_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
@@ -75,6 +84,14 @@ class TrainerHandler(BaseHTTPRequestHandler):
             self.student_assignments()
         elif route == "/api/teacher/submissions":
             self.teacher_submissions()
+        elif route == "/api/teacher/assignments":
+            self.teacher_assignments()
+        elif match := re.fullmatch(r"/api/teacher/submissions/(\d+)", route):
+            self.submission_history(int(match.group(1)))
+        elif route == "/api/teacher/export.csv":
+            self.teacher_export("csv")
+        elif route == "/api/teacher/export.pdf":
+            self.teacher_export("pdf")
         elif route == "/api/account/audit":
             self.account_audit()
         elif re.fullmatch(r"/api/recordings/\d+", route):
@@ -108,6 +125,8 @@ class TrainerHandler(BaseHTTPRequestHandler):
             self.group_join()
         elif route == "/api/teacher/assignments":
             self.teacher_assignment_create()
+        elif match := re.fullmatch(r"/api/teacher/assignments/(\d+)/resend", route):
+            self.teacher_assignment_resend(int(match.group(1)))
         elif match := re.fullmatch(r"/api/assignments/(\d+)/submissions", route):
             self.submission_create(int(match.group(1)))
         elif match := re.fullmatch(r"/api/submissions/(\d+)/recordings", route):
@@ -132,6 +151,8 @@ class TrainerHandler(BaseHTTPRequestHandler):
             self.send_error_json(HTTPStatus.FORBIDDEN, "Invalid request origin")
         elif route == "/api/progress":
             self.progress_put()
+        elif match := re.fullmatch(r"/api/teacher/assignments/(\d+)", route):
+            self.teacher_assignment_update(int(match.group(1)))
         else:
             self.send_error_json(HTTPStatus.NOT_FOUND, "API route not found")
 
@@ -500,10 +521,10 @@ class TrainerHandler(BaseHTTPRequestHandler):
                 return
             cursor = database.execute(
                 """
-                INSERT INTO assignments(group_id, teacher_id, title, variant_id, tasks_json, due_at, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO assignments(group_id, teacher_id, title, variant_id, tasks_json, due_at, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (group_id, user["id"], title, variant_id, json.dumps(tasks), due_at, int(time.time())),
+                (group_id, user["id"], title, variant_id, json.dumps(tasks), due_at, int(time.time()), int(time.time())),
             )
             self.audit(
                 database, "assignment_created", user_id=user["id"], email=user["email"],
@@ -518,6 +539,59 @@ class TrainerHandler(BaseHTTPRequestHandler):
         with connect() as database:
             result = student_assignments(database, user["id"])
         self.send_json({"assignments": result})
+
+    def teacher_assignments(self) -> None:
+        user = self.require_role("teacher")
+        if not user:
+            return
+        with connect() as database:
+            result = teacher_assignments(database, user["id"])
+        self.send_json({"assignments": result})
+
+    def teacher_assignment_update(self, assignment_id: int) -> None:
+        user = self.require_role("teacher")
+        if not user:
+            return
+        payload = self.read_json()
+        if payload is None:
+            return
+        title = str(payload.get("title", "")).strip()
+        due_at = payload.get("dueAt")
+        if not 2 <= len(title) <= 100:
+            self.send_error_json(HTTPStatus.BAD_REQUEST, "Название должно содержать от 2 до 100 символов")
+            return
+        try:
+            due_at = int(due_at) if due_at is not None else None
+        except (TypeError, ValueError):
+            self.send_error_json(HTTPStatus.BAD_REQUEST, "Некорректный срок")
+            return
+        with connect() as database:
+            cursor = database.execute(
+                "UPDATE assignments SET title = ?, due_at = ?, updated_at = ? WHERE id = ? AND teacher_id = ?",
+                (title, due_at, int(time.time()), assignment_id, user["id"]),
+            )
+            if not cursor.rowcount:
+                self.send_error_json(HTTPStatus.NOT_FOUND, "Задание не найдено")
+                return
+        self.send_json({"ok": True})
+
+    def teacher_assignment_resend(self, assignment_id: int) -> None:
+        user = self.require_role("teacher")
+        if not user:
+            return
+        with connect() as database:
+            source = database.execute("SELECT * FROM assignments WHERE id = ? AND teacher_id = ?", (assignment_id, user["id"])).fetchone()
+            if not source:
+                self.send_error_json(HTTPStatus.NOT_FOUND, "Задание не найдено")
+                return
+            now = int(time.time())
+            cursor = database.execute(
+                """INSERT INTO assignments(group_id, teacher_id, title, variant_id, tasks_json, due_at, created_at, updated_at, source_assignment_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (source["group_id"], user["id"], f"{source['title']} · повтор", source["variant_id"],
+                 source["tasks_json"], source["due_at"], now, now, assignment_id),
+            )
+        self.send_json({"assignment": {"id": cursor.lastrowid}}, HTTPStatus.CREATED)
 
     def submission_create(self, assignment_id: int) -> None:
         user = self.require_role("student")
@@ -606,13 +680,19 @@ class TrainerHandler(BaseHTTPRequestHandler):
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
         try:
+            duration = validate_duration(target, task)
+        except (OSError, ValueError, subprocess.SubprocessError):
+            target.unlink(missing_ok=True)
+            self.send_error_json(HTTPStatus.UNPROCESSABLE_ENTITY, "Некорректная или слишком длинная аудиозапись")
+            return
+        try:
             with connect() as database:
                 cursor = database.execute(
                     """
-                    INSERT INTO recordings(submission_id, task_number, question_number, label, file_name, mime_type, size_bytes, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO recordings(submission_id, task_number, question_number, label, file_name, mime_type, size_bytes, duration_seconds, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (submission_id, task, question, label, relative, mime_type, len(data), int(time.time())),
+                    (submission_id, task, question, label, relative, mime_type, len(data), duration, int(time.time())),
                 )
                 self.audit(
                     database, "recording_uploaded", user_id=user["id"], email=user["email"],
@@ -627,9 +707,45 @@ class TrainerHandler(BaseHTTPRequestHandler):
         user = self.require_role("teacher")
         if not user:
             return
+        query = parse_qs(urlparse(self.path).query)
+        try:
+            group_id = int(query.get("group", [0])[0]) or None
+        except ValueError:
+            group_id = None
+        student = str(query.get("student", [""])[0]).strip()
+        status = str(query.get("status", [""])[0])
         with connect() as database:
-            result = teacher_submissions(database, user["id"])
+            result = teacher_submissions(database, user["id"], group_id, student, status)
         self.send_json({"submissions": result})
+
+    def submission_history(self, submission_id: int) -> None:
+        user = self.require_role("teacher")
+        if not user:
+            return
+        with connect() as database:
+            result = submission_history(database, user["id"], submission_id)
+        if not result:
+            self.send_error_json(HTTPStatus.NOT_FOUND, "Работа не найдена")
+            return
+        self.send_json(result)
+
+    def teacher_export(self, kind: str) -> None:
+        user = self.require_role("teacher")
+        if not user:
+            return
+        query = parse_qs(urlparse(self.path).query)
+        try:
+            group_id = int(query.get("group", [0])[0]) or None
+        except ValueError:
+            group_id = None
+        with connect() as database:
+            items = teacher_submissions(
+                database, user["id"], group_id, str(query.get("student", [""])[0]), str(query.get("status", [""])[0])
+            )
+        if kind == "csv":
+            self.send_bytes(submissions_csv(items), "text/csv; charset=utf-8", "raboty-uchenikov.csv")
+        else:
+            self.send_bytes(submissions_pdf(items), "application/pdf", "raboty-uchenikov.pdf")
 
     def recording_get(self, recording_id: int) -> None:
         user = self.current_user()
@@ -922,6 +1038,15 @@ class TrainerHandler(BaseHTTPRequestHandler):
 
     def send_error_json(self, status: HTTPStatus, message: str) -> None:
         self.send_json({"error": message}, status)
+
+    def send_bytes(self, data: bytes, content_type: str, filename: str) -> None:
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+        self.send_header("Cache-Control", "private, no-store")
+        self.end_headers()
+        self.wfile.write(data)
 
     def log_message(self, fmt: str, *args: object) -> None:
         print(f"[{self.log_date_time_string()}] {self.address_string()} {fmt % args}")

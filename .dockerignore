@@ -1,0 +1,8 @@
+.git
+.venv
+node_modules
+var
+backups
+__pycache__
+.coverage
+.DS_Store
