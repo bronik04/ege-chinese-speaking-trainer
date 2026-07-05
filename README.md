@@ -34,7 +34,7 @@ docker compose up -d --build
 docker compose -f compose.yml -f compose.scale.yml up -d --build
 ```
 
-В scale-профиле PostgreSQL 17 использует пул соединений, а схема обновляется Alembic. SQLite продолжает использовать собственные версионированные миграции и остаётся полностью поддерживаемым основным режимом.
+В scale-профиле PostgreSQL 16 использует пул соединений, а схема обновляется Alembic. Та же версия клиента `pg_dump` зафиксирована в Docker и CI. SQLite продолжает использовать собственные версионированные миграции и остаётся полностью поддерживаемым основным режимом.
 
 Резервная копия PostgreSQL создаётся через `pg_dump`; в локальном SQLite-режиме используется SQLite Backup API. Локальные аудиофайлы архивируются отдельно:
 
@@ -65,6 +65,20 @@ docker compose exec app python scripts/backup.py --data-dir /app/var --output-di
 - В личном кабинете доступен журнал входов и важных учебных действий; аккаунт можно удалить вместе с прогрессом и аудиозаписями.
 
 Папка `var/` исключена из Git и не должна публиковаться. Схема обновляется при запуске. Для публичного размещения запускайте сервер за HTTPS-прокси и установите `TRAINER_SECURE_COOKIE=1`.
+
+## Ошибки и наблюдаемость
+
+Все ошибки API имеют единый машинно-читаемый формат:
+
+```json
+{
+  "code": "invalid_credentials",
+  "message": "Неверный email или пароль",
+  "requestId": "c5f1d43f8cf94a488afe9ab85d891d25"
+}
+```
+
+`X-Request-ID` возвращается в каждом FastAPI-ответе и связывает ответ с JSON-логом сервера. Логи содержат метод, путь, статус и длительность запроса; необработанные исключения фиксируются с traceback. `/api/health` публикует только агрегированные счётчики ответов 4xx/5xx и время последней серверной ошибки, без пользовательских данных. Уровень логирования задаётся через `TRAINER_LOG_LEVEL`.
 
 ## PostgreSQL, R2 и расшифровка
 
@@ -130,6 +144,7 @@ python3 -m unittest discover -s tests -v
 python3 -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt
 npm install
+.venv/bin/pre-commit install
 .venv/bin/ruff check .
 npm run lint:js
 npm test
@@ -139,7 +154,7 @@ npm run test:e2e
 .venv/bin/coverage report
 ```
 
-CI проверяет Python через Ruff, JavaScript через ESLint, запускает модульные и Playwright E2E-тесты, проверяет PostgreSQL 16 с Alembic и восстановлением `pg_dump`, а S3-контракт — через MinIO. Покрытие Python-кода должно быть не ниже 55%.
+Перед коммитом можно проверить весь репозиторий одной командой: `.venv/bin/pre-commit run --all-files`. Она запускает Ruff, ESLint и проверку синтаксиса JSON. CI использует ту же конфигурацию, запускает модульные и Playwright E2E-тесты, проверяет PostgreSQL 16 с Alembic и восстановлением `pg_dump`, а S3-контракт — через MinIO. Покрытие Python-кода должно быть не ниже 55%.
 
 ## Структура кода
 

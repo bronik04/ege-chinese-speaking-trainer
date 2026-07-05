@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import mimetypes
 import os
 import secrets
@@ -10,9 +11,11 @@ from http import HTTPStatus
 from http.cookies import SimpleCookie
 from urllib.parse import quote, unquote
 
+from api.errors import default_error_code, error_payload
 from api.runtime import AUDIO_DIR, DATA_DIR, EMAIL_RE, MAX_BODY, ROOT, SESSION_DAYS, connect
 from backend.accounts import record_audit
 from backend.mailer import send_email
+from backend.observability import log_event
 from backend.security import request_has_same_origin, token_digest
 from backend.storage import storage_from_env
 
@@ -231,8 +234,18 @@ class CommonControllerMixin:
         self.end_headers()
         self.wfile.write(encoded)
 
-    def send_error_json(self, status: HTTPStatus, message: str) -> None:
-        self.send_json({"error": message}, status)
+    def send_error_json(self, status: HTTPStatus, message: str, code: str | None = None) -> None:
+        resolved_code = code or default_error_code(status)
+        log_event(
+            logging.getLogger("trainer.api"),
+            logging.WARNING if int(status) < 500 else logging.ERROR,
+            "api_error",
+            message,
+            code=resolved_code,
+            status=int(status),
+            path=getattr(self, "path", ""),
+        )
+        self.send_json(error_payload(resolved_code, message), status)
 
     def send_bytes(self, data: bytes, content_type: str, filename: str) -> None:
         self.send_response(HTTPStatus.OK)
@@ -244,4 +257,10 @@ class CommonControllerMixin:
         self.wfile.write(data)
 
     def log_message(self, fmt: str, *args: object) -> None:
-        print(f"[{self.log_date_time_string()}] {self.address_string()} {fmt % args}")
+        log_event(
+            logging.getLogger("trainer.compat_http"),
+            logging.INFO,
+            "request_completed",
+            fmt % args,
+            client=self.address_string(),
+        )

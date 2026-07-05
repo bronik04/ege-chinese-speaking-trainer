@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import re
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -12,6 +13,7 @@ from urllib.parse import urlparse
 from api.controller import ApiController
 from api.runtime import AUDIO_DIR, DATA_DIR, DB_PATH, MAX_AUDIO_BODY, MAX_BODY, ROOT, connect, init_database
 from backend.database import engine_name
+from backend.observability import configure_logging, error_monitor, log_event
 
 __all__ = [
     "AUDIO_DIR",
@@ -33,7 +35,7 @@ class TrainerHandler(BaseHTTPRequestHandler, ApiController):
     def do_GET(self) -> None:
         route = urlparse(self.path).path
         if route == "/api/health":
-            self.send_json({"ok": True, "database": engine_name()})
+            self.send_json({"ok": True, "database": engine_name(), "errors": error_monitor.snapshot()})
         elif route == "/api/auth/me":
             self.auth_me()
         elif route == "/api/progress":
@@ -59,14 +61,14 @@ class TrainerHandler(BaseHTTPRequestHandler, ApiController):
         elif re.fullmatch(r"/api/recordings/\d+", route):
             self.recording_get(int(route.rsplit("/", 1)[1]))
         elif route.startswith("/api/"):
-            self.send_error_json(HTTPStatus.NOT_FOUND, "API route not found")
+            self.send_error_json(HTTPStatus.NOT_FOUND, "API route not found", "route_not_found")
         else:
             self.serve_static(route)
 
     def do_POST(self) -> None:
         route = urlparse(self.path).path
         if not self.same_origin_request():
-            self.send_error_json(HTTPStatus.FORBIDDEN, "Invalid request origin")
+            self.send_error_json(HTTPStatus.FORBIDDEN, "Invalid request origin", "invalid_origin")
         elif route == "/api/auth/register":
             self.auth_register()
         elif route == "/api/auth/login":
@@ -96,37 +98,45 @@ class TrainerHandler(BaseHTTPRequestHandler, ApiController):
         elif match := re.fullmatch(r"/api/submissions/(\d+)/review", route):
             self.review_submission(int(match.group(1)))
         else:
-            self.send_error_json(HTTPStatus.NOT_FOUND, "API route not found")
+            self.send_error_json(HTTPStatus.NOT_FOUND, "API route not found", "route_not_found")
 
     def do_DELETE(self) -> None:
         route = urlparse(self.path).path
         if not self.same_origin_request():
-            self.send_error_json(HTTPStatus.FORBIDDEN, "Invalid request origin")
+            self.send_error_json(HTTPStatus.FORBIDDEN, "Invalid request origin", "invalid_origin")
         elif route == "/api/account":
             self.account_delete()
         else:
-            self.send_error_json(HTTPStatus.NOT_FOUND, "API route not found")
+            self.send_error_json(HTTPStatus.NOT_FOUND, "API route not found", "route_not_found")
 
     def do_PUT(self) -> None:
         route = urlparse(self.path).path
         if not self.same_origin_request():
-            self.send_error_json(HTTPStatus.FORBIDDEN, "Invalid request origin")
+            self.send_error_json(HTTPStatus.FORBIDDEN, "Invalid request origin", "invalid_origin")
         elif route == "/api/progress":
             self.progress_put()
         elif match := re.fullmatch(r"/api/teacher/assignments/(\d+)", route):
             self.teacher_assignment_update(int(match.group(1)))
         else:
-            self.send_error_json(HTTPStatus.NOT_FOUND, "API route not found")
+            self.send_error_json(HTTPStatus.NOT_FOUND, "API route not found", "route_not_found")
 
 
 def main() -> None:
+    configure_logging()
     parser = argparse.ArgumentParser(description="Local compatibility server for the Chinese EGE speaking trainer")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", default=8080, type=int)
     args = parser.parse_args()
     init_database()
     server = ThreadingHTTPServer((args.host, args.port), TrainerHandler)
-    print(f"Serving on http://{args.host}:{args.port}")
+    log_event(
+        logging.getLogger("trainer.compat_http"),
+        logging.INFO,
+        "server_started",
+        "Compatibility server started",
+        host=args.host,
+        port=args.port,
+    )
     try:
         server.serve_forever()
     except KeyboardInterrupt:

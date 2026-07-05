@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 from http import HTTPStatus
 
+from api.errors import error_payload
 from api.runtime import connect
 from backend.accounts import audit_events, clear_rate_limit, consume_rate_limit, consume_token, issue_token
 from backend.database import INTEGRITY_ERRORS
@@ -38,7 +39,7 @@ class AuthControllerMixin:
                 verification_token = issue_token(database, "email_verification", user_id)
                 self.audit(database, "account_registered", user_id=user_id, email=email, details={"role": role})
         except INTEGRITY_ERRORS:
-            self.send_error_json(HTTPStatus.CONFLICT, "Аккаунт с таким email уже существует")
+            self.send_error_json(HTTPStatus.CONFLICT, "Аккаунт с таким email уже существует", "email_already_registered")
             return
         token = self.create_session(user_id)
         with connect() as database:
@@ -66,7 +67,7 @@ class AuthControllerMixin:
         if not user or not password_matches(password, user["password_hash"]):
             with connect() as database:
                 self.audit(database, "login_failed", user_id=user["id"] if user else None, email=email)
-            self.send_error_json(HTTPStatus.UNAUTHORIZED, "Неверный email или пароль")
+            self.send_error_json(HTTPStatus.UNAUTHORIZED, "Неверный email или пароль", "invalid_credentials")
             return
         token = self.create_session(user["id"])
         with connect() as database:
@@ -87,7 +88,7 @@ class AuthControllerMixin:
         if not retry_after:
             return True
         self.send_json(
-            {"error": "Слишком много попыток. Попробуйте позже", "retryAfter": retry_after},
+            error_payload("rate_limited", "Слишком много попыток. Попробуйте позже", retryAfter=retry_after),
             HTTPStatus.TOO_MANY_REQUESTS,
             extra_headers={"Retry-After": str(retry_after)},
         )
@@ -116,7 +117,7 @@ class AuthControllerMixin:
             self.send_error_json(HTTPStatus.UNAUTHORIZED, "Authentication required")
             return
         if user["emailVerified"]:
-            self.send_error_json(HTTPStatus.CONFLICT, "Email уже подтверждён")
+            self.send_error_json(HTTPStatus.CONFLICT, "Email уже подтверждён", "email_already_verified")
             return
         if not self.allow_auth_attempt("email_verification", user["email"]):
             return
@@ -134,7 +135,7 @@ class AuthControllerMixin:
         with connect() as database:
             user = consume_token(database, "email_verification", token)
             if not user:
-                self.send_error_json(HTTPStatus.BAD_REQUEST, "Ссылка недействительна или устарела")
+                self.send_error_json(HTTPStatus.BAD_REQUEST, "Ссылка недействительна или устарела", "token_invalid")
                 return
             verified_at = int(time.time())
             database.execute("UPDATE users SET email_verified_at = ? WHERE id = ?", (verified_at, user["id"]))
@@ -172,7 +173,7 @@ class AuthControllerMixin:
         with connect() as database:
             user = consume_token(database, "password_reset", token)
             if not user:
-                self.send_error_json(HTTPStatus.BAD_REQUEST, "Ссылка недействительна или устарела")
+                self.send_error_json(HTTPStatus.BAD_REQUEST, "Ссылка недействительна или устарела", "token_invalid")
                 return
             database.execute("UPDATE users SET password_hash = ? WHERE id = ?", (password_hash(password), user["id"]))
             database.execute("DELETE FROM sessions WHERE user_id = ?", (user["id"],))
@@ -202,7 +203,7 @@ class AuthControllerMixin:
             row = database.execute("SELECT password_hash FROM users WHERE id = ?", (user["id"],)).fetchone()
             if not row or not password_matches(password, row["password_hash"]):
                 self.audit(database, "account_deletion_failed", user_id=user["id"], email=user["email"])
-                self.send_error_json(HTTPStatus.UNAUTHORIZED, "Неверный пароль")
+                self.send_error_json(HTTPStatus.UNAUTHORIZED, "Неверный пароль", "invalid_password")
                 return
             files = database.execute(
                 """

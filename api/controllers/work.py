@@ -49,7 +49,7 @@ class WorkControllerMixin:
                 "SELECT id FROM study_groups WHERE id = ? AND teacher_id = ?", (group_id, user["id"])
             ).fetchone()
             if not group:
-                self.send_error_json(HTTPStatus.NOT_FOUND, "Группа не найдена")
+                self.send_error_json(HTTPStatus.NOT_FOUND, "Группа не найдена", "group_not_found")
                 return
             cursor = database.execute(
                 """
@@ -115,7 +115,7 @@ class WorkControllerMixin:
                 (title, due_at, int(time.time()), assignment_id, user["id"]),
             )
             if not cursor.rowcount:
-                self.send_error_json(HTTPStatus.NOT_FOUND, "Задание не найдено")
+                self.send_error_json(HTTPStatus.NOT_FOUND, "Задание не найдено", "assignment_not_found")
                 return
         self.send_json({"ok": True})
 
@@ -128,7 +128,7 @@ class WorkControllerMixin:
                 "SELECT * FROM assignments WHERE id = ? AND teacher_id = ?", (assignment_id, user["id"])
             ).fetchone()
             if not source:
-                self.send_error_json(HTTPStatus.NOT_FOUND, "Задание не найдено")
+                self.send_error_json(HTTPStatus.NOT_FOUND, "Задание не найдено", "assignment_not_found")
                 return
             now = int(time.time())
             cursor = database.execute(
@@ -173,7 +173,7 @@ class WorkControllerMixin:
                 (assignment_id, user["id"]),
             ).fetchone()
             if not assignment:
-                self.send_error_json(HTTPStatus.NOT_FOUND, "Задание не найдено")
+                self.send_error_json(HTTPStatus.NOT_FOUND, "Задание не найдено", "assignment_not_found")
                 return
             attempt = database.execute(
                 "SELECT COALESCE(MAX(attempt_number), 0) + 1 AS number FROM submissions WHERE assignment_id = ? AND student_id = ?",
@@ -217,7 +217,7 @@ class WorkControllerMixin:
         with connect() as database:
             result = submission_history(database, user["id"], submission_id)
         if not result:
-            self.send_error_json(HTTPStatus.NOT_FOUND, "Работа не найдена")
+            self.send_error_json(HTTPStatus.NOT_FOUND, "Работа не найдена", "submission_not_found")
             return
         self.send_json(result)
 
@@ -260,7 +260,7 @@ class WorkControllerMixin:
                 (submission_id, user["id"]),
             ).fetchone()
             if not row:
-                self.send_error_json(HTTPStatus.NOT_FOUND, "Работа не найдена")
+                self.send_error_json(HTTPStatus.NOT_FOUND, "Работа не найдена", "submission_not_found")
                 return
             tasks = json.loads(row["tasks_json"])
             try:

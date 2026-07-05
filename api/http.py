@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
 from api.controller import ApiController
+from api.errors import error_payload
 from api.runtime import MAX_AUDIO_BODY, MAX_BODY
 
 
@@ -21,7 +22,7 @@ async def invoke(request: Request, action: str, *arguments, payload: BaseModel |
     async for chunk in request.stream():
         body.extend(chunk)
         if len(body) > max_body:
-            return JSONResponse({"error": "Request body is too large"}, status_code=413)
+            return JSONResponse(error_payload("request_too_large", "Request body is too large"), status_code=413)
 
     controller = object.__new__(ApiController)
     controller.path = request.url.path + (f"?{request.url.query}" if request.url.query else "")
@@ -36,7 +37,7 @@ async def invoke(request: Request, action: str, *arguments, payload: BaseModel |
     _bind(controller, "end_headers", lambda self: None)
 
     if request.method in {"POST", "PUT", "DELETE"} and not controller.same_origin_request():
-        controller.send_error_json(403, "Invalid request origin")
+        controller.send_error_json(403, "Invalid request origin", "invalid_origin")
     else:
         getattr(controller, action)(*arguments)
     return Response(

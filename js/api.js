@@ -6,8 +6,10 @@ export async function api(path, options = {}) {
   const response = await fetch(path, { ...options, headers });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const error = new Error(payload.error || `HTTP ${response.status}`);
+    const error = new Error(payload.message || payload.error || `HTTP ${response.status}`);
     error.status = response.status;
+    error.code = payload.code || "request_failed";
+    error.requestId = payload.requestId || null;
     throw error;
   }
   return payload;

@@ -5,6 +5,7 @@ import { studentAssignmentsMarkup, teacherGroupsMarkup } from "../js/account-vie
 import { escapeHtml, mergeProgress } from "../js/progress.js";
 import { formatTime, stepsMarkup, taskMarkup } from "../js/task-view.js";
 import { auditMarkup } from "../js/account-security.js";
+import { api } from "../js/api.js";
 
 test("escapeHtml protects every HTML-sensitive character", () => {
   assert.equal(escapeHtml(`<script data-x="'">&`), "&lt;script data-x=&quot;&#39;&quot;&gt;&amp;");
@@ -76,4 +77,27 @@ test("audit markup translates actions and escapes network data", () => {
   }]);
   assert.match(html, /Выполнен вход/);
   assert.doesNotMatch(html, /<script>/);
+});
+
+test("api exposes structured server error metadata", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 409,
+    json: async () => ({
+      code: "submission_already_graded",
+      message: "Работа уже проверена",
+      requestId: "request-123",
+    }),
+  });
+  try {
+    await assert.rejects(api("/api/test"), error => {
+      assert.equal(error.message, "Работа уже проверена");
+      assert.equal(error.code, "submission_already_graded");
+      assert.equal(error.requestId, "request-123");
+      return true;
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

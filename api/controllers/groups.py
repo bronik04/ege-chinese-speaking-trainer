@@ -99,7 +99,7 @@ class GroupControllerMixin:
         with connect() as database:
             group = database.execute("SELECT id, name FROM study_groups WHERE join_code = ?", (code,)).fetchone()
             if not group:
-                self.send_error_json(HTTPStatus.NOT_FOUND, "Группа с таким кодом не найдена")
+                self.send_error_json(HTTPStatus.NOT_FOUND, "Группа с таким кодом не найдена", "group_not_found")
                 return
             database.execute(
                 "INSERT OR IGNORE INTO group_members(group_id, user_id, joined_at) VALUES (?, ?, ?)",

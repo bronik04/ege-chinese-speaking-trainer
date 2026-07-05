@@ -309,7 +309,8 @@ class ApiFlowTest(unittest.TestCase):
             include_origin=False,
         )
         self.assertEqual(status, 403)
-        self.assertEqual(payload["error"], "Invalid request origin")
+        self.assertEqual(payload["code"], "invalid_origin")
+        self.assertEqual(payload["message"], "Invalid request origin")
 
     def test_login_endpoint_returns_rate_limit(self):
         payload = {"email": "rate-limit@example.test", "password": "password123"}

@@ -33,7 +33,10 @@ class FastApiSmokeTest(unittest.TestCase):
         cls.temp_dir.cleanup()
 
     def test_health_static_and_private_data_boundary(self):
-        self.assertEqual(self.client.get("/api/health").json(), {"ok": True, "database": "sqlite"})
+        health = self.client.get("/api/health").json()
+        self.assertTrue(health["ok"])
+        self.assertEqual(health["database"], "sqlite")
+        self.assertEqual(set(health["errors"]), {"responses4xx", "responses5xx", "lastFailureAt"})
         self.assertEqual(self.client.get("/").status_code, 200)
         self.assertEqual(self.client.get("/var/trainer.sqlite3").status_code, 404)
 
@@ -64,14 +67,42 @@ class FastApiSmokeTest(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 422)
         payload = response.json()
-        self.assertEqual(payload["error"], "Некорректные данные запроса")
+        self.assertEqual(payload["code"], "request_validation_failed")
+        self.assertEqual(payload["message"], "Некорректные данные запроса")
         self.assertEqual({item["location"] for item in payload["fields"]}, {"displayName", "unexpected"})
+
+    def test_error_response_and_header_share_request_id(self):
+        response = self.client.post(
+            "/api/auth/login",
+            headers={
+                "Origin": "http://testserver",
+                "Sec-Fetch-Site": "same-origin",
+                "X-Request-ID": "e2e-request-123",
+            },
+            json={"email": "missing@example.test", "password": "password123"},
+        )
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.headers["X-Request-ID"], "e2e-request-123")
+        self.assertEqual(
+            response.json(),
+            {
+                "code": "invalid_credentials",
+                "message": "Неверный email или пароль",
+                "requestId": "e2e-request-123",
+            },
+        )
 
     def test_openapi_exposes_request_schemas(self):
         document = self.client.get("/openapi.json").json()
         operation = document["paths"]["/api/teacher/assignments"]["post"]
         schema = operation["requestBody"]["content"]["application/json"]["schema"]
         self.assertEqual(schema["$ref"], "#/components/schemas/AssignmentRequest")
+
+    def test_framework_http_errors_use_api_error_contract(self):
+        response = self.client.put("/api/auth/me", headers={"X-Request-ID": "method-request-123"})
+        self.assertEqual(response.status_code, 405)
+        self.assertEqual(response.json()["code"], "method_not_allowed")
+        self.assertEqual(response.json()["requestId"], "method-request-123")
 
 
 if __name__ == "__main__":

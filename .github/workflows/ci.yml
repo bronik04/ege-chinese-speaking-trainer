@@ -30,15 +30,16 @@ jobs:
           node-version: "22"
           cache: npm
       - name: Install system tools
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg postgresql-client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg postgresql-client
+          pg_dump --version | grep -q " 16\."
       - name: Install development tools
         run: |
           python3 -m pip install -r requirements-dev.txt
           npm ci
-      - name: Lint
-        run: |
-          ruff check .
-          npm run lint:js
+      - name: Pre-commit
+        run: pre-commit run --all-files
       - name: Test JavaScript
         run: npm test
       - name: Install E2E browser

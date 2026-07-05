@@ -2,8 +2,9 @@ import { defineConfig } from "@playwright/test";
 import os from "node:os";
 import path from "node:path";
 
-const dataDir = path.join(os.tmpdir(), `ege-trainer-e2e-${process.pid}`);
+const dataDir = process.env.E2E_DATA_DIR || path.join(os.tmpdir(), `ege-trainer-e2e-${process.pid}`);
 const python = process.env.E2E_PYTHON || ".venv/bin/python";
+process.env.E2E_DATA_DIR = dataDir;
 
 export default defineConfig({
   testDir: "./tests-e2e",
