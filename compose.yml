@@ -3,10 +3,37 @@ services:
     build: .
     restart: unless-stopped
     env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
     volumes:
       - trainer_data:/app/var
       - ./backups:/app/backups
     expose: ["8080"]
+  transcription-worker:
+    build: .
+    restart: unless-stopped
+    command: ["python", "-m", "scripts.transcription_worker"]
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - trainer_data:/app/var
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-trainer}
+      POSTGRES_USER: ${POSTGRES_USER:-trainer}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
   caddy:
     image: caddy:2.10-alpine
     restart: unless-stopped
@@ -20,5 +47,6 @@ services:
       - caddy_config:/config
 volumes:
   trainer_data:
+  postgres_data:
   caddy_data:
   caddy_config:

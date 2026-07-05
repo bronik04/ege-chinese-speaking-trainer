@@ -11,6 +11,7 @@ import re
 import secrets
 import sqlite3
 import subprocess
+import tempfile
 import time
 from http import HTTPStatus
 from http.cookies import SimpleCookie
@@ -27,6 +28,7 @@ from backend.accounts import (
     record_audit,
 )
 from backend.audio import validate_duration
+from backend.database import INTEGRITY_ERRORS, engine_name
 from backend.database import connect as database_connect
 from backend.database import initialize as initialize_database
 from backend.exports import submissions_csv, submissions_pdf
@@ -45,6 +47,9 @@ from backend.security import (
     request_has_same_origin,
     token_digest,
 )
+from backend.storage import storage_from_env
+from backend.transcription import enabled as transcription_enabled
+from backend.transcription import enqueue as enqueue_transcription
 
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get("TRAINER_DATA_DIR", ROOT / "var")).resolve()
@@ -71,7 +76,7 @@ class TrainerHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         route = urlparse(self.path).path
         if route == "/api/health":
-            self.send_json({"ok": True, "database": "sqlite"})
+            self.send_json({"ok": True, "database": engine_name()})
         elif route == "/api/auth/me":
             self.auth_me()
         elif route == "/api/progress":
@@ -183,7 +188,7 @@ class TrainerHandler(BaseHTTPRequestHandler):
                 user_id = cursor.lastrowid
                 verification_token = issue_token(database, "email_verification", user_id)
                 self.audit(database, "account_registered", user_id=user_id, email=email, details={"role": role})
-        except sqlite3.IntegrityError:
+        except INTEGRITY_ERRORS:
             self.send_error_json(HTTPStatus.CONFLICT, "Аккаунт с таким email уже существует")
             return
         token = self.create_session(user_id)
@@ -411,24 +416,26 @@ class TrainerHandler(BaseHTTPRequestHandler):
         if not 2 <= len(name) <= 80:
             self.send_error_json(HTTPStatus.BAD_REQUEST, "Название группы должно содержать от 2 до 80 символов")
             return
-        with connect() as database:
-            for _ in range(10):
-                code = "".join(secrets.choice(GROUP_CODE_ALPHABET) for _ in range(6))
-                try:
+        cursor = None
+        for _ in range(10):
+            code = "".join(secrets.choice(GROUP_CODE_ALPHABET) for _ in range(6))
+            try:
+                with connect() as database:
                     cursor = database.execute(
                         "INSERT INTO study_groups(teacher_id, name, join_code, created_at) VALUES (?, ?, ?, ?)",
                         (user["id"], name, code, int(time.time())),
                     )
-                    self.audit(
-                        database, "group_created", user_id=user["id"], email=user["email"],
-                        details={"groupId": cursor.lastrowid, "name": name},
-                    )
-                    break
-                except sqlite3.IntegrityError:
-                    continue
-            else:
-                self.send_error_json(HTTPStatus.INTERNAL_SERVER_ERROR, "Не удалось создать код группы")
-                return
+                break
+            except INTEGRITY_ERRORS:
+                continue
+        if cursor is None:
+            self.send_error_json(HTTPStatus.INTERNAL_SERVER_ERROR, "Не удалось создать код группы")
+            return
+        with connect() as database:
+            self.audit(
+                database, "group_created", user_id=user["id"], email=user["email"],
+                details={"groupId": cursor.lastrowid, "name": name},
+            )
         self.send_json({"group": {"id": cursor.lastrowid, "name": name, "code": code}}, HTTPStatus.CREATED)
 
     def group_join(self) -> None:
@@ -676,31 +683,44 @@ class TrainerHandler(BaseHTTPRequestHandler):
                 return
         data = self.rfile.read(length)
         relative = f"{submission_id}/{secrets.token_urlsafe(18)}.{extensions[mime_type]}"
-        target = (AUDIO_DIR / relative).resolve()
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(data)
+        temporary_dir = DATA_DIR / "tmp"
+        temporary_dir.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(dir=temporary_dir, suffix=f".{extensions[mime_type]}", delete=False) as file:
+            file.write(data)
+            temporary_path = Path(file.name)
         try:
-            duration = validate_duration(target, task)
+            duration = validate_duration(temporary_path, task)
         except (OSError, ValueError, subprocess.SubprocessError):
-            target.unlink(missing_ok=True)
+            temporary_path.unlink(missing_ok=True)
             self.send_error_json(HTTPStatus.UNPROCESSABLE_ENTITY, "Некорректная или слишком длинная аудиозапись")
             return
+        storage = storage_from_env(AUDIO_DIR)
         try:
+            storage.put(relative, temporary_path, mime_type)
             with connect() as database:
                 cursor = database.execute(
                     """
-                    INSERT INTO recordings(submission_id, task_number, question_number, label, file_name, mime_type, size_bytes, duration_seconds, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO recordings(submission_id, task_number, question_number, label, file_name, mime_type,
+                                           size_bytes, duration_seconds, transcript_status, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (submission_id, task, question, label, relative, mime_type, len(data), duration, int(time.time())),
+                    (submission_id, task, question, label, relative, mime_type, len(data), duration,
+                     "pending" if transcription_enabled() else "disabled", int(time.time())),
                 )
+                if transcription_enabled():
+                    enqueue_transcription(database, cursor.lastrowid)
                 self.audit(
                     database, "recording_uploaded", user_id=user["id"], email=user["email"],
                     details={"submissionId": submission_id, "task": task, "size": len(data)},
                 )
         except Exception:
-            target.unlink(missing_ok=True)
+            try:
+                storage.delete(relative)
+            except Exception:
+                pass
             raise
+        finally:
+            temporary_path.unlink(missing_ok=True)
         self.send_json({"recording": {"id": cursor.lastrowid}}, HTTPStatus.CREATED)
 
     def teacher_submissions(self) -> None:
@@ -766,12 +786,11 @@ class TrainerHandler(BaseHTTPRequestHandler):
         if not row or user["id"] not in {row["student_id"], row["teacher_id"]}:
             self.send_error_json(HTTPStatus.NOT_FOUND, "Запись не найдена")
             return
-        audio_root = AUDIO_DIR.resolve()
-        target = (audio_root / row["file_name"]).resolve()
-        if audio_root not in target.parents or not target.is_file():
+        try:
+            data = storage_from_env(AUDIO_DIR).read(row["file_name"])
+        except (FileNotFoundError, OSError, ValueError):
             self.send_error_json(HTTPStatus.NOT_FOUND, "Файл записи не найден")
             return
-        data = target.read_bytes()
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", row["mime_type"])
         self.send_header("Content-Length", str(len(data)))
@@ -924,19 +943,12 @@ class TrainerHandler(BaseHTTPRequestHandler):
 
     @staticmethod
     def delete_audio_files(file_names: list[str]) -> None:
-        audio_root = AUDIO_DIR.resolve()
+        storage = storage_from_env(AUDIO_DIR)
         for file_name in file_names:
-            target = (audio_root / file_name).resolve()
-            if audio_root not in target.parents:
-                continue
             try:
-                target.unlink(missing_ok=True)
-            except OSError:
+                storage.delete(file_name)
+            except Exception:
                 continue
-            try:
-                target.parent.rmdir()
-            except OSError:
-                pass
 
     def require_role(self, role: str) -> dict | None:
         user = self.current_user()

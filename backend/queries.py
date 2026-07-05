@@ -123,7 +123,9 @@ def teacher_submissions(
     result = []
     for row in rows:
         recordings = database.execute(
-            "SELECT id, task_number, question_number, label, mime_type, size_bytes FROM recordings WHERE submission_id = ? ORDER BY task_number, question_number, id",
+            """SELECT id, task_number, question_number, label, mime_type, size_bytes,
+                      transcript_status, transcript_text, transcript_error, transcribed_at
+               FROM recordings WHERE submission_id = ? ORDER BY task_number, question_number, id""",
             (row["id"],),
         ).fetchall()
         result.append({
@@ -151,7 +153,7 @@ def teacher_assignments(database: sqlite3.Connection, teacher_id: int) -> list[d
         FROM assignments JOIN study_groups ON study_groups.id = assignments.group_id
         LEFT JOIN submissions ON submissions.assignment_id = assignments.id
         WHERE assignments.teacher_id = ?
-        GROUP BY assignments.id ORDER BY assignments.created_at DESC
+        GROUP BY assignments.id, study_groups.id ORDER BY assignments.created_at DESC
         """,
         (teacher_id,),
     ).fetchall()

@@ -267,7 +267,7 @@ class ApiFlowTest(unittest.TestCase):
     def test_migrations_are_recorded(self):
         with server.connect() as database:
             versions = [row["version"] for row in database.execute("SELECT version FROM schema_migrations ORDER BY version")]
-        self.assertEqual(versions, [1, 2, 3, 4])
+        self.assertEqual(versions, [1, 2, 3, 4, 5])
 
     def test_mutation_without_origin_is_rejected(self):
         status, payload, _ = self.request(

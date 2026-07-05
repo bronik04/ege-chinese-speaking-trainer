@@ -35,7 +35,7 @@ export function teacherSubmissionsMarkup(submissions) {
   return submissions.map(submission => `
     <article class="submission-card">
       <header><div><p class="eyebrow">${escapeHtml(submission.groupName)} · попытка ${submission.attempt}</p><h3>${escapeHtml(submission.studentName)}</h3><span>${escapeHtml(submission.title)}</span></div><b class="submission-status ${escapeHtml(submission.status)}">${submission.status === "graded" ? `${submission.review.total}/${submission.review.maximum}` : "На проверке"}</b></header>
-      <div class="submission-audio">${submission.recordings.length ? submission.recordings.map(recording => `<label><span>${escapeHtml(recording.label)}</span><audio controls preload="none" src="${escapeHtml(recording.url)}"></audio></label>`).join("") : "<p>Аудиозаписи отсутствуют.</p>"}</div>
+      <div class="submission-audio">${submission.recordings.length ? submission.recordings.map(recording => `<label><span>${escapeHtml(recording.label)}</span><audio controls preload="none" src="${escapeHtml(recording.url)}"></audio>${transcriptMarkup(recording)}</label>`).join("") : "<p>Аудиозаписи отсутствуют.</p>"}</div>
       <button class="auth-link" type="button" data-attempt-history="${submission.id}">История попыток</button>
       <form class="review-form" data-review-submission="${submission.id}" data-review-tasks="${submission.tasks.join(",")}">
         ${reviewFields(submission.tasks, submission.review?.scores)}
@@ -43,6 +43,19 @@ export function teacherSubmissionsMarkup(submissions) {
         <button class="primary-btn" type="submit">${submission.review ? "Обновить оценку" : "Сохранить оценку"}</button>
       </form>
     </article>`).join("");
+}
+
+function transcriptMarkup(recording) {
+  if (recording.transcript_status === "completed") {
+    return `<details class="recording-transcript"><summary>Расшифровка</summary><p>${escapeHtml(recording.transcript_text || "")}</p></details>`;
+  }
+  if (recording.transcript_status === "pending" || recording.transcript_status === "processing") {
+    return '<small class="transcript-status">Расшифровка готовится…</small>';
+  }
+  if (recording.transcript_status === "failed") {
+    return '<small class="transcript-status error">Не удалось расшифровать запись</small>';
+  }
+  return "";
 }
 
 export function teacherGroupsMarkup(groups) {

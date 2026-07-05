@@ -154,11 +154,42 @@ def migration_004_assignment_delivery(database: sqlite3.Connection) -> None:
         database.execute("ALTER TABLE recordings ADD COLUMN duration_seconds REAL")
 
 
+def migration_005_transcriptions(database: sqlite3.Connection) -> None:
+    columns = {row["name"] for row in database.execute("PRAGMA table_info(recordings)")}
+    additions = {
+        "transcript_status": "TEXT NOT NULL DEFAULT 'disabled'",
+        "transcript_text": "TEXT",
+        "transcript_error": "TEXT",
+        "transcribed_at": "INTEGER",
+    }
+    for name, definition in additions.items():
+        if name not in columns:
+            database.execute(f"ALTER TABLE recordings ADD COLUMN {name} {definition}")
+    database.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS transcription_jobs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            recording_id INTEGER NOT NULL UNIQUE REFERENCES recordings(id) ON DELETE CASCADE,
+            status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'completed', 'failed')),
+            attempts INTEGER NOT NULL DEFAULT 0,
+            available_at INTEGER NOT NULL,
+            locked_at INTEGER,
+            last_error TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS transcription_jobs_queue_idx
+            ON transcription_jobs(status, available_at, id);
+        """
+    )
+
+
 MIGRATIONS = [
     (1, migration_001_core),
     (2, migration_002_assignments_and_reviews),
     (3, migration_003_account_security),
     (4, migration_004_assignment_delivery),
+    (5, migration_005_transcriptions),
 ]
 
 

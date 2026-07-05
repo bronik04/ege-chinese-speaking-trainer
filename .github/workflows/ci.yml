@@ -7,6 +7,18 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: trainer_test
+          POSTGRES_USER: trainer
+          POSTGRES_PASSWORD: trainer-test-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U trainer -d trainer_test"
+          --health-interval 5s --health-timeout 3s --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -33,5 +45,9 @@ jobs:
         run: |
           coverage run -m unittest discover -s tests -v
           coverage report
+      - name: Test PostgreSQL adapter
+        env:
+          TEST_DATABASE_URL: postgresql://trainer:trainer-test-password@127.0.0.1:5432/trainer_test
+        run: python -m scripts.postgres_smoke
       - name: Validate Docker image
         run: docker build -t chinese-speaking-trainer:test .

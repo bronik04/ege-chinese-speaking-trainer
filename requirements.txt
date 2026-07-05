@@ -1,3 +1,6 @@
 fastapi==0.116.1
 uvicorn[standard]==0.35.0
 reportlab==4.4.3
+boto3==1.43.40
+openai==2.44.0
+psycopg[binary]==3.3.2

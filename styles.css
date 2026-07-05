@@ -277,6 +277,11 @@ h1 em { color: var(--crimson); font-weight: inherit; }
 .submission-audio { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; padding: 16px 20px; }
 .submission-audio label { display: grid; gap: 5px; color: var(--ink-soft); font-size: 11px; }
 .submission-audio audio { width: 100%; }
+.recording-transcript { margin-top: 4px; border-left: 2px solid var(--gold); padding-left: 10px; }
+.recording-transcript summary { cursor: pointer; color: var(--red); font-weight: 700; }
+.recording-transcript p { margin: 7px 0 0; color: var(--ink); font-size: 14px; line-height: 1.55; white-space: pre-wrap; }
+.transcript-status { color: var(--ink-soft); }
+.transcript-status.error { color: var(--red); }
 .review-form { padding: 18px 20px; background: var(--cream); }
 .review-task { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 0 0 14px; padding: 12px; border: 1px solid var(--line); }
 .review-task legend { color: var(--crimson-deep); font-weight: 700; }
