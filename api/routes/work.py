@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Request
 
 from api.http import invoke
+from api.schemas import AssignmentRequest, AssignmentUpdateRequest, ReviewRequest, SubmissionRequest
 
 router = APIRouter(prefix="/api")
 
@@ -16,13 +17,13 @@ async def teacher_assignments(request: Request):
 
 
 @router.post("/teacher/assignments")
-async def create_assignment(request: Request):
-    return await invoke(request, "teacher_assignment_create")
+async def create_assignment(request: Request, payload: AssignmentRequest):
+    return await invoke(request, "teacher_assignment_create", payload=payload)
 
 
 @router.put("/teacher/assignments/{assignment_id}")
-async def update_assignment(request: Request, assignment_id: int):
-    return await invoke(request, "teacher_assignment_update", assignment_id)
+async def update_assignment(request: Request, assignment_id: int, payload: AssignmentUpdateRequest):
+    return await invoke(request, "teacher_assignment_update", assignment_id, payload=payload)
 
 
 @router.post("/teacher/assignments/{assignment_id}/resend")
@@ -31,8 +32,8 @@ async def resend_assignment(request: Request, assignment_id: int):
 
 
 @router.post("/assignments/{assignment_id}/submissions")
-async def create_submission(request: Request, assignment_id: int):
-    return await invoke(request, "submission_create", assignment_id)
+async def create_submission(request: Request, assignment_id: int, payload: SubmissionRequest):
+    return await invoke(request, "submission_create", assignment_id, payload=payload)
 
 
 @router.get("/teacher/submissions")
@@ -56,5 +57,5 @@ async def export_pdf(request: Request):
 
 
 @router.post("/submissions/{submission_id}/review")
-async def review_submission(request: Request, submission_id: int):
-    return await invoke(request, "review_submission", submission_id)
+async def review_submission(request: Request, submission_id: int, payload: ReviewRequest):
+    return await invoke(request, "review_submission", submission_id, payload=payload)

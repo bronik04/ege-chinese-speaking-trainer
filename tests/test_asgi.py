@@ -51,6 +51,28 @@ class FastApiSmokeTest(unittest.TestCase):
         self.assertEqual(response.status_code, 201, response.text)
         self.assertFalse(response.json()["user"]["emailVerified"])
 
+    def test_pydantic_rejects_incomplete_and_extra_fields(self):
+        response = self.client.post(
+            "/api/auth/register",
+            headers={"Origin": "http://testserver", "Sec-Fetch-Site": "same-origin"},
+            json={
+                "email": "invalid@example.test",
+                "password": "password123",
+                "role": "student",
+                "unexpected": True,
+            },
+        )
+        self.assertEqual(response.status_code, 422)
+        payload = response.json()
+        self.assertEqual(payload["error"], "Некорректные данные запроса")
+        self.assertEqual({item["location"] for item in payload["fields"]}, {"displayName", "unexpected"})
+
+    def test_openapi_exposes_request_schemas(self):
+        document = self.client.get("/openapi.json").json()
+        operation = document["paths"]["/api/teacher/assignments"]["post"]
+        schema = operation["requestBody"]["content"]["application/json"]["schema"]
+        self.assertEqual(schema["$ref"], "#/components/schemas/AssignmentRequest")
+
 
 if __name__ == "__main__":
     unittest.main()

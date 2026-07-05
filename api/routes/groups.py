@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Request
 
 from api.http import invoke
+from api.schemas import GroupRequest, JoinGroupRequest, ProgressRequest
 
 router = APIRouter(prefix="/api")
 
@@ -11,18 +12,18 @@ async def get_progress(request: Request):
 
 
 @router.put("/progress")
-async def put_progress(request: Request):
-    return await invoke(request, "progress_put")
+async def put_progress(request: Request, payload: ProgressRequest):
+    return await invoke(request, "progress_put", payload=payload)
 
 
 @router.post("/teacher/groups")
-async def create_group(request: Request):
-    return await invoke(request, "teacher_group_create")
+async def create_group(request: Request, payload: GroupRequest):
+    return await invoke(request, "teacher_group_create", payload=payload)
 
 
 @router.post("/groups/join")
-async def join_group(request: Request):
-    return await invoke(request, "group_join")
+async def join_group(request: Request, payload: JoinGroupRequest):
+    return await invoke(request, "group_join", payload=payload)
 
 
 @router.get("/student/groups")

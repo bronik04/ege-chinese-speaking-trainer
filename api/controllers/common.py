@@ -150,6 +150,9 @@ class CommonControllerMixin:
         return email, password, None
 
     def read_json(self) -> dict | None:
+        validated = getattr(self, "validated_payload", None)
+        if validated is not None:
+            return dict(validated)
         try:
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError:

@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from urllib.parse import unquote
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 
 from api.routes import accounts, groups, recordings, work
@@ -26,6 +27,18 @@ app.include_router(accounts.router)
 app.include_router(groups.router)
 app.include_router(work.router)
 app.include_router(recordings.router)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error(_, error: RequestValidationError):
+    fields = [
+        {"location": ".".join(str(part) for part in item["loc"] if part != "body"), "message": item["msg"]}
+        for item in error.errors()
+    ]
+    return JSONResponse(
+        {"error": "Некорректные данные запроса", "fields": fields},
+        status_code=422,
+    )
 
 
 @app.get("/api/health")
