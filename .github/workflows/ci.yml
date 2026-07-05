@@ -44,6 +44,8 @@ jobs:
       - name: Install E2E browser
         run: npx playwright install --with-deps chromium
       - name: Test browser workflow
+        env:
+          E2E_PYTHON: python
         run: npm run test:e2e
       - name: Test Python with coverage
         run: |
