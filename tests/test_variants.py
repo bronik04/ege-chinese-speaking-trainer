@@ -16,7 +16,10 @@ class VariantsTest(unittest.TestCase):
                 self.assertEqual(document["year"], item["year"])
                 self.assertEqual(document["totalMinutes"], 14)
                 self.assertEqual(
-                    [(document["tasks"][str(task)]["prepSeconds"], document["tasks"][str(task)]["answerSeconds"]) for task in (1, 2, 3)],
+                    [
+                        (document["tasks"][str(task)]["prepSeconds"], document["tasks"][str(task)]["answerSeconds"])
+                        for task in (1, 2, 3)
+                    ],
                     [(90, 20), (120, 120), (180, 180)],
                 )
                 self.assertEqual(len(document["tasks"]["1"]["questions"]), 5)

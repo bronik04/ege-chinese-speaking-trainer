@@ -14,9 +14,7 @@ class GradingTest(unittest.TestCase):
         self.assertEqual((total, maximum), (20, 20))
 
     def test_zero_content_resets_other_task_scores(self):
-        normalized, total, maximum = validate_scores(
-            {"2": {"content": 0, "organization": 2, "language": 2}}, [2]
-        )
+        normalized, total, maximum = validate_scores({"2": {"content": 0, "organization": 2, "language": 2}}, [2])
         self.assertEqual(normalized["2"], {"content": 0, "organization": 0, "language": 0})
         self.assertEqual((total, maximum), (0, 7))
 

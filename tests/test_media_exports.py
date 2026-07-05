@@ -17,16 +17,23 @@ class AudioValidationTest(unittest.TestCase):
             with wave.open(str(path), "wb") as audio:
                 audio.setparams((1, 2, rate, rate, "NONE", "not compressed"))
                 audio.writeframes(b"".join(struct.pack("<h", int(500 * math.sin(index / 20))) for index in range(rate)))
-            self.assertAlmostEqual(validate_duration(path, 1), 1.0, delta=.1)
+            self.assertAlmostEqual(validate_duration(path, 1), 1.0, delta=0.1)
 
 
 class ExportTest(unittest.TestCase):
     def setUp(self):
-        self.items = [{
-            "groupName": "11 класс", "studentName": "Анна", "studentEmail": "anna@example.test",
-            "title": "Пробная работа", "attempt": 1, "status": "graded", "submittedAt": 1000,
-            "review": {"total": 18, "maximum": 20},
-        }]
+        self.items = [
+            {
+                "groupName": "11 класс",
+                "studentName": "Анна",
+                "studentEmail": "anna@example.test",
+                "title": "Пробная работа",
+                "attempt": 1,
+                "status": "graded",
+                "submittedAt": 1000,
+                "review": {"total": 18, "maximum": 20},
+            }
+        ]
 
     def test_csv_is_excel_compatible_utf8(self):
         document = submissions_csv(self.items)

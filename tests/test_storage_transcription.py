@@ -49,9 +49,7 @@ class S3StorageTest(unittest.TestCase):
             storage.put("1/answer.webm", source, "audio/webm")
         self.assertEqual(storage.read("1/answer.webm"), b"audio")
         storage.delete("1/answer.webm")
-        client_factory.assert_called_once_with(
-            "s3", endpoint_url="https://account.r2.example", region_name="auto"
-        )
+        client_factory.assert_called_once_with("s3", endpoint_url="https://account.r2.example", region_name="auto")
         client.upload_file.assert_called_once()
         client.get_object.assert_called_once_with(Bucket="answers", Key="1/answer.webm")
         client.delete_object.assert_called_once_with(Bucket="answers", Key="1/answer.webm")
@@ -118,8 +116,10 @@ class TranscriptionQueueTest(unittest.TestCase):
 
         transcriber = Mock()
         transcriber.transcribe.return_value = "这是学生的回答"
-        with patch.object(transcription_worker.server, "connect", side_effect=lambda: connect(self.path)), \
-             patch.object(transcription_worker.server, "AUDIO_DIR", audio_root):
+        with (
+            patch.object(transcription_worker.server, "connect", side_effect=lambda: connect(self.path)),
+            patch.object(transcription_worker.server, "AUDIO_DIR", audio_root),
+        ):
             self.assertTrue(transcription_worker.process_one(transcriber))
 
         with connect(self.path) as database:

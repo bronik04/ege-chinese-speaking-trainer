@@ -17,9 +17,7 @@ def password_hash(password: str) -> str:
 def password_matches(password: str, encoded: str) -> bool:
     try:
         iterations_text, salt_hex, digest_hex = encoded.split("$", 2)
-        digest = hashlib.pbkdf2_hmac(
-            "sha256", password.encode(), bytes.fromhex(salt_hex), int(iterations_text)
-        )
+        digest = hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt_hex), int(iterations_text))
         return hmac.compare_digest(digest.hex(), digest_hex)
     except (ValueError, TypeError):
         return False

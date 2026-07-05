@@ -7,3 +7,5 @@ node_modules/
 htmlcov/
 .env
 backups/
+test-results/
+playwright-report/

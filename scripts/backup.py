@@ -28,8 +28,10 @@ def create_backup(
         )
     else:
         source_database = data_dir / "trainer.sqlite3"
-        with closing(sqlite3.connect(source_database)) as source, \
-             closing(sqlite3.connect(target / "trainer.sqlite3")) as destination:
+        with (
+            closing(sqlite3.connect(source_database)) as source,
+            closing(sqlite3.connect(target / "trainer.sqlite3")) as destination,
+        ):
             with source, destination:
                 source.backup(destination)
                 if destination.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
@@ -52,13 +54,15 @@ def main() -> None:
     parser.add_argument("--keep", type=int, default=14)
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    print(create_backup(
-        args.data_dir,
-        args.output_dir,
-        max(1, args.keep),
-        os.environ.get("DATABASE_URL", ""),
-        os.environ.get("TRAINER_AUDIO_STORAGE", "local"),
-    ))
+    print(
+        create_backup(
+            args.data_dir,
+            args.output_dir,
+            max(1, args.keep),
+            os.environ.get("DATABASE_URL", ""),
+            os.environ.get("TRAINER_AUDIO_STORAGE", "local"),
+        )
+    )
 
 
 if __name__ == "__main__":

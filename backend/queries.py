@@ -36,18 +36,25 @@ def teacher_dashboard(database: sqlite3.Connection, teacher_id: int) -> list[dic
         for member in members:
             document = safe_progress(member["progress_json"])
             completed = [run for run in document.get("runs", []) if run.get("status") == "completed"]
-            students.append({
-                "id": member["id"],
-                "name": member["display_name"] or member["email"],
-                "email": member["email"],
-                "completedRuns": len(completed),
-                "completedTasks": sum(len(run.get("completedTasks", [])) for run in completed),
-                "lastActivity": document.get("updatedAt") if member["progress_json"] else None,
-            })
-        result.append({
-            "id": group["id"], "name": group["name"], "code": group["join_code"],
-            "createdAt": group["created_at"], "students": students,
-        })
+            students.append(
+                {
+                    "id": member["id"],
+                    "name": member["display_name"] or member["email"],
+                    "email": member["email"],
+                    "completedRuns": len(completed),
+                    "completedTasks": sum(len(run.get("completedTasks", [])) for run in completed),
+                    "lastActivity": document.get("updatedAt") if member["progress_json"] else None,
+                }
+            )
+        result.append(
+            {
+                "id": group["id"],
+                "name": group["name"],
+                "code": group["join_code"],
+                "createdAt": group["created_at"],
+                "students": students,
+            }
+        )
     return result
 
 
@@ -75,11 +82,17 @@ def student_assignments(database: sqlite3.Connection, student_id: int) -> list[d
             """,
             (row["id"], student_id),
         ).fetchone()
-        result.append({
-            "id": row["id"], "title": row["title"], "variantId": row["variant_id"],
-            "tasks": json.loads(row["tasks_json"]), "dueAt": row["due_at"],
-            "groupName": row["group_name"], "latest": dict(latest) if latest else None,
-        })
+        result.append(
+            {
+                "id": row["id"],
+                "title": row["title"],
+                "variantId": row["variant_id"],
+                "tasks": json.loads(row["tasks_json"]),
+                "dueAt": row["due_at"],
+                "groupName": row["group_name"],
+                "latest": dict(latest) if latest else None,
+            }
+        )
     return result
 
 
@@ -115,7 +128,7 @@ def teacher_submissions(
         JOIN users ON users.id = submissions.student_id
         JOIN study_groups ON study_groups.id = assignments.group_id
         LEFT JOIN reviews ON reviews.submission_id = submissions.id
-        WHERE {' AND '.join(filters)}
+        WHERE {" AND ".join(filters)}
         ORDER BY CASE submissions.status WHEN 'submitted' THEN 0 ELSE 1 END, submissions.submitted_at DESC
         """,
         parameters,
@@ -128,18 +141,37 @@ def teacher_submissions(
                FROM recordings WHERE submission_id = ? ORDER BY task_number, question_number, id""",
             (row["id"],),
         ).fetchall()
-        result.append({
-            "id": row["id"], "attempt": row["attempt_number"], "status": row["status"],
-            "assignmentId": row["assignment_id"], "studentId": row["student_id"], "groupId": row["group_id"],
-            "submittedAt": row["submitted_at"], "title": row["title"],
-            "variantId": row["variant_id"], "tasks": json.loads(row["tasks_json"]),
-            "studentName": row["student_name"] or row["student_email"],
-            "studentEmail": row["student_email"], "groupName": row["group_name"],
-            "recordings": [{**dict(recording), "url": f"/api/recordings/{recording['id']}"} for recording in recordings],
-            "review": ({"scores": json.loads(row["scores_json"]), "total": row["total_score"],
-                        "maximum": row["max_score"], "comment": row["comment"],
-                        "reviewedAt": row["reviewed_at"]} if row["scores_json"] else None),
-        })
+        result.append(
+            {
+                "id": row["id"],
+                "attempt": row["attempt_number"],
+                "status": row["status"],
+                "assignmentId": row["assignment_id"],
+                "studentId": row["student_id"],
+                "groupId": row["group_id"],
+                "submittedAt": row["submitted_at"],
+                "title": row["title"],
+                "variantId": row["variant_id"],
+                "tasks": json.loads(row["tasks_json"]),
+                "studentName": row["student_name"] or row["student_email"],
+                "studentEmail": row["student_email"],
+                "groupName": row["group_name"],
+                "recordings": [
+                    {**dict(recording), "url": f"/api/recordings/{recording['id']}"} for recording in recordings
+                ],
+                "review": (
+                    {
+                        "scores": json.loads(row["scores_json"]),
+                        "total": row["total_score"],
+                        "maximum": row["max_score"],
+                        "comment": row["comment"],
+                        "reviewedAt": row["reviewed_at"],
+                    }
+                    if row["scores_json"]
+                    else None
+                ),
+            }
+        )
     return result
 
 
@@ -157,12 +189,22 @@ def teacher_assignments(database: sqlite3.Connection, teacher_id: int) -> list[d
         """,
         (teacher_id,),
     ).fetchall()
-    return [{
-        "id": row["id"], "title": row["title"], "variantId": row["variant_id"],
-        "tasks": json.loads(row["tasks_json"]), "dueAt": row["due_at"], "createdAt": row["created_at"],
-        "updatedAt": row["updated_at"], "sourceAssignmentId": row["source_assignment_id"],
-        "groupId": row["group_id"], "groupName": row["group_name"], "submissionCount": row["submission_count"],
-    } for row in rows]
+    return [
+        {
+            "id": row["id"],
+            "title": row["title"],
+            "variantId": row["variant_id"],
+            "tasks": json.loads(row["tasks_json"]),
+            "dueAt": row["due_at"],
+            "createdAt": row["created_at"],
+            "updatedAt": row["updated_at"],
+            "sourceAssignmentId": row["source_assignment_id"],
+            "groupId": row["group_id"],
+            "groupName": row["group_name"],
+            "submissionCount": row["submission_count"],
+        }
+        for row in rows
+    ]
 
 
 def submission_history(database: sqlite3.Connection, teacher_id: int, submission_id: int) -> dict | None:
@@ -171,12 +213,16 @@ def submission_history(database: sqlite3.Connection, teacher_id: int, submission
         SELECT submissions.assignment_id, submissions.student_id FROM submissions
         JOIN assignments ON assignments.id = submissions.assignment_id
         WHERE submissions.id = ? AND assignments.teacher_id = ?
-        """, (submission_id, teacher_id),
+        """,
+        (submission_id, teacher_id),
     ).fetchone()
     if not target:
         return None
     attempts = teacher_submissions(database, teacher_id)
     return {
-        "attempts": [item for item in attempts if item["assignmentId"] == target["assignment_id"]
-                     and item["studentId"] == target["student_id"]]
+        "attempts": [
+            item
+            for item in attempts
+            if item["assignmentId"] == target["assignment_id"] and item["studentId"] == target["student_id"]
+        ]
     }

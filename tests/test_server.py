@@ -7,20 +7,24 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import server
+from api import runtime
+from api.controllers import common, recordings
+from backend.security import password_hash, password_matches, request_has_same_origin
 
 
 class SecurityHelpersTest(unittest.TestCase):
     def test_password_hash_round_trip(self):
-        encoded = server.password_hash("correct horse battery staple")
-        self.assertTrue(server.password_matches("correct horse battery staple", encoded))
-        self.assertFalse(server.password_matches("wrong password", encoded))
+        encoded = password_hash("correct horse battery staple")
+        self.assertTrue(password_matches("correct horse battery staple", encoded))
+        self.assertFalse(password_matches("wrong password", encoded))
 
     def test_same_origin_requires_browser_source(self):
         host = "127.0.0.1:8080"
-        self.assertTrue(server.request_has_same_origin(host, "http://127.0.0.1:8080", None, "same-origin"))
-        self.assertTrue(server.request_has_same_origin(host, None, "http://127.0.0.1:8080/page", "same-origin"))
-        self.assertFalse(server.request_has_same_origin(host, None, None, None))
-        self.assertFalse(server.request_has_same_origin(host, "https://evil.example", None, "cross-site"))
+        self.assertTrue(request_has_same_origin(host, "http://127.0.0.1:8080", None, "same-origin"))
+        self.assertTrue(request_has_same_origin(host, None, "http://127.0.0.1:8080/page", "same-origin"))
+        self.assertFalse(request_has_same_origin(host, None, None, None))
+        self.assertFalse(request_has_same_origin(host, "https://evil.example", None, "cross-site"))
+
 
 class ApiFlowTest(unittest.TestCase):
     @classmethod
@@ -29,8 +33,15 @@ class ApiFlowTest(unittest.TestCase):
         server.DATA_DIR = Path(cls.temp_dir.name)
         server.DB_PATH = server.DATA_DIR / "trainer.sqlite3"
         server.AUDIO_DIR = server.DATA_DIR / "audio"
-        cls.original_validate_duration = server.validate_duration
-        server.validate_duration = lambda path, task: 1.0
+        runtime.DATA_DIR = server.DATA_DIR
+        runtime.DB_PATH = server.DB_PATH
+        runtime.AUDIO_DIR = server.AUDIO_DIR
+        common.DATA_DIR = server.DATA_DIR
+        common.AUDIO_DIR = server.AUDIO_DIR
+        recordings.DATA_DIR = server.DATA_DIR
+        recordings.AUDIO_DIR = server.AUDIO_DIR
+        cls.original_validate_duration = recordings.validate_duration
+        recordings.validate_duration = lambda path, task: 1.0
         server.init_database()
         cls.httpd = server.ThreadingHTTPServer(("127.0.0.1", 0), server.TrainerHandler)
         cls.httpd.daemon_threads = True
@@ -44,7 +55,7 @@ class ApiFlowTest(unittest.TestCase):
         cls.httpd.shutdown()
         cls.httpd.server_close()
         cls.thread.join(timeout=2)
-        server.validate_duration = cls.original_validate_duration
+        recordings.validate_duration = cls.original_validate_duration
         cls.temp_dir.cleanup()
 
     def request(self, method, path, payload=None, cookie=None, include_origin=True):
@@ -69,9 +80,15 @@ class ApiFlowTest(unittest.TestCase):
     def request_audio(self, path, data, cookie):
         connection = http.client.HTTPConnection(self.host, self.port, timeout=3)
         connection.request(
-            "POST", path, body=data,
-            headers={"Content-Type": "audio/webm", "Origin": self.origin,
-                     "Sec-Fetch-Site": "same-origin", "Cookie": cookie},
+            "POST",
+            path,
+            body=data,
+            headers={
+                "Content-Type": "audio/webm",
+                "Origin": self.origin,
+                "Sec-Fetch-Site": "same-origin",
+                "Cookie": cookie,
+            },
         )
         response = connection.getresponse()
         payload = json.loads(response.read() or b"{}")
@@ -94,14 +111,19 @@ class ApiFlowTest(unittest.TestCase):
     @classmethod
     def token_from_outbox(cls, email, parameter):
         entries = [json.loads(line) for line in (server.DATA_DIR / "outbox.log").read_text().splitlines()]
-        message = next(entry for entry in reversed(entries) if entry["to"] == email and f"?{parameter}=" in entry["body"])
+        message = next(
+            entry for entry in reversed(entries) if entry["to"] == email and f"?{parameter}=" in entry["body"]
+        )
         url = message["body"].strip().splitlines()[-1]
         return parse_qs(urlparse(url).query)[parameter][0]
 
     def test_account_verification_password_reset_and_audit(self):
         email = "security@example.test"
         account = {
-            "email": email, "password": "original123", "displayName": "Чэнь Мин", "role": "student",
+            "email": email,
+            "password": "original123",
+            "displayName": "Чэнь Мин",
+            "role": "student",
         }
         status, payload, headers = self.request("POST", "/api/auth/register", account)
         self.assertEqual(status, 201)
@@ -109,9 +131,7 @@ class ApiFlowTest(unittest.TestCase):
         cookie = self.cookie_from(headers)
 
         verification_token = self.token_from_outbox(email, "verify")
-        status, _, _ = self.request(
-            "POST", "/api/auth/email/confirm", {"token": verification_token}
-        )
+        status, _, _ = self.request("POST", "/api/auth/email/confirm", {"token": verification_token})
         self.assertEqual(status, 200)
         status, me, _ = self.request("GET", "/api/auth/me", cookie=cookie)
         self.assertEqual(status, 200)
@@ -126,14 +146,10 @@ class ApiFlowTest(unittest.TestCase):
         self.assertEqual(status, 200)
         status, _, _ = self.request("GET", "/api/auth/me", cookie=cookie)
         self.assertEqual(status, 401)
-        status, _, _ = self.request(
-            "POST", "/api/auth/login", {"email": email, "password": "replacement123"}
-        )
+        status, _, _ = self.request("POST", "/api/auth/login", {"email": email, "password": "replacement123"})
         self.assertEqual(status, 200)
 
-        status, _, headers = self.request(
-            "POST", "/api/auth/login", {"email": email, "password": "replacement123"}
-        )
+        status, _, headers = self.request("POST", "/api/auth/login", {"email": email, "password": "replacement123"})
         new_cookie = self.cookie_from(headers)
         status, audit, _ = self.request("GET", "/api/account/audit", cookie=new_cookie)
         self.assertEqual(status, 200)
@@ -144,33 +160,42 @@ class ApiFlowTest(unittest.TestCase):
 
     def test_teacher_student_progress_flow(self):
         teacher = {
-            "email": "teacher@example.test", "password": "teacher123",
-            "displayName": "Ли Лаоши", "role": "teacher",
+            "email": "teacher@example.test",
+            "password": "teacher123",
+            "displayName": "Ли Лаоши",
+            "role": "teacher",
         }
         status, _, headers = self.request("POST", "/api/auth/register", teacher)
         self.assertEqual(status, 201)
         teacher_cookie = self.cookie_from(headers)
 
         student = {
-            "email": "student@example.test", "password": "student123",
-            "displayName": "Анна Петрова", "role": "student",
+            "email": "student@example.test",
+            "password": "student123",
+            "displayName": "Анна Петрова",
+            "role": "student",
         }
         status, _, headers = self.request("POST", "/api/auth/register", student)
         self.assertEqual(status, 201)
         student_cookie = self.cookie_from(headers)
 
-        status, group_payload, _ = self.request(
-            "POST", "/api/teacher/groups", {"name": "11 класс"}, teacher_cookie
-        )
+        status, group_payload, _ = self.request("POST", "/api/teacher/groups", {"name": "11 класс"}, teacher_cookie)
         self.assertEqual(status, 201)
         code = group_payload["group"]["code"]
 
         status, _, _ = self.request("POST", "/api/groups/join", {"code": code}, student_cookie)
         self.assertEqual(status, 200)
         status, assignment_payload, _ = self.request(
-            "POST", "/api/teacher/assignments",
-            {"groupId": group_payload["group"]["id"], "title": "Пробный вариант",
-             "variantId": "demo-2026", "tasks": [1, 2], "dueAt": None}, teacher_cookie,
+            "POST",
+            "/api/teacher/assignments",
+            {
+                "groupId": group_payload["group"]["id"],
+                "title": "Пробный вариант",
+                "variantId": "demo-2026",
+                "tasks": [1, 2],
+                "dueAt": None,
+            },
+            teacher_cookie,
         )
         self.assertEqual(status, 201)
         assignment_id = assignment_payload["assignment"]["id"]
@@ -181,7 +206,10 @@ class ApiFlowTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(teacher_assignments["assignments"][0]["id"], assignment_id)
         status, _, _ = self.request(
-            "PUT", f"/api/teacher/assignments/{assignment_id}", {"title": "Обновлённый вариант", "dueAt": None}, teacher_cookie
+            "PUT",
+            f"/api/teacher/assignments/{assignment_id}",
+            {"title": "Обновлённый вариант", "dueAt": None},
+            teacher_cookie,
         )
         self.assertEqual(status, 200)
         status, repeated, _ = self.request(
@@ -191,8 +219,10 @@ class ApiFlowTest(unittest.TestCase):
         self.assertNotEqual(repeated["assignment"]["id"], assignment_id)
 
         status, submission_payload, _ = self.request(
-            "POST", f"/api/assignments/{assignment_id}/submissions",
-            {"run": {"variantId": "demo-2026", "tasks": [1, 2]}}, student_cookie,
+            "POST",
+            f"/api/assignments/{assignment_id}/submissions",
+            {"run": {"variantId": "demo-2026", "tasks": [1, 2]}},
+            student_cookie,
         )
         self.assertEqual(status, 201)
         submission_id = submission_payload["submission"]["id"]
@@ -209,9 +239,7 @@ class ApiFlowTest(unittest.TestCase):
         status, teacher_submissions, _ = self.request("GET", "/api/teacher/submissions", cookie=teacher_cookie)
         self.assertEqual(status, 200)
         self.assertEqual(teacher_submissions["submissions"][0]["recordings"][0]["id"], recording_id)
-        status, history, _ = self.request(
-            "GET", f"/api/teacher/submissions/{submission_id}", cookie=teacher_cookie
-        )
+        status, history, _ = self.request("GET", f"/api/teacher/submissions/{submission_id}", cookie=teacher_cookie)
         self.assertEqual(status, 200)
         self.assertEqual(history["attempts"][0]["id"], submission_id)
         status, csv_data, csv_type = self.request_bytes("/api/teacher/export.csv?status=submitted", teacher_cookie)
@@ -223,13 +251,17 @@ class ApiFlowTest(unittest.TestCase):
             "2": {"content": 3, "organization": 2, "language": 2},
         }
         status, review, _ = self.request(
-            "POST", f"/api/submissions/{submission_id}/review",
-            {"scores": review_scores, "comment": "Отличная работа"}, teacher_cookie,
+            "POST",
+            f"/api/submissions/{submission_id}/review",
+            {"scores": review_scores, "comment": "Отличная работа"},
+            teacher_cookie,
         )
         self.assertEqual(status, 200)
         self.assertEqual(review["review"], {"total": 12, "maximum": 12})
         progress = {
-            "version": 1, "updatedAt": "2026-07-04T12:00:00.000Z", "settings": {},
+            "version": 1,
+            "updatedAt": "2026-07-04T12:00:00.000Z",
+            "settings": {},
             "activeRun": None,
             "runs": [{"id": "run-1", "status": "completed", "completedTasks": [1, 2]}],
         }
@@ -244,14 +276,12 @@ class ApiFlowTest(unittest.TestCase):
         self.assertEqual(visible_student["completedTasks"], 2)
 
         with server.connect() as database:
-            file_name = database.execute(
-                "SELECT file_name FROM recordings WHERE id = ?", (recording_id,)
-            ).fetchone()["file_name"]
+            file_name = database.execute("SELECT file_name FROM recordings WHERE id = ?", (recording_id,)).fetchone()[
+                "file_name"
+            ]
         audio_path = server.AUDIO_DIR / file_name
         self.assertTrue(audio_path.is_file())
-        status, _, _ = self.request(
-            "DELETE", "/api/account", {"password": "student123"}, student_cookie
-        )
+        status, _, _ = self.request("DELETE", "/api/account", {"password": "student123"}, student_cookie)
         self.assertEqual(status, 200)
         self.assertFalse(audio_path.exists())
         status, _, _ = self.request("GET", "/api/auth/me", cookie=student_cookie)
@@ -266,12 +296,16 @@ class ApiFlowTest(unittest.TestCase):
 
     def test_migrations_are_recorded(self):
         with server.connect() as database:
-            versions = [row["version"] for row in database.execute("SELECT version FROM schema_migrations ORDER BY version")]
+            versions = [
+                row["version"] for row in database.execute("SELECT version FROM schema_migrations ORDER BY version")
+            ]
         self.assertEqual(versions, [1, 2, 3, 4, 5])
 
     def test_mutation_without_origin_is_rejected(self):
         status, payload, _ = self.request(
-            "POST", "/api/auth/login", {"email": "nobody@example.test", "password": "password123"},
+            "POST",
+            "/api/auth/login",
+            {"email": "nobody@example.test", "password": "password123"},
             include_origin=False,
         )
         self.assertEqual(status, 403)

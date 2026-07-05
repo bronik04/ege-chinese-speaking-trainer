@@ -6,3 +6,5 @@ backups
 __pycache__
 .coverage
 .DS_Store
+test-results
+playwright-report

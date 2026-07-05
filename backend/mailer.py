@@ -15,9 +15,13 @@ def send_email(data_dir: Path, recipient: str, subject: str, body: str) -> str:
         outbox = data_dir / "outbox.log"
         outbox.parent.mkdir(parents=True, exist_ok=True)
         with outbox.open("a", encoding="utf-8") as stream:
-            stream.write(json.dumps({
-                "to": recipient, "subject": subject, "body": body, "createdAt": int(time.time())
-            }, ensure_ascii=False) + "\n")
+            stream.write(
+                json.dumps(
+                    {"to": recipient, "subject": subject, "body": body, "createdAt": int(time.time())},
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
         outbox.chmod(0o600)
         return "outbox"
 

@@ -11,11 +11,18 @@ def submissions_csv(items: list[dict]) -> bytes:
     writer.writerow(["Группа", "Ученик", "Email", "Работа", "Попытка", "Статус", "Баллы", "Дата"])
     for item in items:
         review = item.get("review")
-        writer.writerow([
-            item["groupName"], item["studentName"], item["studentEmail"], item["title"], item["attempt"],
-            "Проверено" if item["status"] == "graded" else "На проверке",
-            f"{review['total']}/{review['maximum']}" if review else "", item["submittedAt"],
-        ])
+        writer.writerow(
+            [
+                item["groupName"],
+                item["studentName"],
+                item["studentEmail"],
+                item["title"],
+                item["attempt"],
+                "Проверено" if item["status"] == "graded" else "На проверке",
+                f"{review['total']}/{review['maximum']}" if review else "",
+                item["submittedAt"],
+            ]
+        )
     return ("\ufeff" + output.getvalue()).encode("utf-8")
 
 
@@ -40,16 +47,30 @@ def submissions_pdf(items: list[dict]) -> bytes:
     rows = [["Группа", "Ученик", "Работа", "Попытка", "Статус", "Баллы"]]
     for item in items:
         review = item.get("review")
-        rows.append([item["groupName"], item["studentName"], item["title"], str(item["attempt"]),
-                     "Проверено" if review else "На проверке",
-                     f"{review['total']}/{review['maximum']}" if review else "—"])
+        rows.append(
+            [
+                item["groupName"],
+                item["studentName"],
+                item["title"],
+                str(item["attempt"]),
+                "Проверено" if review else "На проверке",
+                f"{review['total']}/{review['maximum']}" if review else "—",
+            ]
+        )
     table = Table(rows, repeatRows=1, colWidths=[70, 90, 145, 45, 65, 45])
-    table.setStyle(TableStyle([
-        ("FONTNAME", (0, 0), (-1, -1), font), ("FONTSIZE", (0, 0), (-1, -1), 7),
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#8b1a1a")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white), ("GRID", (0, 0), (-1, -1), .25, colors.grey),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"), ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8f1e6")]),
-    ]))
+    table.setStyle(
+        TableStyle(
+            [
+                ("FONTNAME", (0, 0), (-1, -1), font),
+                ("FONTSIZE", (0, 0), (-1, -1), 7),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#8b1a1a")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8f1e6")]),
+            ]
+        )
+    )
     story.append(table)
     document.build(story)
     return output.getvalue()

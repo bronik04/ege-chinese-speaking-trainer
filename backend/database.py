@@ -48,6 +48,13 @@ def engine_name() -> str:
     return "postgresql" if os.environ.get("DATABASE_URL", "").strip() else "sqlite"
 
 
+def close_connections() -> None:
+    if os.environ.get("DATABASE_URL", "").strip():
+        from backend.postgres import close_pools
+
+        close_pools()
+
+
 try:
     import psycopg
 

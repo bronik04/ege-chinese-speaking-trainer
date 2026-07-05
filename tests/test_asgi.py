@@ -6,6 +6,8 @@ from fastapi.testclient import TestClient
 
 import asgi
 import server
+from api import runtime
+from api.controllers import common, recordings
 
 
 class FastApiSmokeTest(unittest.TestCase):
@@ -15,6 +17,13 @@ class FastApiSmokeTest(unittest.TestCase):
         server.DATA_DIR = Path(cls.temp_dir.name)
         server.DB_PATH = server.DATA_DIR / "trainer.sqlite3"
         server.AUDIO_DIR = server.DATA_DIR / "audio"
+        runtime.DATA_DIR = server.DATA_DIR
+        runtime.DB_PATH = server.DB_PATH
+        runtime.AUDIO_DIR = server.AUDIO_DIR
+        common.DATA_DIR = server.DATA_DIR
+        common.AUDIO_DIR = server.AUDIO_DIR
+        recordings.DATA_DIR = server.DATA_DIR
+        recordings.AUDIO_DIR = server.AUDIO_DIR
         cls.client_context = TestClient(asgi.app)
         cls.client = cls.client_context.__enter__()
 
@@ -32,7 +41,12 @@ class FastApiSmokeTest(unittest.TestCase):
         response = self.client.post(
             "/api/auth/register",
             headers={"Origin": "http://testserver", "Sec-Fetch-Site": "same-origin"},
-            json={"email": "asgi@example.test", "password": "password123", "displayName": "ASGI User", "role": "student"},
+            json={
+                "email": "asgi@example.test",
+                "password": "password123",
+                "displayName": "ASGI User",
+                "role": "student",
+            },
         )
         self.assertEqual(response.status_code, 201, response.text)
         self.assertFalse(response.json()["user"]["emailVerified"])

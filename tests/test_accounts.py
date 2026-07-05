@@ -33,9 +33,7 @@ class AccountSecurityTest(unittest.TestCase):
             retry_after = consume_rate_limit(database, "login", "127.0.0.1", "user@example.test", 1008)
         self.assertGreater(retry_after, 0)
         with connect(self.database_path) as database:
-            self.assertGreater(
-                consume_rate_limit(database, "login", "127.0.0.1", "user@example.test", 1009), 0
-            )
+            self.assertGreater(consume_rate_limit(database, "login", "127.0.0.1", "user@example.test", 1009), 0)
 
     def test_tokens_are_single_use_and_expire(self):
         with connect(self.database_path) as database:

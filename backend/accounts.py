@@ -79,9 +79,7 @@ def issue_token(database: sqlite3.Connection, kind: str, user_id: int, now: int 
     return token
 
 
-def consume_token(
-    database: sqlite3.Connection, kind: str, token: str, now: int | None = None
-) -> sqlite3.Row | None:
+def consume_token(database: sqlite3.Connection, kind: str, token: str, now: int | None = None) -> sqlite3.Row | None:
     if not token or len(token) > 512:
         return None
     moment = int(time.time()) if now is None else int(now)

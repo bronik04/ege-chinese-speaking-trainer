@@ -20,7 +20,7 @@ python3 -m venv .venv
 
 ```bash
 cp .env.example .env
-# укажите DOMAIN, PostgreSQL, SMTP и при необходимости R2/OpenAI
+# укажите DOMAIN, SMTP и при необходимости R2/OpenAI
 docker compose up -d --build
 ```
 
@@ -28,7 +28,13 @@ docker compose up -d --build
 
 Размер запроса ограничен на прокси и в ASGI-приложении. Аудио дополнительно проверяется через `ffprobe`: допустимый максимум — 30 секунд для задания 1, 150 секунд для задания 2 и 210 секунд для задания 3.
 
-В Docker Compose приложение использует PostgreSQL 17. Схема создаётся автоматически, а проверка PostgreSQL-адаптера входит в CI. Без `DATABASE_URL` локальный запуск по-прежнему использует SQLite.
+Обычный Docker Compose использует SQLite и сохраняет прежнюю простоту запуска. PostgreSQL не обязателен и подключается только при росте нагрузки:
+
+```bash
+docker compose -f compose.yml -f compose.scale.yml up -d --build
+```
+
+В scale-профиле PostgreSQL 17 использует пул соединений, а схема обновляется Alembic. SQLite продолжает использовать собственные версионированные миграции и остаётся полностью поддерживаемым основным режимом.
 
 Резервная копия PostgreSQL создаётся через `pg_dump`; в локальном SQLite-режиме используется SQLite Backup API. Локальные аудиофайлы архивируются отдельно:
 
@@ -43,7 +49,7 @@ docker compose exec app python scripts/backup.py --data-dir /app/var --output-di
 ## Прогресс и аккаунты
 
 - Без входа история и настройки сохраняются в `localStorage` текущего браузера.
-- После регистрации или входа прогресс синхронизируется с PostgreSQL либо локальной SQLite-базой `var/trainer.sqlite3`.
+- После регистрации или входа прогресс синхронизируется с SQLite-базой `var/trainer.sqlite3` либо с опциональным PostgreSQL.
 - При регистрации можно выбрать роль ученика или преподавателя.
 - Преподаватель создаёт учебные группы с шестизначным кодом и видит статистику подключившихся учеников.
 - Ученик вводит код в личном кабинете, после чего его прогресс становится доступен преподавателю этой группы.
@@ -62,7 +68,7 @@ docker compose exec app python scripts/backup.py --data-dir /app/var --output-di
 
 ## PostgreSQL, R2 и расшифровка
 
-Для PostgreSQL задайте стандартный URI подключения:
+PostgreSQL нужен только для масштабирования. Запустите `compose.scale.yml` или задайте стандартный URI подключения:
 
 ```bash
 DATABASE_URL=postgresql://trainer:password@postgres:5432/trainer
@@ -89,6 +95,8 @@ TRAINER_TRANSCRIPTION_LANGUAGE=zh
 ```
 
 Загрузка ответа не ждёт внешний API: запись попадает в устойчивую очередь БД. Воркер повторяет временные ошибки до трёх раз и возвращает зависшее задание в очередь через 15 минут. Запуск отдельно от Compose: `.venv/bin/python -m scripts.transcription_worker`.
+
+В Docker воркер включается отдельным профилем: `docker compose --profile transcription up -d --build`. Его можно сочетать как с основным SQLite-режимом, так и с `compose.scale.yml`.
 
 ## Почта и ссылки аккаунта
 
@@ -125,19 +133,24 @@ npm install
 .venv/bin/ruff check .
 npm run lint:js
 npm test
+npx playwright install chromium
+npm run test:e2e
 .venv/bin/coverage run -m unittest discover -s tests -v
 .venv/bin/coverage report
 ```
 
-CI проверяет Python через Ruff, JavaScript через ESLint, запускает Python- и JavaScript-тесты, делает smoke-test реального PostgreSQL 17 и требует покрытие Python-кода не ниже 55%.
+CI проверяет Python через Ruff, JavaScript через ESLint, запускает модульные и Playwright E2E-тесты, проверяет PostgreSQL 17 с Alembic и восстановлением `pg_dump`, а S3-контракт — через MinIO. Покрытие Python-кода должно быть не ниже 55%.
 
 ## Структура кода
 
-- `server.py` — HTTP-маршрутизация и обработчики API;
+- `asgi.py` и `api/routes/` — нативные маршруты FastAPI;
+- `api/controllers/` — контроллеры аккаунтов, групп, работ и записей;
+- `server.py` — компактный совместимый локальный сервер;
 - `backend/` — база данных, миграции, запросы, безопасность и оценивание;
-- `app.js` — управление состоянием интерфейса и экзаменационным сценарием;
-- `js/` — API-клиент, прогресс, шаблоны кабинета, проверка работ и отображение заданий;
-- `tests/` и `tests-js/` — серверные, интеграционные и клиентские тесты.
+- `app.js` — точка сборки экранов и общего состояния;
+- `js/account-controller.js` и `js/runner-controller.js` — кабинеты и экзаменационный сценарий;
+- `migrations/` — Alembic-миграции опционального PostgreSQL;
+- `tests/`, `tests-js/` и `tests-e2e/` — API-, клиентские и браузерные тесты.
 
 ## Добавление вариантов
 

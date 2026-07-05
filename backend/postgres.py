@@ -1,9 +1,37 @@
 from __future__ import annotations
 
+import os
 import re
-import time
+import threading
+from pathlib import Path
 
-IDENTITY_TABLES = {"users", "study_groups", "assignments", "submissions", "recordings", "audit_log", "transcription_jobs"}
+from psycopg.rows import dict_row
+from psycopg_pool import ConnectionPool
+
+IDENTITY_TABLES = {
+    "users",
+    "study_groups",
+    "assignments",
+    "submissions",
+    "recordings",
+    "audit_log",
+    "transcription_jobs",
+}
+_POOLS: dict[str, ConnectionPool] = {}
+_POOL_LOCK = threading.Lock()
+
+
+def _pool(url: str) -> ConnectionPool:
+    with _POOL_LOCK:
+        if url not in _POOLS:
+            _POOLS[url] = ConnectionPool(
+                conninfo=url,
+                min_size=int(os.environ.get("TRAINER_DB_POOL_MIN", "1")),
+                max_size=int(os.environ.get("TRAINER_DB_POOL_MAX", "10")),
+                kwargs={"row_factory": dict_row},
+                open=True,
+            )
+        return _POOLS[url]
 
 
 class Cursor:
@@ -24,10 +52,8 @@ class Cursor:
 
 class Connection:
     def __init__(self, url: str):
-        import psycopg
-        from psycopg.rows import dict_row
-
-        self._connection = psycopg.connect(url, row_factory=dict_row)
+        self._pool = _pool(url)
+        self._connection = self._pool.getconn()
 
     def __enter__(self):
         return self
@@ -39,7 +65,7 @@ class Connection:
             else:
                 self._connection.commit()
         finally:
-            self._connection.close()
+            self._pool.putconn(self._connection)
 
     @staticmethod
     def _translate(sql: str) -> str:
@@ -63,6 +89,13 @@ class Connection:
 
 def connect(url: str) -> Connection:
     return Connection(url)
+
+
+def close_pools() -> None:
+    with _POOL_LOCK:
+        for pool in _POOLS.values():
+            pool.close()
+        _POOLS.clear()
 
 
 POSTGRES_SCHEMA = """
@@ -147,13 +180,9 @@ CREATE INDEX IF NOT EXISTS transcription_jobs_queue_idx ON transcription_jobs(st
 
 
 def initialize(url: str) -> None:
-    with connect(url) as database:
-        for statement in POSTGRES_SCHEMA.split(";"):
-            if statement.strip():
-                database.execute(statement)
-        now = int(time.time())
-        for version in range(1, 6):
-            database.execute(
-                "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?) ON CONFLICT (version) DO NOTHING",
-                (version, now),
-            )
+    from alembic import command
+    from alembic.config import Config
+
+    config = Config(str(Path(__file__).resolve().parent.parent / "alembic.ini"))
+    config.set_main_option("sqlalchemy.url", url.replace("postgresql://", "postgresql+psycopg://", 1))
+    command.upgrade(config, "head")

@@ -14,9 +14,9 @@ class DatabaseTest(unittest.TestCase):
             database_path = root / "trainer.sqlite3"
             initialize(root, root / "audio", database_path)
             with connect(database_path) as database:
-                versions = [row["version"] for row in database.execute(
-                    "SELECT version FROM schema_migrations ORDER BY version"
-                )]
+                versions = [
+                    row["version"] for row in database.execute("SELECT version FROM schema_migrations ORDER BY version")
+                ]
                 foreign_keys = database.execute("PRAGMA foreign_keys").fetchone()[0]
             self.assertEqual(versions, [1, 2, 3, 4, 5])
             self.assertEqual(foreign_keys, 1)

@@ -3,4 +3,5 @@ uvicorn[standard]==0.35.0
 reportlab==4.4.3
 boto3==1.43.40
 openai==2.44.0
-psycopg[binary]==3.3.2
+psycopg[binary,pool]==3.3.2
+alembic==1.16.5

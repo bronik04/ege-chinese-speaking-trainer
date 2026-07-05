@@ -30,7 +30,7 @@ jobs:
           node-version: "22"
           cache: npm
       - name: Install system tools
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg postgresql-client
       - name: Install development tools
         run: |
           python3 -m pip install -r requirements-dev.txt
@@ -41,6 +41,10 @@ jobs:
           npm run lint:js
       - name: Test JavaScript
         run: npm test
+      - name: Install E2E browser
+        run: npx playwright install --with-deps chromium
+      - name: Test browser workflow
+        run: npm run test:e2e
       - name: Test Python with coverage
         run: |
           coverage run -m unittest discover -s tests -v
@@ -48,6 +52,19 @@ jobs:
       - name: Test PostgreSQL adapter
         env:
           TEST_DATABASE_URL: postgresql://trainer:trainer-test-password@127.0.0.1:5432/trainer_test
-        run: python -m scripts.postgres_smoke
+        run: |
+          python -m scripts.postgres_smoke
+          python -m scripts.postgres_restore_smoke
+      - name: Test S3 adapter with MinIO
+        env:
+          AWS_ACCESS_KEY_ID: minioadmin
+          AWS_SECRET_ACCESS_KEY: minioadmin
+          AWS_DEFAULT_REGION: us-east-1
+          TRAINER_S3_ENDPOINT_URL: http://127.0.0.1:9000
+          TRAINER_S3_BUCKET: trainer-audio-test
+        run: |
+          docker run -d --name minio -p 9000:9000 -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin minio/minio:latest server /data
+          for attempt in {1..30}; do curl -fsS http://127.0.0.1:9000/minio/health/live && break; sleep 1; done
+          python -m scripts.s3_smoke
       - name: Validate Docker image
         run: docker build -t chinese-speaking-trainer:test .
