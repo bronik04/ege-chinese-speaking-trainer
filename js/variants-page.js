@@ -16,17 +16,19 @@ function render() {
 
 async function loadVariants() {
   try {
-    const response = await fetch("data/variants/index.json");
+    const response = await fetch("/api/materials");
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const index = await response.json();
+    const payload = await response.json();
+    const index = payload.materials;
     variants = await Promise.all(index.map(async item => {
-      const detailResponse = await fetch(item.file);
+      const detailResponse = await fetch(`/api/materials/${encodeURIComponent(item.id)}`);
       if (!detailResponse.ok) throw new Error(`HTTP ${detailResponse.status}`);
-      return { ...item, ...await detailResponse.json() };
+      return { ...item, ...(await detailResponse.json()).material };
     }));
     const years = new Set(variants.map(item => item.year));
     $("catalogCount").textContent = variants.length;
     $("catalogYears").textContent = years.size;
+    $("createMaterialLink").classList.toggle("hidden", !payload.canCreate);
     render();
   } catch (error) {
     $("catalogStatus").textContent = "Не удалось загрузить каталог. Проверьте подключение к серверу.";

@@ -37,10 +37,14 @@ def create_backup(
                 if destination.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
                     raise RuntimeError("Backup integrity check failed")
     if audio_storage == "local":
-        audio = data_dir / "audio"
-        with tarfile.open(target / "audio.tar.gz", "w:gz") as archive:
-            if audio.is_dir():
-                archive.add(audio, arcname="audio")
+        for directory_name, archive_name in (
+            ("audio", "audio.tar.gz"),
+            ("material-assets", "material-assets.tar.gz"),
+        ):
+            source = data_dir / directory_name
+            with tarfile.open(target / archive_name, "w:gz") as archive:
+                if source.is_dir():
+                    archive.add(source, arcname=directory_name)
     backups = sorted((path for path in output_dir.iterdir() if path.is_dir()), reverse=True)
     for expired in backups[keep:]:
         shutil.rmtree(expired)

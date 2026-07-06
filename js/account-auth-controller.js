@@ -14,6 +14,7 @@ export function createAccountAuthController(ctx) {
       const payload = await api("/api/auth/me");
       setUser(payload.user);
       ctx.switchProgressScope(user);
+      await ctx.refreshMaterials();
       renderAuth();
     } catch (error) {
       setUser(null);
@@ -82,6 +83,7 @@ export function createAccountAuthController(ctx) {
       const payload = await api(`/api/auth/${mode}`, { method: "POST", body: JSON.stringify({ email, password, displayName, role }) });
       setUser(payload.user);
       ctx.switchProgressScope(user, { adoptGuest: mode === "register" });
+      await ctx.refreshMaterials();
       renderAuth();
       try { await syncProgress(); } catch (_) { $("progressSyncStatus").textContent = "Нет связи · сохранено в браузере"; }
       try { await ctx.refreshAccountData(); } catch (_) {}
@@ -100,6 +102,7 @@ export function createAccountAuthController(ctx) {
     clearTimeout(syncTimer);
     setUser(null);
     ctx.switchProgressScope(null);
+    await ctx.refreshMaterials();
     renderAuth();
     closeModal($("authModal"));
     toast("Вы вышли из аккаунта. Локальная история сохранена");

@@ -15,6 +15,8 @@ class BackupTest(unittest.TestCase):
             output = root / "backups"
             (data / "audio/1").mkdir(parents=True)
             (data / "audio/1/sample.webm").write_bytes(b"audio")
+            (data / "material-assets/materials/1").mkdir(parents=True)
+            (data / "material-assets/materials/1/photo.webp").write_bytes(b"photo")
             with closing(sqlite3.connect(data / "trainer.sqlite3")) as database:
                 with database:
                     database.execute("CREATE TABLE sample(value TEXT)")
@@ -24,6 +26,7 @@ class BackupTest(unittest.TestCase):
             with closing(sqlite3.connect(backup / "trainer.sqlite3")) as database:
                 self.assertEqual(database.execute("SELECT value FROM sample").fetchone()[0], "ok")
             self.assertTrue((backup / "audio.tar.gz").is_file())
+            self.assertTrue((backup / "material-assets.tar.gz").is_file())
 
 
 if __name__ == "__main__":

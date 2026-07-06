@@ -58,6 +58,14 @@ class TrainerHandler(BaseHTTPRequestHandler, ApiController):
             self.teacher_export("pdf")
         elif route == "/api/account/audit":
             self.account_audit()
+        elif route == "/api/materials":
+            self.materials_list()
+        elif route == "/api/materials/mine":
+            self.materials_mine()
+        elif match := re.fullmatch(r"/api/materials/([a-z0-9-]+)", route):
+            self.material_get(match.group(1))
+        elif match := re.fullmatch(r"/api/material-assets/(\d+)", route):
+            self.material_asset_get(int(match.group(1)))
         elif re.fullmatch(r"/api/recordings/\d+", route):
             self.recording_get(int(route.rsplit("/", 1)[1]))
         elif route.startswith("/api/"):
@@ -97,6 +105,12 @@ class TrainerHandler(BaseHTTPRequestHandler, ApiController):
             self.recording_create(int(match.group(1)))
         elif match := re.fullmatch(r"/api/submissions/(\d+)/review", route):
             self.review_submission(int(match.group(1)))
+        elif route == "/api/materials":
+            self.material_create()
+        elif match := re.fullmatch(r"/api/materials/([a-z0-9-]+)/publish", route):
+            self.material_publish(match.group(1))
+        elif match := re.fullmatch(r"/api/materials/([a-z0-9-]+)/assets", route):
+            self.material_asset_create(match.group(1))
         else:
             self.send_error_json(HTTPStatus.NOT_FOUND, "API route not found", "route_not_found")
 
@@ -106,6 +120,8 @@ class TrainerHandler(BaseHTTPRequestHandler, ApiController):
             self.send_error_json(HTTPStatus.FORBIDDEN, "Invalid request origin", "invalid_origin")
         elif route == "/api/account":
             self.account_delete()
+        elif match := re.fullmatch(r"/api/materials/([a-z0-9-]+)", route):
+            self.material_delete(match.group(1))
         else:
             self.send_error_json(HTTPStatus.NOT_FOUND, "API route not found", "route_not_found")
 
@@ -117,6 +133,8 @@ class TrainerHandler(BaseHTTPRequestHandler, ApiController):
             self.progress_put()
         elif match := re.fullmatch(r"/api/teacher/assignments/(\d+)", route):
             self.teacher_assignment_update(int(match.group(1)))
+        elif match := re.fullmatch(r"/api/materials/([a-z0-9-]+)", route):
+            self.material_update(match.group(1))
         else:
             self.send_error_json(HTTPStatus.NOT_FOUND, "API route not found", "route_not_found")
 

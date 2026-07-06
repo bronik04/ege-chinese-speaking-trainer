@@ -17,7 +17,7 @@ def _bind(controller, name, function) -> None:
 
 
 async def invoke(request: Request, action: str, *arguments, payload: BaseModel | None = None) -> Response:
-    max_body = MAX_AUDIO_BODY if action == "recording_create" else MAX_BODY
+    max_body = MAX_AUDIO_BODY if action in {"recording_create", "material_asset_create"} else MAX_BODY
     body = bytearray()
     async for chunk in request.stream():
         body.extend(chunk)

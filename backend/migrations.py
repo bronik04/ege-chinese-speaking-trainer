@@ -184,12 +184,46 @@ def migration_005_transcriptions(database: sqlite3.Connection) -> None:
     )
 
 
+def migration_006_materials(database: sqlite3.Connection) -> None:
+    database.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS materials (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            slug TEXT NOT NULL UNIQUE,
+            owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            kind TEXT NOT NULL CHECK(kind IN ('full', 'task')),
+            task_number INTEGER CHECK(task_number BETWEEN 1 AND 3),
+            title TEXT NOT NULL,
+            year INTEGER NOT NULL,
+            source TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft', 'published', 'archived')),
+            content_json TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            published_at INTEGER
+        );
+        CREATE TABLE IF NOT EXISTS material_assets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            material_id INTEGER NOT NULL REFERENCES materials(id) ON DELETE CASCADE,
+            storage_key TEXT NOT NULL UNIQUE,
+            mime_type TEXT NOT NULL,
+            size_bytes INTEGER NOT NULL,
+            created_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS materials_owner_idx ON materials(owner_id, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS materials_public_idx ON materials(status, year DESC);
+        CREATE INDEX IF NOT EXISTS material_assets_material_idx ON material_assets(material_id);
+        """
+    )
+
+
 MIGRATIONS = [
     (1, migration_001_core),
     (2, migration_002_assignments_and_reviews),
     (3, migration_003_account_security),
     (4, migration_004_assignment_delivery),
     (5, migration_005_transcriptions),
+    (6, migration_006_materials),
 ]
 
 

@@ -21,15 +21,25 @@ export function yearFiltersMarkup(years, activeYear = "all") {
 export function catalogMarkup(variants) {
   if (!variants.length) return '<p class="catalog-empty">По этому запросу вариантов пока нет.</p>';
   return variants.map(variant => {
-    const tasks = [1, 2, 3].map(number => {
+    const taskNumbers = variant.kind === "task" ? [variant.taskNumber] : [1, 2, 3];
+    const tasks = taskNumbers.map(number => {
       const title = variant.tasks?.[String(number)]?.title || `Задание ${number}`;
       return `<li><b>0${number}</b><span>${escapeHtml(title)}</span></li>`;
     }).join("");
-    const image = escapeHtml(variant.tasks?.["1"]?.image || "");
+    const image = escapeHtml(
+      variant.tasks?.["1"]?.image
+      || variant.tasks?.[String(variant.taskNumber)]?.images?.[0]
+      || variant.tasks?.["2"]?.images?.[0]
+      || variant.tasks?.["3"]?.images?.[0]
+      || "",
+    );
+    const kindLabel = variant.kind === "task"
+      ? `Отдельное задание ${variant.taskNumber}`
+      : variant.official === false ? "Авторский вариант" : variantKind(variant.id);
     const href = `index.html?variant=${encodeURIComponent(variant.id)}`;
     return `<article class="variant-card" data-variant="${escapeHtml(variant.id)}">
       <div class="variant-card-media"><img src="${image}" alt="" loading="lazy"><span class="variant-year">${escapeHtml(variant.year)}</span></div>
-      <div class="variant-card-copy"><p class="variant-kind">${variantKind(variant.id)}</p><h3>${escapeHtml(variant.label)}</h3>
+      <div class="variant-card-copy"><p class="variant-kind">${kindLabel}</p><h3>${escapeHtml(variant.label)}</h3>
       <p class="variant-source">${escapeHtml(variant.source)}</p><ol class="variant-tasks">${tasks}</ol>
       <footer class="variant-card-footer"><span class="variant-duration">≈ ${escapeHtml(variant.totalMinutes)} минут</span><a class="variant-open" href="${href}">Открыть →</a></footer></div>
     </article>`;

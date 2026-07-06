@@ -69,3 +69,13 @@ class SubmissionRequest(ApiSchema):
 class ReviewRequest(ApiSchema):
     scores: dict[str, dict[str, int]]
     comment: str = Field(default="", max_length=3000)
+
+
+class MaterialRequest(ApiSchema):
+    slug: str = Field(pattern=r"^[a-z0-9-]{3,50}$")
+    kind: Literal["full", "task"]
+    taskNumber: Literal[1, 2, 3] | None = None
+    title: str = Field(min_length=2, max_length=120)
+    year: int = Field(ge=2020, le=2100)
+    source: str = Field(min_length=2, max_length=200)
+    content: dict[str, Any] = Field(default_factory=dict)

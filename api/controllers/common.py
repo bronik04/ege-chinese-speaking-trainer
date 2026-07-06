@@ -183,6 +183,9 @@ class CommonControllerMixin:
 
     def serve_static(self, route: str) -> None:
         relative = unquote(route).lstrip("/") or "index.html"
+        if relative.startswith("data/variants/"):
+            self.send_error_json(HTTPStatus.NOT_FOUND, "Not found", "not_found")
+            return
         candidate = (ROOT / relative).resolve()
         if ROOT not in candidate.parents and candidate != ROOT:
             self.send_error(HTTPStatus.FORBIDDEN)

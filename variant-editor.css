@@ -1,0 +1,47 @@
+.editor-shell { padding: 38px 2vw 70px; }
+.editor-access { padding: 70px 4vw; }
+.editor-access h1 { color: var(--crimson-deep); }
+.editor-layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 20px; align-items: start; }
+.materials-sidebar, .editor-panel { border: 1px solid var(--line); background: rgba(251, 246, 236, .95); }
+.materials-sidebar { position: sticky; top: 18px; padding: 22px; }
+.materials-sidebar h2 { margin: 0 0 19px; color: var(--crimson-deep); font: 600 30px/1 "Cormorant Garamond", Georgia, serif; }
+.my-materials { display: grid; gap: 8px; margin-top: 18px; }
+.my-material { width: 100%; padding: 11px; border: 1px solid var(--line); background: transparent; text-align: left; }
+.my-material:hover, .my-material.active { border-color: var(--crimson); background: var(--cream); }
+.my-material b, .my-material small { display: block; }
+.my-material small { margin-top: 3px; color: var(--ink-soft); }
+.editor-heading { display: flex; justify-content: space-between; align-items: center; gap: 18px; padding: 28px; color: var(--cream); background: linear-gradient(135deg, var(--crimson-deep), var(--crimson)); border-bottom: 3px solid var(--gold); }
+.editor-heading h1 { font-size: clamp(40px, 5vw, 62px); }
+.editor-heading .eyebrow, .draft-badge { color: var(--gold-pale); }
+.draft-badge { padding: 7px 10px; border: 1px solid rgba(232,211,138,.45); font: 800 10px/1 ui-monospace, monospace; text-transform: uppercase; letter-spacing: .09em; }
+.editor-section { margin: 0; padding: 27px; border: 0; border-bottom: 1px solid var(--line); }
+.editor-section legend { padding: 0; color: var(--crimson); font: 800 11px/1.4 ui-monospace, monospace; text-transform: uppercase; letter-spacing: .15em; }
+.editor-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.editor-panel label { display: grid; gap: 6px; color: var(--ink-soft); font-size: 12px; font-weight: 700; }
+.editor-panel input, .editor-panel select, .editor-panel textarea { width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 0; color: var(--ink); background: var(--paper); font: 15px/1.4 Georgia, serif; }
+.task-editor { padding: 27px; border-bottom: 1px solid var(--line); }
+.task-editor > header { display: flex; justify-content: space-between; align-items: end; gap: 18px; margin-bottom: 13px; }
+.task-editor h2 { margin: 0; color: var(--crimson-deep); font: 600 34px/1 "Cormorant Garamond", Georgia, serif; }
+.task-editor > header > span { color: var(--crimson); font: 800 10px/1.4 ui-monospace, monospace; }
+.fixed-note { margin: 0 0 19px; padding: 11px 13px; color: var(--ink-soft); background: var(--cream); border-left: 3px solid var(--gold); font-size: 12px; }
+.question-editor { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 14px 0; }
+.asset-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.asset-field { min-height: 104px; padding: 13px; align-content: center; border: 1px dashed var(--crimson); background: var(--cream); }
+.asset-field input { padding: 0; border: 0; background: transparent; font-size: 11px; }
+.asset-field span { color: var(--crimson); font-size: 11px; word-break: break-word; }
+.asset-label { margin-bottom: 8px; }
+.editor-message { min-height: 24px; margin: 0; padding: 13px 27px; color: var(--crimson); }
+.editor-actions { padding: 20px 27px; display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; background: var(--cream); }
+.publish-btn { color: var(--gold-pale); background: var(--crimson-deep); }
+.editor-empty { color: var(--ink-soft); font-size: 12px; }
+
+@media (max-width: 900px) {
+  .editor-layout { grid-template-columns: 1fr; }
+  .materials-sidebar { position: static; }
+}
+@media (max-width: 700px) {
+  .editor-shell { padding-inline: 0; }
+  .editor-grid, .question-editor, .asset-grid { grid-template-columns: 1fr; }
+  .task-editor > header { align-items: flex-start; flex-direction: column; }
+  .editor-actions > button { width: 100%; }
+}

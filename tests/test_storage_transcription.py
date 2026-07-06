@@ -155,6 +155,7 @@ class PostgresCompatibilityTest(unittest.TestCase):
     def test_schema_contains_scaling_tables(self):
         self.assertIn("CREATE TABLE IF NOT EXISTS transcription_jobs", POSTGRES_SCHEMA)
         self.assertIn("CREATE TABLE IF NOT EXISTS recordings", POSTGRES_SCHEMA)
+        self.assertIn("CREATE TABLE IF NOT EXISTS materials", POSTGRES_SCHEMA)
 
 
 if __name__ == "__main__":

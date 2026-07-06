@@ -16,6 +16,8 @@ IDENTITY_TABLES = {
     "recordings",
     "audit_log",
     "transcription_jobs",
+    "materials",
+    "material_assets",
 }
 _POOLS: dict[str, ConnectionPool] = {}
 _POOL_LOCK = threading.Lock()
@@ -163,6 +165,17 @@ CREATE TABLE IF NOT EXISTS transcription_jobs (
  attempts INTEGER NOT NULL DEFAULT 0, available_at BIGINT NOT NULL, locked_at BIGINT, last_error TEXT,
  created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS materials (
+ id BIGSERIAL PRIMARY KEY, slug TEXT NOT NULL UNIQUE, owner_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+ kind TEXT NOT NULL CHECK(kind IN ('full','task')), task_number INTEGER CHECK(task_number BETWEEN 1 AND 3),
+ title TEXT NOT NULL, year INTEGER NOT NULL, source TEXT NOT NULL,
+ status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','published','archived')),
+ content_json TEXT NOT NULL, created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL, published_at BIGINT
+);
+CREATE TABLE IF NOT EXISTS material_assets (
+ id BIGSERIAL PRIMARY KEY, material_id BIGINT NOT NULL REFERENCES materials(id) ON DELETE CASCADE,
+ storage_key TEXT NOT NULL UNIQUE, mime_type TEXT NOT NULL, size_bytes BIGINT NOT NULL, created_at BIGINT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS sessions_expiry_idx ON sessions(expires_at);
 CREATE INDEX IF NOT EXISTS groups_teacher_idx ON study_groups(teacher_id);
 CREATE INDEX IF NOT EXISTS members_user_idx ON group_members(user_id);
@@ -176,6 +189,9 @@ CREATE INDEX IF NOT EXISTS rate_limits_updated_idx ON auth_rate_limits(updated_a
 CREATE INDEX IF NOT EXISTS audit_user_idx ON audit_log(user_id,created_at DESC);
 CREATE INDEX IF NOT EXISTS audit_email_idx ON audit_log(email,created_at DESC);
 CREATE INDEX IF NOT EXISTS transcription_jobs_queue_idx ON transcription_jobs(status,available_at,id);
+CREATE INDEX IF NOT EXISTS materials_owner_idx ON materials(owner_id,updated_at DESC);
+CREATE INDEX IF NOT EXISTS materials_public_idx ON materials(status,year DESC);
+CREATE INDEX IF NOT EXISTS material_assets_material_idx ON material_assets(material_id);
 """
 
 

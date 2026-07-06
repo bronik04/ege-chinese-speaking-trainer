@@ -123,16 +123,20 @@ function clearHistory() {
 }
 
 function setStartButtonsEnabled(enabled) {
-  document.querySelectorAll("[data-start]").forEach(button => { button.disabled = !enabled; });
+  document.querySelectorAll("[data-start]").forEach(button => {
+    const unavailableForTask = variant?.kind === "task" && button.dataset.start !== String(variant.taskNumber);
+    button.disabled = !enabled || unavailableForTask;
+  });
 }
 
 async function initVariants() {
   try {
-    const response = await fetch("data/variants/index.json");
+    const response = await fetch("/api/materials");
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    variantIndex = await response.json();
+    const payload = await response.json();
+    variantIndex = payload.materials;
     $("variantCount").textContent = variantIndex.length;
-    $("variantSelect").innerHTML = variantIndex.map(item => `<option value="${item.id}">${item.label}</option>`).join("");
+    $("variantSelect").innerHTML = variantIndex.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.label)}${item.kind === "task" ? ` · задание ${item.taskNumber}` : ""}</option>`).join("");
     const requestedVariant = new URLSearchParams(window.location.search).get("variant");
     const preferredVariant = variantIndex.some(item => item.id === requestedVariant)
       ? requestedVariant
@@ -156,9 +160,9 @@ async function loadVariant(id) {
   if (!item) return;
   try {
     if (!variantCache.has(id)) {
-      const response = await fetch(item.file);
+      const response = await fetch(`/api/materials/${encodeURIComponent(id)}`);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      variantCache.set(id, await response.json());
+      variantCache.set(id, (await response.json()).material);
     }
     variant = variantCache.get(id);
     const url = new URL(window.location.href);
@@ -176,10 +180,12 @@ function updateVariantUI() {
   $("heroVariant").textContent = `ЕГЭ · ${variant.label}`;
   $("variantSource").textContent = variant.source;
   $("totalMinutes").textContent = variant.totalMinutes;
-  $("task1Timing").textContent = `${shortTime(taskData(1).prepSeconds)} + 5 × ${shortTime(taskData(1).answerSeconds)}`;
-  $("task2Timing").textContent = `${shortTime(taskData(2).prepSeconds)} + до ${shortTime(taskData(2).answerSeconds)}`;
-  $("task3Timing").textContent = `${shortTime(taskData(3).prepSeconds)} + до ${shortTime(taskData(3).answerSeconds)}`;
-  $("task3CardTitle").firstChild.textContent = taskData(3).title.startsWith("Сравнение") ? "Сравнение фото" : "Проектная работа";
+  if (taskData(1)) $("task1Timing").textContent = `${shortTime(taskData(1).prepSeconds)} + 5 × ${shortTime(taskData(1).answerSeconds)}`;
+  if (taskData(2)) $("task2Timing").textContent = `${shortTime(taskData(2).prepSeconds)} + до ${shortTime(taskData(2).answerSeconds)}`;
+  if (taskData(3)) {
+    $("task3Timing").textContent = `${shortTime(taskData(3).prepSeconds)} + до ${shortTime(taskData(3).answerSeconds)}`;
+    $("task3CardTitle").firstChild.textContent = taskData(3).title.startsWith("Сравнение") ? "Сравнение фото" : "Проектная работа";
+  }
 }
 
 runner = createRunnerController({
@@ -206,6 +212,7 @@ account = createAccountController({
   getVariant: () => variant,
   startRun,
   getVariantIndex: () => variantIndex,
+  refreshMaterials: initVariants,
 });
 const {
   initAuth, setAuthMode, openModal, closeModal, submitAuth, logout, requestPasswordReset,

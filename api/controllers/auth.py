@@ -4,10 +4,11 @@ import time
 from http import HTTPStatus
 
 from api.errors import error_payload
-from api.runtime import connect
+from api.runtime import MATERIAL_ASSET_DIR, connect
 from backend.accounts import audit_events, clear_rate_limit, consume_rate_limit, consume_token, issue_token
 from backend.database import INTEGRITY_ERRORS
 from backend.security import password_hash, password_matches, token_digest
+from backend.storage import storage_from_env
 
 
 class AuthControllerMixin:
@@ -214,7 +215,19 @@ class AuthControllerMixin:
                 """,
                 (user["id"], user["id"]),
             ).fetchall()
+            material_assets = database.execute(
+                """SELECT material_assets.storage_key FROM material_assets
+                   JOIN materials ON materials.id=material_assets.material_id
+                   WHERE materials.owner_id=?""",
+                (user["id"],),
+            ).fetchall()
             self.audit(database, "account_deleted", user_id=user["id"], email=user["email"])
             database.execute("DELETE FROM users WHERE id = ?", (user["id"],))
         self.delete_audio_files([row["file_name"] for row in files])
+        storage = storage_from_env(MATERIAL_ASSET_DIR)
+        for asset in material_assets:
+            try:
+                storage.delete(asset["storage_key"])
+            except Exception:
+                continue
         self.send_json({"ok": True}, clear_cookie=True)

@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#5C0E0E">
+  <title>Редактор материалов · 口试</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="variant-editor.css">
+</head>
+<body>
+  <div class="page-motif" aria-hidden="true">編</div>
+  <header class="site-header">
+    <a class="brand" href="index.html"><span class="brand-mark">口</span><span><b>口试</b><small>редактор материалов</small></span></a>
+    <a class="header-link" href="variants.html">← К каталогу</a>
+  </header>
+  <main class="app-shell editor-shell">
+    <section class="editor-access" id="editorAccess"><p class="eyebrow">Проверяем доступ</p><h1>Загружаем редактор…</h1></section>
+    <div class="editor-layout hidden" id="editorLayout">
+      <aside class="materials-sidebar">
+        <div><p class="eyebrow">Мои материалы</p><h2>Черновики и публикации</h2></div>
+        <button class="primary-btn wide" id="newMaterialBtn" type="button">Создать материал</button>
+        <div class="my-materials" id="myMaterials"></div>
+      </aside>
+      <section class="editor-panel">
+        <header class="editor-heading"><div><p class="eyebrow">Конструктор</p><h1 id="editorTitle">Новый материал</h1></div><span class="draft-badge" id="materialStatus">Черновик</span></header>
+        <form id="materialForm">
+          <fieldset class="editor-section">
+            <legend>01 · Тип и описание</legend>
+            <div class="editor-grid">
+              <label>Тип материала<select id="materialKind"><option value="full">Полный вариант</option><option value="task">Отдельное задание</option></select></label>
+              <label id="taskNumberField" class="hidden">Номер задания<select id="materialTaskNumber"><option value="1">Задание 1</option><option value="2">Задание 2</option><option value="3">Задание 3</option></select></label>
+              <label>Название<input id="materialTitle" required minlength="2" maxlength="120" placeholder="Тренировочный вариант"></label>
+              <label>Идентификатор<input id="materialSlug" required pattern="[a-z0-9-]{3,50}" placeholder="weekend-project"></label>
+              <label>Год<input id="materialYear" required type="number" min="2020" max="2100" value="2026"></label>
+              <label>Источник<input id="materialSource" required maxlength="200" value="Авторский материал"></label>
+            </div>
+          </fieldset>
+
+          <section class="task-editor" data-task-editor="1">
+            <header><div><p class="eyebrow">Задание 1</p><h2>Пять вопросов</h2></div><span>1:30 подготовки · 5 × 0:20</span></header>
+            <p class="fixed-note">Тайминг, количество вопросов и инструкция зафиксированы стандартом экзамена.</p>
+            <label>Ситуация<textarea id="task1Situation" rows="3" placeholder="Вы увидели объявление…"></textarea></label>
+            <label>Текст объявления<input id="task1Banner" placeholder="欢迎来到…"></label>
+            <div class="question-editor" id="task1Questions"></div>
+            <label>Описание изображения<input id="task1ImageAlt" placeholder="Краткое описание для доступности"></label>
+            <label class="asset-field">Изображение<input type="file" accept="image/jpeg,image/png,image/webp" data-asset="task1-image"><span data-asset-status="task1-image">Файл не выбран</span></label>
+          </section>
+
+          <section class="task-editor" data-task-editor="2">
+            <header><div><p class="eyebrow">Задание 2</p><h2>Описание фотографии</h2></div><span>2:00 подготовки · до 2:00 ответа</span></header>
+            <p class="fixed-note">Инструкция, план ответа и начальная фраза добавляются автоматически.</p>
+            <div class="asset-grid" id="task2Assets"></div>
+          </section>
+
+          <section class="task-editor" data-task-editor="3">
+            <header><div><p class="eyebrow">Задание 3</p><h2>Проектная работа</h2></div><span>3:00 подготовки · до 3:00 ответа</span></header>
+            <p class="fixed-note">План ответа и экзаменационные требования нельзя изменить.</p>
+            <label>Название проекта<input id="task3Title" placeholder="Проект «Идеальные выходные»"></label>
+            <div class="asset-grid" id="task3Assets"></div>
+          </section>
+
+          <p class="editor-message" id="editorMessage" aria-live="polite"></p>
+          <footer class="editor-actions">
+            <button class="secondary-btn" id="previewMaterialBtn" type="button" disabled>Предпросмотр</button>
+            <button class="secondary-btn danger-link" id="deleteMaterialBtn" type="button" disabled>Удалить</button>
+            <button class="primary-btn" id="saveMaterialBtn" type="submit">Сохранить черновик</button>
+            <button class="primary-btn publish-btn" id="publishMaterialBtn" type="button">Опубликовать</button>
+          </footer>
+        </form>
+      </section>
+    </div>
+  </main>
+  <script type="module" src="js/material-editor.js"></script>
+</body>
+</html>

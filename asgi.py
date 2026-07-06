@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from api.errors import default_error_code, error_payload
-from api.routes import accounts, groups, recordings, work
+from api.routes import accounts, groups, materials, recordings, work
 from api.runtime import ROOT, init_database
 from backend.database import close_connections, engine_name
 from backend.observability import (
@@ -43,6 +43,7 @@ app.include_router(accounts.router)
 app.include_router(groups.router)
 app.include_router(work.router)
 app.include_router(recordings.router)
+app.include_router(materials.router)
 
 
 @app.middleware("http")
@@ -109,8 +110,8 @@ async def health():
 async def static_files(path: str):
     relative = unquote(path) or "index.html"
     candidate = (ROOT / relative).resolve()
-    allowed = relative in {"index.html", "app.js", "styles.css", "variants.html", "variants.css"} or relative.startswith(
-        ("assets/", "data/variants/", "js/")
+    allowed = relative in {"index.html", "app.js", "styles.css", "variants.html", "variants.css", "variant-editor.html", "variant-editor.css"} or relative.startswith(
+        ("assets/", "js/")
     )
     if not allowed or (ROOT not in candidate.parents and candidate != ROOT) or not candidate.is_file():
         return JSONResponse(error_payload("not_found", "Not found"), status_code=404)

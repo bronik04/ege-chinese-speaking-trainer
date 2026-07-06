@@ -18,7 +18,7 @@ class DatabaseTest(unittest.TestCase):
                     row["version"] for row in database.execute("SELECT version FROM schema_migrations ORDER BY version")
                 ]
                 foreign_keys = database.execute("PRAGMA foreign_keys").fetchone()[0]
-            self.assertEqual(versions, [1, 2, 3, 4, 5])
+            self.assertEqual(versions, [1, 2, 3, 4, 5, 6])
             self.assertEqual(foreign_keys, 1)
 
     def test_connection_closes_after_context_manager(self):
