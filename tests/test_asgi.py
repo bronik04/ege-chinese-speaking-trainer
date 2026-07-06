@@ -38,6 +38,8 @@ class FastApiSmokeTest(unittest.TestCase):
         self.assertEqual(health["database"], "sqlite")
         self.assertEqual(set(health["errors"]), {"responses4xx", "responses5xx", "lastFailureAt"})
         self.assertEqual(self.client.get("/").status_code, 200)
+        self.assertEqual(self.client.get("/variants.html").status_code, 200)
+        self.assertEqual(self.client.get("/variants.css").status_code, 200)
         self.assertEqual(self.client.get("/var/trainer.sqlite3").status_code, 404)
 
     def test_mutation_uses_existing_api_contract(self):

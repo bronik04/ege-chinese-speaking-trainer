@@ -109,7 +109,7 @@ async def health():
 async def static_files(path: str):
     relative = unquote(path) or "index.html"
     candidate = (ROOT / relative).resolve()
-    allowed = relative in {"index.html", "app.js", "styles.css"} or relative.startswith(
+    allowed = relative in {"index.html", "app.js", "styles.css", "variants.html", "variants.css"} or relative.startswith(
         ("assets/", "data/variants/", "js/")
     )
     if not allowed or (ROOT not in candidate.parents and candidate != ROOT) or not candidate.is_file():

@@ -6,6 +6,7 @@ import { escapeHtml, mergeProgress } from "../js/progress.js";
 import { formatTime, stepsMarkup, taskMarkup } from "../js/task-view.js";
 import { auditMarkup } from "../js/account-security.js";
 import { api } from "../js/api.js";
+import { catalogMarkup, filterVariants, variantKind } from "../js/variant-catalog.js";
 
 test("escapeHtml protects every HTML-sensitive character", () => {
   assert.equal(escapeHtml(`<script data-x="'">&`), "&lt;script data-x=&quot;&#39;&quot;&gt;&amp;");
@@ -100,4 +101,18 @@ test("api exposes structured server error metadata", async () => {
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("variant catalog filters and escapes exam metadata", () => {
+  const variants = [
+    { id: "demo-2026", year: 2026, label: "<Demo>", source: "ФИПИ", totalMinutes: 14, tasks: { "1": { title: "<script>" } } },
+    { id: "open-2026", year: 2026, label: "Open", source: "Открытый вариант", totalMinutes: 14, tasks: {} },
+    { id: "demo-2025", year: 2025, label: "Demo 2025", source: "ФИПИ", totalMinutes: 14, tasks: {} },
+  ];
+  assert.equal(filterVariants(variants, "2026").length, 2);
+  assert.equal(filterVariants(variants, "all", "открытый").length, 1);
+  assert.equal(variantKind("open-2026"), "Открытый вариант");
+  const html = catalogMarkup([variants[0]]);
+  assert.doesNotMatch(html, /<script>|<Demo>/);
+  assert.match(html, /&lt;script&gt;|&lt;Demo&gt;/);
 });

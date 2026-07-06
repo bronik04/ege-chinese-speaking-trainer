@@ -32,6 +32,8 @@ button:disabled { cursor: wait; opacity: .48; }
 .quiet-btn, .back-btn, .text-btn { border: 0; background: transparent; }
 .quiet-btn { color: var(--ink-soft); border-bottom: 1px solid var(--crimson); padding: 5px 0; font: 700 11px/1 ui-monospace, monospace; text-transform: uppercase; letter-spacing: .12em; }
 .header-actions { display: flex; align-items: center; gap: 20px; }
+.header-link { color: var(--crimson-deep); border-bottom: 1px solid var(--crimson); padding: 5px 0; text-decoration: none; font: 800 10px/1 ui-monospace, monospace; text-transform: uppercase; letter-spacing: .1em; white-space: nowrap; }
+.header-link:hover { color: var(--crimson); }
 .account-btn { max-width: min(280px, 44vw); border: 1px solid var(--line); background: var(--cream); padding: 8px 12px; display: flex; align-items: center; gap: 8px; color: var(--crimson-deep); font: 700 11px/1.2 ui-monospace, monospace; text-transform: uppercase; letter-spacing: .08em; }
 .account-btn span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .account-btn:hover { border-color: var(--crimson); }
@@ -308,6 +310,7 @@ body.modal-open { overflow: hidden; }
   .brand small { display: none; }
   .header-actions { gap: 10px; }
   .account-btn { padding: 7px 9px; }
+  .header-link { font-size: 9px; }
   .quiet-btn { display: none; }
   .home-screen { padding-top: 23px; }
   h1 { font-size: 46px; }

@@ -133,9 +133,12 @@ async function initVariants() {
     variantIndex = await response.json();
     $("variantCount").textContent = variantIndex.length;
     $("variantSelect").innerHTML = variantIndex.map(item => `<option value="${item.id}">${item.label}</option>`).join("");
-    const preferredVariant = variantIndex.some(item => item.id === progress.settings.lastVariant)
-      ? progress.settings.lastVariant
-      : variantIndex[0].id;
+    const requestedVariant = new URLSearchParams(window.location.search).get("variant");
+    const preferredVariant = variantIndex.some(item => item.id === requestedVariant)
+      ? requestedVariant
+      : variantIndex.some(item => item.id === progress.settings.lastVariant)
+        ? progress.settings.lastVariant
+        : variantIndex[0].id;
     $("variantSelect").value = preferredVariant;
     $("fastMode").checked = Boolean(progress.settings.fastMode);
     await loadVariant(preferredVariant);
@@ -158,6 +161,9 @@ async function loadVariant(id) {
       variantCache.set(id, await response.json());
     }
     variant = variantCache.get(id);
+    const url = new URL(window.location.href);
+    url.searchParams.set("variant", id);
+    window.history.replaceState({}, "", url);
     updateVariantUI();
     setStartButtonsEnabled(true);
   } catch (error) {
