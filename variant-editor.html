@@ -12,7 +12,7 @@
   <div class="page-motif" aria-hidden="true">編</div>
   <header class="site-header">
     <a class="brand" href="index.html"><span class="brand-mark">口</span><span><b>口试</b><small>редактор материалов</small></span></a>
-    <a class="header-link" href="variants.html">← К каталогу</a>
+    <div class="header-actions"><a class="header-link" href="reference.html">Справочник</a><a class="header-link" href="variants.html">← К каталогу</a></div>
   </header>
   <main class="app-shell editor-shell">
     <section class="editor-access" id="editorAccess"><p class="eyebrow">Проверяем доступ</p><h1>Загружаем редактор…</h1></section>
@@ -25,8 +25,8 @@
       <section class="editor-panel">
         <header class="editor-heading"><div><p class="eyebrow">Конструктор</p><h1 id="editorTitle">Новый материал</h1></div><span class="draft-badge" id="materialStatus">Черновик</span></header>
         <form id="materialForm">
-          <fieldset class="editor-section">
-            <legend>01 · Тип и описание</legend>
+          <section class="editor-section">
+            <p class="editor-section-title">01 · Тип и описание</p>
             <div class="editor-grid">
               <label>Тип материала<select id="materialKind"><option value="full">Полный вариант</option><option value="task">Отдельное задание</option></select></label>
               <label id="taskNumberField" class="hidden">Номер задания<select id="materialTaskNumber"><option value="1">Задание 1</option><option value="2">Задание 2</option><option value="3">Задание 3</option></select></label>
@@ -35,7 +35,7 @@
               <label>Год<input id="materialYear" required type="number" min="2020" max="2100" value="2026"></label>
               <label>Источник<input id="materialSource" required maxlength="200" value="Авторский материал"></label>
             </div>
-          </fieldset>
+          </section>
 
           <section class="task-editor" data-task-editor="1">
             <header><div><p class="eyebrow">Задание 1</p><h2>Пять вопросов</h2></div><span>1:30 подготовки · 5 × 0:20</span></header>

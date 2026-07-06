@@ -10,7 +10,7 @@
 .catalog-facts b { color: var(--crimson); font: 500 30px/1 "Cormorant Garamond", Georgia, serif; }
 .catalog-panel { background: rgba(251, 246, 236, .92); border: 1px solid var(--line); }
 .catalog-heading { padding: 24px 27px; display: flex; justify-content: space-between; align-items: end; gap: 24px; border-bottom: 1px solid var(--line); }
-.catalog-heading h2, .catalog-future h2 { margin: 0; color: var(--crimson-deep); font: 600 37px/1 "Cormorant Garamond", Georgia, serif; }
+.catalog-heading h2 { margin: 0; color: var(--crimson-deep); font: 600 37px/1 "Cormorant Garamond", Georgia, serif; }
 .catalog-search { width: min(330px, 100%); color: var(--ink-soft); font: 700 10px/1.4 ui-monospace, monospace; text-transform: uppercase; letter-spacing: .1em; }
 .catalog-search input { width: 100%; margin-top: 6px; padding: 9px 4px; color: var(--ink); border: 0; border-bottom: 1px solid var(--crimson); border-radius: 0; outline: 0; background: transparent; font: 15px/1.4 Georgia, serif; }
 .catalog-search input:focus { border-bottom-width: 2px; }
@@ -36,11 +36,6 @@
 .variant-open { padding: 9px 11px; color: var(--crimson-deep); border: 1px solid var(--gold); background: var(--cream); text-decoration: none; font-weight: 800; font-size: 11px; }
 .variant-open:hover { color: var(--gold-pale); background: var(--crimson-deep); border-color: var(--crimson-deep); }
 .catalog-empty { grid-column: 1/-1; padding: 60px 24px; text-align: center; color: var(--ink-soft); }
-.catalog-future { margin-top: 30px; padding: 28px; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 23px; align-items: center; color: var(--cream); background: linear-gradient(135deg, var(--crimson-deep), var(--crimson)); border-bottom: 3px solid var(--gold); }
-.catalog-future > span { width: 58px; height: 58px; display: grid; place-items: center; color: var(--gold-pale); border: 1px solid rgba(232, 211, 138, .5); font: 700 13px/1 "Noto Serif SC", serif; }
-.catalog-future .eyebrow, .catalog-future h2 { color: var(--gold-pale); }
-.catalog-future p:last-child { max-width: 780px; margin: 9px 0 0; color: var(--cream-deep); font-size: 13px; }
-
 @media (max-width: 1050px) {
   .variant-catalog { grid-template-columns: 1fr; }
 }
@@ -54,5 +49,4 @@
   .variant-card { grid-template-columns: 1fr; }
   .variant-catalog { padding: 12px; gap: 12px; }
   .variant-card-media { min-height: 190px; max-height: 240px; }
-  .catalog-future { grid-template-columns: 1fr; }
 }

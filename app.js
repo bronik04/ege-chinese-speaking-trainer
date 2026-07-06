@@ -5,6 +5,7 @@ import {
 } from "./js/progress.js";
 import { shortTime } from "./js/task-view.js";
 import { createAccountController } from "./js/account-controller.js";
+import { enhanceProjectSelects } from "./js/project-select.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -26,6 +27,7 @@ const taskData = (task) => variant.tasks[String(task)];
 
 function showScreen(name) {
   Object.entries(screens).forEach(([key, node]) => node.classList.toggle("hidden", key !== name));
+  $("referenceLink").classList.toggle("hidden", name === "runner");
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
@@ -281,6 +283,7 @@ renderProgress();
 setAuthMode("login");
 
 async function initialize() {
+  enhanceProjectSelects();
   await initVariants();
   await handleAccountLinks();
   await initAuth();

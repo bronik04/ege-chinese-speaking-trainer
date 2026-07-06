@@ -7,7 +7,7 @@ const baseURL = "http://127.0.0.1:8091";
 test("guest catalog exposes only the open 2026 variant", async ({ page }) => {
   await page.goto("/variants.html");
   await expect(page.locator(".variant-card")).toHaveCount(1);
-  await expect(page.locator("#createMaterialLink")).toBeHidden();
+  await expect(page.locator("#createMaterialLink")).toHaveCount(0);
   await page.locator("#variantSearch").fill("открытый");
   await expect(page.locator(".variant-card")).toHaveCount(1);
   await page.locator(".variant-open").click();
@@ -45,12 +45,27 @@ test("registered user publishes a standalone task and opens it from catalog", as
 
   const page = await context.newPage();
   await page.goto("/variants.html");
-  await expect(page.locator("#createMaterialLink")).toBeVisible();
+  await expect(page.locator("#createMaterialLink")).toHaveCount(0);
   await page.locator("#variantSearch").fill("Авторское описание");
   await expect(page.locator(".variant-card")).toHaveCount(1);
   await expect(page.locator(".variant-kind")).toHaveText("Отдельное задание 2");
   await page.locator(".variant-open").click();
   await expect(page).toHaveURL(new RegExp(`variant=${slug}`));
   await expect(page.locator("#variantSelect")).toHaveValue(slug);
+  await expect(page.locator("#variantSelect + .project-select-trigger .project-select-value")).toHaveCSS("white-space", "nowrap");
+
+  await page.goto("/variant-editor.html");
+  await expect(page.locator("#editorTitle")).toHaveText("Новый материал");
+  await expect(page.locator("select:not([data-project-select='ready'])")).toHaveCount(0);
+  await page.locator(".project-select-trigger").first().click();
+  const materialMenu = page.locator(".project-select-menu").first();
+  await expect(materialMenu).toBeVisible();
+  const selectedOption = materialMenu.locator('[aria-selected="true"]');
+  await materialMenu.locator('[data-value="task"]').hover();
+  await expect(selectedOption).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await page.locator('.project-select-option[data-value="task"]').click();
+  await expect(page.locator("#materialKind")).toHaveValue("task");
+  await expect(page.locator("#taskNumberField")).toBeVisible();
+  await expect(page.locator("#materialTitle")).toHaveCSS("font-family", /Georgia/);
   await context.close();
 });

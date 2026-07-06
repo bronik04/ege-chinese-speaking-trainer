@@ -28,7 +28,6 @@ async function loadVariants() {
     const years = new Set(variants.map(item => item.year));
     $("catalogCount").textContent = variants.length;
     $("catalogYears").textContent = years.size;
-    $("createMaterialLink").classList.toggle("hidden", !payload.canCreate);
     render();
   } catch (error) {
     $("catalogStatus").textContent = "Не удалось загрузить каталог. Проверьте подключение к серверу.";

@@ -42,6 +42,9 @@ class FastApiSmokeTest(unittest.TestCase):
         self.assertEqual(self.client.get("/variants.css").status_code, 200)
         self.assertEqual(self.client.get("/variant-editor.html").status_code, 200)
         self.assertEqual(self.client.get("/variant-editor.css").status_code, 200)
+        self.assertEqual(self.client.get("/reference.html").status_code, 200)
+        self.assertEqual(self.client.get("/reference.css").status_code, 200)
+        self.assertEqual(self.client.get("/data/reference/library.json").status_code, 200)
         self.assertEqual(self.client.get("/data/variants/index.json").status_code, 404)
         self.assertEqual(self.client.get("/var/trainer.sqlite3").status_code, 404)
 

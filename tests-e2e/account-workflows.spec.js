@@ -82,6 +82,15 @@ test("teacher resends an assignment as a separate work item", async ({ browser }
   const student = await browser.newContext({ baseURL });
   await register(teacher, `resend-teacher-${stamp}@example.test`, "teacher");
   await register(student, `resend-student-${stamp}@example.test`);
+  const teacherPage = await teacher.newPage();
+  await teacherPage.goto("/");
+  await teacherPage.locator("#authButton").click();
+  await teacherPage.locator("#teacherCabinetBtn").click();
+  await expect(teacherPage.locator("#teacherMaterialEditorLink")).toBeVisible();
+  await expect(teacherPage.locator("#teacherMaterialEditorLink")).toHaveAttribute("href", "variant-editor.html");
+  await expect(teacherPage.locator("select:not([data-project-select='ready'])")).toHaveCount(0);
+  await expect(teacherPage.locator("#groupName")).toHaveCSS("font-family", /Georgia/);
+  await expect(teacherPage.locator("#assignmentDue")).toHaveCSS("background-color", "rgb(251, 246, 236)");
   const group = await post(teacher, "/api/teacher/groups", { name: "Resend E2E Group" });
   await post(student, "/api/groups/join", { code: group.group.code });
   const original = await post(teacher, "/api/teacher/assignments", {

@@ -16,6 +16,7 @@
       <span><b>口试</b><small>устная часть · китайский язык</small></span>
     </a>
     <div class="header-actions">
+      <a class="header-link" id="referenceLink" href="reference.html">Справочник</a>
       <a class="header-link" href="variants.html">Все варианты</a>
       <button class="account-btn" id="authButton" type="button"><span class="account-dot"></span><span id="authButtonText">Войти</span></button>
       <button class="quiet-btn" id="soundToggle" type="button" aria-pressed="true">Звук включён</button>
@@ -201,6 +202,10 @@
       <p class="eyebrow">Кабинет преподавателя</p>
       <h2 id="teacherTitle">Учебные группы</h2>
       <p class="auth-lede">Создайте группу и передайте ученикам шестизначный код.</p>
+      <section class="teacher-materials-entry">
+        <div><p class="eyebrow">Учебные материалы</p><h3>Конструктор вариантов</h3><p>Создавайте полные варианты и отдельные задания, сохраняйте черновики и публикуйте их в каталоге.</p></div>
+        <a class="primary-btn" id="teacherMaterialEditorLink" href="variant-editor.html">Добавить материал →</a>
+      </section>
       <form class="create-group-form" id="createGroupForm">
         <label>Название группы<input id="groupName" type="text" minlength="2" maxlength="80" placeholder="11 класс · Понедельник" required></label>
         <button class="primary-btn" type="submit">Создать группу</button>

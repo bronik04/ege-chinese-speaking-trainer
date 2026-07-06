@@ -1,4 +1,5 @@
 import { api } from "./api.js";
+import { enhanceProjectSelects, syncProjectSelects } from "./project-select.js";
 import { escapeHtml } from "./progress.js";
 
 const $ = id => document.getElementById(id);
@@ -28,6 +29,7 @@ function showTasks() {
   document.querySelectorAll("[data-task-editor]").forEach(section => {
     section.classList.toggle("hidden", kind === "task" && Number(section.dataset.taskEditor) !== selected);
   });
+  syncProjectSelects();
 }
 
 function collectContent() {
@@ -142,7 +144,7 @@ function fillForm(material) {
     "task2-0": content["2"].images?.[0], "task2-1": content["2"].images?.[1], "task2-2": content["2"].images?.[2],
     "task3-0": content["3"].images?.[0], "task3-1": content["3"].images?.[1],
   })) document.querySelector(`[data-asset-status="${key}"]`).textContent = value ? "Изображение загружено" : "Файл не выбран";
-  $("editorTitle").textContent = material.label;
+  $("editorTitle").textContent = material.label || "Новый материал";
   showTasks();
   updateStatus();
 }
@@ -187,6 +189,7 @@ async function deleteMaterial() {
 
 async function initialize() {
   renderAssetFields();
+  enhanceProjectSelects();
   try {
     await api("/api/auth/me");
     await loadMine();

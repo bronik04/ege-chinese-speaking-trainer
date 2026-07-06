@@ -1,0 +1,63 @@
+.reference-shell { padding: 48px 4vw 85px; }
+.reference-hero { display: grid; grid-template-columns: .85fr 1.15fr; gap: clamp(40px, 9vw, 140px); align-items: end; margin-bottom: 42px; }
+.reference-hero h1 { color: var(--crimson-deep); }
+.reference-intro { color: var(--ink-soft); font-size: 18px; }
+.reference-intro > p { max-width: 720px; margin: 0 0 24px; }
+.reference-search { display: block; color: var(--crimson); font: 800 10px/1.4 ui-monospace, monospace; text-transform: uppercase; letter-spacing: .1em; }
+.reference-search input { width: 100%; margin-top: 7px; padding: 12px 4px; border: 0; border-bottom: 1px solid var(--crimson); background: transparent; box-shadow: none !important; }
+.reference-tabs { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--line); background: var(--paper); }
+.reference-tab { min-width: 0; padding: 18px 20px; display: grid; grid-template-columns: auto 1fr; gap: 13px; align-items: center; border: 0; border-right: 1px solid var(--line); color: var(--ink-soft); background: transparent; text-align: left; }
+.reference-tab:last-child { border-right: 0; }
+.reference-tab:hover, .reference-tab.active { color: var(--gold-pale); background: var(--crimson-deep); }
+.reference-tab > b { color: var(--crimson); font: 500 30px/1 "Cormorant Garamond", Georgia, serif; }
+.reference-tab:hover > b, .reference-tab.active > b { color: var(--gold-pale); }
+.reference-tab span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 800; }
+.reference-tab small { display: block; margin-top: 3px; color: inherit; font: 700 9px/1.3 ui-monospace, monospace; text-transform: uppercase; letter-spacing: .08em; opacity: .75; }
+.reference-status { margin: 0; padding: 12px 18px; color: var(--ink-soft); border: 1px solid var(--line); border-top: 0; font-size: 12px; }
+.reference-content { background: rgba(251, 246, 236, .94); border: 1px solid var(--line); border-top: 0; }
+.reference-task-head { padding: 30px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 30px; color: var(--cream); background: linear-gradient(135deg, var(--crimson-deep), var(--crimson)); border-bottom: 3px solid var(--gold); }
+.reference-task-head h2 { margin: 0; color: var(--gold-pale); font: 500 clamp(39px, 5vw, 62px)/.95 "Cormorant Garamond", Georgia, serif; }
+.reference-task-head p:last-child { margin: 10px 0 0; color: var(--cream-deep); }
+.reference-timing { align-self: center; padding: 10px 12px; color: var(--gold-pale); border: 1px solid rgba(232, 211, 138, .45); font: 800 10px/1.4 ui-monospace, monospace; text-transform: uppercase; letter-spacing: .08em; white-space: nowrap; }
+.reference-tips { margin: 0; padding: 22px 30px 22px 52px; display: grid; gap: 7px; color: var(--ink-soft); background: var(--cream); border-bottom: 1px solid var(--line); font-size: 13px; }
+.reference-tips li::marker { color: var(--gold); }
+.reference-groups { padding: 18px; display: grid; gap: 12px; }
+.reference-group { border: 1px solid var(--line); background: var(--paper); }
+.reference-group summary { padding: 16px 18px; cursor: pointer; list-style: none; display: flex; justify-content: space-between; gap: 18px; color: var(--crimson-deep); font: 600 25px/1.05 "Cormorant Garamond", Georgia, serif; }
+.reference-group summary::-webkit-details-marker { display: none; }
+.reference-group summary::after { content: "+"; color: var(--crimson); font: 400 24px/1 Georgia, serif; }
+.reference-group[open] summary { border-bottom: 1px solid var(--line); }
+.reference-group[open] summary::after { content: "−"; }
+.reference-group-description { margin: 0; padding: 12px 18px; color: var(--ink-soft); background: var(--cream); font-size: 12px; }
+.phrase-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.phrase-card { min-width: 0; position: relative; padding: 17px 56px 17px 18px; border-bottom: 1px solid var(--line); }
+.phrase-card:nth-child(odd) { border-right: 1px solid var(--line); }
+.phrase-card:nth-last-child(-n+2) { border-bottom: 0; }
+.phrase-card b { display: block; color: var(--crimson-deep); font: 600 20px/1.35 "Noto Serif SC", "Songti SC", serif; }
+.phrase-card span { display: block; margin-top: 6px; color: var(--ink-soft); font-size: 12px; }
+.copy-phrase { position: absolute; right: 13px; top: 14px; width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid var(--gold); color: var(--crimson); background: var(--cream); font-size: 12px; }
+.copy-phrase:hover { color: var(--gold-pale); background: var(--crimson-deep); border-color: var(--crimson-deep); }
+.examples-heading { margin: 18px 18px 0; padding: 24px 12px 12px; border-top: 3px solid var(--crimson); }
+.examples-heading h3 { margin: 0; color: var(--crimson-deep); font: 600 37px/1 "Cormorant Garamond", Georgia, serif; }
+.example-list { padding: 0 18px 18px; display: grid; gap: 12px; }
+.example-card { padding: 20px; border: 1px solid var(--line); background: var(--paper); }
+.example-card h4 { margin: 0; color: var(--crimson-deep); font: 600 27px/1.1 "Cormorant Garamond", Georgia, serif; }
+.example-context { margin: 6px 0 16px; color: var(--ink-soft); font-size: 12px; }
+.example-text { padding: 16px 18px; border-left: 3px solid var(--gold); background: var(--cream); }
+.example-text p { margin: 0 0 10px; color: var(--ink); font: 16px/1.75 "Noto Serif SC", "Songti SC", serif; }
+.example-text p:last-child { margin-bottom: 0; }
+.example-criteria { margin: 15px 0 0; padding-left: 20px; color: var(--ink-soft); font-size: 12px; }
+.reference-empty { padding: 70px 24px; text-align: center; color: var(--ink-soft); }
+
+@media (max-width: 800px) {
+  .reference-shell { padding: 28px 0 60px; }
+  .reference-hero { grid-template-columns: 1fr; gap: 22px; padding-inline: 8px; }
+  .reference-tabs { grid-template-columns: 1fr; }
+  .reference-tab { border-right: 0; border-bottom: 1px solid var(--line); }
+  .reference-tab:last-child { border-bottom: 0; }
+  .reference-task-head { grid-template-columns: 1fr; }
+  .reference-timing { justify-self: start; white-space: normal; }
+  .phrase-list { grid-template-columns: 1fr; }
+  .phrase-card:nth-child(odd) { border-right: 0; }
+  .phrase-card:nth-last-child(2) { border-bottom: 1px solid var(--line); }
+}
