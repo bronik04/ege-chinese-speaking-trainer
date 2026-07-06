@@ -8,7 +8,7 @@ test("guest catalog exposes only the open 2026 variant", async ({ page }) => {
   await page.goto("/variants.html");
   await expect(page.locator(".variant-card")).toHaveCount(1);
   await expect(page.locator("#createMaterialLink")).toHaveCount(0);
-  await page.locator("#variantSearch").fill("открытый");
+  await page.locator("#variantSearch").fill("официальный");
   await expect(page.locator(".variant-card")).toHaveCount(1);
   await page.locator(".variant-open").click();
   await expect(page).toHaveURL(/variant=open-2026/);
@@ -44,6 +44,14 @@ test("registered user publishes a standalone task and opens it from catalog", as
   expect(published.ok(), await published.text()).toBeTruthy();
 
   const page = await context.newPage();
+  await page.goto("/");
+  await expect(page.locator("#variantSelect option").first()).toHaveValue("open-2026");
+  await page.locator("#soundToggle").click();
+  await expect(page.locator("#soundToggle")).toHaveAttribute("aria-pressed", "false");
+  await page.locator("#authButton").click();
+  await expect(page.locator(".account-progress-card")).toBeVisible();
+  await expect(page.locator(".progress-row")).toHaveCount(0);
+  await page.locator("#authCloseBtn").click();
   await page.goto("/variants.html");
   await expect(page.locator("#createMaterialLink")).toHaveCount(0);
   await page.locator("#variantSearch").fill("Авторское описание");
@@ -55,6 +63,7 @@ test("registered user publishes a standalone task and opens it from catalog", as
   await expect(page.locator("#variantSelect + .project-select-trigger .project-select-value")).toHaveCSS("white-space", "nowrap");
 
   await page.goto("/variant-editor.html");
+  await expect(page.locator("[data-account-link]")).toContainText(`${slug}@example.test`);
   await expect(page.locator("#editorTitle")).toHaveText("Новый материал");
   await expect(page.locator("select:not([data-project-select='ready'])")).toHaveCount(0);
   await page.locator(".project-select-trigger").first().click();

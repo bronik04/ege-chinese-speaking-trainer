@@ -1,6 +1,7 @@
 import { api } from "./api.js";
 import { enhanceProjectSelects, syncProjectSelects } from "./project-select.js";
 import { escapeHtml } from "./progress.js";
+import "./site-shell.js";
 
 const $ = id => document.getElementById(id);
 let currentId = null;

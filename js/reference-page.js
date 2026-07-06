@@ -1,4 +1,5 @@
 import { escapeHtml } from "./progress.js";
+import "./site-shell.js";
 
 const $ = id => document.getElementById(id);
 let library = null;
@@ -33,12 +34,12 @@ function filteredTask(task, query) {
 }
 
 function tabsMarkup(tasks) {
-  return tasks.map(task => `<button class="reference-tab${task.id === activeTask ? " active" : ""}" type="button" data-reference-task="${escapeHtml(task.id)}"><b>${escapeHtml(task.number)}</b><span>${escapeHtml(task.title)}<small>${task.groups.reduce((sum, group) => sum + group.items.length, 0)} фраз</small></span></button>`).join("");
+  return tasks.map(task => `<button class="reference-tab${task.id === activeTask ? " active" : ""}" type="button" data-reference-task="${escapeHtml(task.id)}"><b>${escapeHtml(task.number)}</b><span>${escapeHtml(task.title)}</span></button>`).join("");
 }
 
 function groupMarkup(group, open) {
   const items = group.items.map(item => `<article class="phrase-card"><b lang="zh">${escapeHtml(item.zh)}</b><span>${escapeHtml(item.ru)}</span><button class="copy-phrase" type="button" data-copy-phrase="${escapeHtml(item.zh)}" aria-label="Скопировать фразу">⧉</button></article>`).join("");
-  return `<details class="reference-group"${open ? " open" : ""}><summary>${escapeHtml(group.title)}<small>${group.items.length}</small></summary>${group.description ? `<p class="reference-group-description">${escapeHtml(group.description)}</p>` : ""}<div class="phrase-list">${items}</div></details>`;
+  return `<details class="reference-group"${open ? " open" : ""}><summary>${escapeHtml(group.title)}</summary>${group.description ? `<p class="reference-group-description">${escapeHtml(group.description)}</p>` : ""}<div class="phrase-list">${items}</div></details>`;
 }
 
 function exampleMarkup(example) {
@@ -47,7 +48,7 @@ function exampleMarkup(example) {
 
 function taskMarkup(task, query) {
   const groups = task.groups.map((group, index) => groupMarkup(group, Boolean(query) || index === 0)).join("");
-  const examples = task.examples.length ? `<div class="examples-heading"><p class="eyebrow">Разбор образца</p><h3>Эталонные ответы</h3></div><div class="example-list">${task.examples.map(exampleMarkup).join("")}</div>` : "";
+  const examples = task.examples.length ? `<div class="examples-heading"><p class="eyebrow">Разбор образца</p><h3>Примеры ответов</h3></div><div class="example-list">${task.examples.map(exampleMarkup).join("")}</div>` : "";
   if (!task.groups.length && !task.examples.length) return '<p class="reference-empty">По этому запросу ничего не найдено. Попробуйте другую формулировку.</p>';
   return `<header class="reference-task-head"><div><p class="eyebrow">Задание ${escapeHtml(task.number)}</p><h2>${escapeHtml(task.title)}</h2><p>${escapeHtml(task.subtitle)}</p></div><span class="reference-timing">${escapeHtml(task.timing)}</span></header><ul class="reference-tips">${task.tips.map(tip => `<li>${escapeHtml(tip)}</li>`).join("")}</ul><div class="reference-groups">${groups}</div>${examples}`;
 }

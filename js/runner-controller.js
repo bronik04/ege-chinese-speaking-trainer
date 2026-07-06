@@ -318,8 +318,8 @@ export function createRunnerController(ctx) {
   
   function toggleSound() {
     soundEnabled = !soundEnabled;
-    $("soundToggle").textContent = soundEnabled ? "Звук включён" : "Звук выключен";
     $("soundToggle").setAttribute("aria-pressed", String(soundEnabled));
+    $("soundToggle").setAttribute("aria-label", soundEnabled ? "Выключить звук" : "Включить звук");
     if (soundEnabled) beep();
   }
 

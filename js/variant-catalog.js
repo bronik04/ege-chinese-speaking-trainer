@@ -1,7 +1,7 @@
 import { escapeHtml } from "./progress.js";
 
 export function variantKind(id) {
-  return id.startsWith("open-") ? "Открытый вариант" : "Демонстрационный вариант";
+  return id.startsWith("open-") ? "Официальный вариант" : "Демонстрационный вариант";
 }
 
 export function filterVariants(variants, year = "all", query = "") {

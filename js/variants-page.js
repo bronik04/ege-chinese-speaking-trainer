@@ -1,4 +1,5 @@
 import { catalogMarkup, filterVariants, yearFiltersMarkup } from "./variant-catalog.js";
+import "./site-shell.js";
 
 const $ = (id) => document.getElementById(id);
 let variants = [];

@@ -6,6 +6,7 @@ import {
 import { shortTime } from "./js/task-view.js";
 import { createAccountController } from "./js/account-controller.js";
 import { enhanceProjectSelects } from "./js/project-select.js";
+import "./js/site-shell.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -179,7 +180,6 @@ async function loadVariant(id) {
 }
 
 function updateVariantUI() {
-  $("heroVariant").textContent = `ЕГЭ · ${variant.label}`;
   $("variantSource").textContent = variant.source;
   $("totalMinutes").textContent = variant.totalMinutes;
   if (taskData(1)) $("task1Timing").textContent = `${shortTime(taskData(1).prepSeconds)} + 5 × ${shortTime(taskData(1).answerSeconds)}`;
@@ -287,6 +287,12 @@ async function initialize() {
   await initVariants();
   await handleAccountLinks();
   await initAuth();
+  const url = new URL(window.location.href);
+  if (url.searchParams.get("account") === "1") {
+    openModal($("authModal"));
+    url.searchParams.delete("account");
+    window.history.replaceState({}, "", url);
+  }
 }
 
 initialize();

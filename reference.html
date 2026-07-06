@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#5C0E0E">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%235C0E0E'/%3E%3Ctext x='50' y='68' text-anchor='middle' font-size='58' fill='%23E8D38A'%3E%E5%AD%A6%3C/text%3E%3C/svg%3E">
+  <link rel="icon" href="assets/logo.svg" type="image/svg+xml">
   <title>Справочник устной части · 口试</title>
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="reference.css">
@@ -12,7 +12,7 @@
 <body>
   <div class="page-motif" aria-hidden="true">学</div>
   <header class="site-header">
-    <a class="brand" href="index.html"><span class="brand-mark">口</span><span><b>口试</b><small>справочник устной части</small></span></a>
+    <div class="header-primary"><a class="brand" href="index.html"><img class="brand-logo" src="assets/logo.svg" alt="" width="48" height="48"><span><b>口试</b><small>справочник устной части</small></span></a><a class="account-btn global-account" data-account-link href="index.html?account=1"><span class="account-dot"></span><span data-account-label>Войти</span></a></div>
     <div class="header-actions"><a class="header-link" href="variants.html">Все варианты</a><a class="header-link" href="index.html">← К тренажёру</a></div>
   </header>
 
@@ -29,6 +29,8 @@
     <p class="reference-status" id="referenceStatus" aria-live="polite">Загружаем справочник…</p>
     <section class="reference-content" id="referenceContent"></section>
   </main>
+
+  <footer class="site-footer"><div class="site-footer-inner"><div class="footer-brand"><img src="assets/logo.svg" alt="" width="48" height="48"><div><b>口试</b><span>Подготовка к устной части ЕГЭ по китайскому языку</span></div></div><div class="footer-about"><p class="eyebrow">Разработка и методика</p><b>Николай Бровкин</b><span>Преподаватель китайского языка</span></div><div class="footer-links"><a href="mailto:bronik04@gmail.com">bronik04@gmail.com</a><a href="https://github.com/bronik04" target="_blank" rel="noreferrer">GitHub · bronik04</a></div></div><p class="footer-bottom">© <span data-current-year></span> 口试 · Учебный проект</p></footer>
 
   <div class="toast hidden" id="referenceToast" role="status"></div>
   <script type="module" src="js/reference-page.js"></script>
