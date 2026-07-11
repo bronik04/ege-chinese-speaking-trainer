@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -44,9 +45,18 @@ class FastApiSmokeTest(unittest.TestCase):
         self.assertEqual(self.client.get("/variant-editor.css").status_code, 200)
         self.assertEqual(self.client.get("/reference.html").status_code, 200)
         self.assertEqual(self.client.get("/reference.css").status_code, 200)
+        self.assertEqual(self.client.get("/about.html").status_code, 200)
+        self.assertEqual(self.client.get("/about.css").status_code, 200)
         self.assertEqual(self.client.get("/data/reference/library.json").status_code, 200)
         self.assertEqual(self.client.get("/data/variants/index.json").status_code, 404)
         self.assertEqual(self.client.get("/var/trainer.sqlite3").status_code, 404)
+
+    def test_health_returns_503_when_database_is_unavailable(self):
+        with patch("asgi.connect", side_effect=OSError("database unavailable")):
+            response = self.client.get("/api/health")
+        self.assertEqual(response.status_code, 503)
+        self.assertFalse(response.json()["ok"])
+        self.assertEqual(response.json()["database"], "sqlite")
 
     def test_mutation_uses_existing_api_contract(self):
         response = self.client.post(

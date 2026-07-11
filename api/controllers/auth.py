@@ -7,7 +7,7 @@ from api.errors import error_payload
 from api.runtime import MATERIAL_ASSET_DIR, connect
 from backend.accounts import audit_events, clear_rate_limit, consume_rate_limit, consume_token, issue_token
 from backend.database import INTEGRITY_ERRORS
-from backend.security import password_hash, password_matches, token_digest
+from backend.security import email_in_allowlist, password_hash, password_matches, token_digest
 from backend.storage import storage_from_env
 
 
@@ -29,6 +29,9 @@ class AuthControllerMixin:
             return
         if not 2 <= len(display_name) <= 80:
             self.send_error_json(HTTPStatus.BAD_REQUEST, "Укажите имя длиной от 2 до 80 символов")
+            return
+        if role == "teacher" and not email_in_allowlist(email, "TRAINER_TEACHER_EMAILS"):
+            self.send_error_json(HTTPStatus.FORBIDDEN, "Роль преподавателя недоступна", "teacher_not_allowed")
             return
         try:
             with connect() as database:

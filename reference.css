@@ -23,6 +23,19 @@
 .reference-timing { align-self: center; padding: 10px 12px; color: var(--gold-pale); border: 1px solid rgba(232, 211, 138, .45); font: 800 10px/1.4 ui-monospace, monospace; text-transform: uppercase; letter-spacing: .08em; white-space: nowrap; }
 .reference-tips { margin: 0; padding: 22px 30px 22px 52px; display: grid; gap: 7px; color: var(--ink-soft); background: var(--cream); border-bottom: 1px solid var(--line); font-size: 13px; }
 .reference-tips li::marker { color: var(--gold); }
+.reference-criteria { padding: 28px 30px 30px; border-bottom: 1px solid var(--line); background: var(--paper); }
+.reference-criteria > header { display: flex; align-items: end; justify-content: space-between; gap: 22px; }
+.reference-criteria h3 { margin: 0; color: var(--crimson-deep); font: 600 38px/1 "Cormorant Garamond", Georgia, serif; }
+.reference-criteria > header > strong { padding: 8px 11px; color: var(--crimson-deep); background: var(--gold-pale); font: 800 10px/1.3 ui-monospace, monospace; text-transform: uppercase; letter-spacing: .08em; white-space: nowrap; }
+.criteria-note { margin: 12px 0 18px; max-width: 850px; color: var(--ink-soft); font-size: 12px; }
+.criteria-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.criteria-card { padding: 17px; border: 1px solid var(--line); border-top: 3px solid var(--gold); background: var(--cream); }
+.criteria-card > div { display: flex; justify-content: space-between; align-items: start; gap: 15px; }
+.criteria-card h4 { margin: 0; color: var(--crimson-deep); font: 600 23px/1.05 "Cormorant Garamond", Georgia, serif; }
+.criteria-card b { flex: 0 0 auto; color: var(--crimson); font: 800 9px/1.3 ui-monospace, monospace; text-transform: uppercase; }
+.criteria-card p, .criteria-card ul { color: var(--ink-soft); font-size: 12px; }
+.criteria-card p { margin: 12px 0 0; }
+.criteria-card ul { margin: 10px 0 0; padding-left: 18px; }
 .reference-groups { padding: 18px; display: grid; gap: 12px; }
 .reference-group { border: 1px solid var(--line); background: var(--paper); }
 .reference-group summary { padding: 16px 18px; cursor: pointer; list-style: none; display: flex; justify-content: space-between; gap: 18px; color: var(--crimson-deep); font: 600 25px/1.05 "Cormorant Garamond", Georgia, serif; }

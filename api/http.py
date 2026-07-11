@@ -6,6 +6,7 @@ from types import MethodType
 from fastapi import Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 from api.controller import ApiController
 from api.errors import error_payload
@@ -39,7 +40,7 @@ async def invoke(request: Request, action: str, *arguments, payload: BaseModel |
     if request.method in {"POST", "PUT", "DELETE"} and not controller.same_origin_request():
         controller.send_error_json(403, "Invalid request origin", "invalid_origin")
     else:
-        getattr(controller, action)(*arguments)
+        await run_in_threadpool(getattr(controller, action), *arguments)
     return Response(
         content=controller.wfile.getvalue(),
         status_code=state["status"],

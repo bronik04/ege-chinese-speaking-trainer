@@ -11,12 +11,21 @@ export function studentGroupsMarkup(groups) {
 export function studentAssignmentsMarkup(assignments) {
   return assignments.map(assignment => {
     const latest = assignment.latest;
-    const status = latest?.status === "graded"
+    const status = latest?.late
+      ? "Сдано после срока"
+      : latest?.status === "graded"
       ? `Проверено: ${latest.total_score}/${latest.max_score}`
       : latest ? "Отправлено на проверку" : "Не выполнено";
     const due = assignment.dueAt ? ` · до ${formatHistoryDate(assignment.dueAt * 1000)}` : "";
     return `<article class="assignment-card"><div><p class="eyebrow">${escapeHtml(assignment.groupName)}</p><h3>${escapeHtml(assignment.title)}</h3><span>Задания ${assignment.tasks.join(", ")}${due}</span><small>${status}</small>${latest?.comment ? `<blockquote>${escapeHtml(latest.comment)}</blockquote>` : ""}</div><button class="secondary-btn" type="button" data-start-assignment="${assignment.id}">${latest ? "Новая попытка" : "Начать"}</button></article>`;
   }).join("");
+}
+
+export function assignmentTasksMarkup(variant) {
+  if (variant?.kind === "task") {
+    return `<option value="${variant.taskNumber}">Только задание ${variant.taskNumber}</option>`;
+  }
+  return '<option value="exam">Полный экзамен</option><option value="1">Только задание 1</option><option value="2">Только задание 2</option><option value="3">Только задание 3</option>';
 }
 
 export function assignmentOptionsMarkup(groups, variants) {
@@ -34,7 +43,7 @@ export function teacherSubmissionsMarkup(submissions) {
   }
   return submissions.map(submission => `
     <article class="submission-card">
-      <header><div><p class="eyebrow">${escapeHtml(submission.groupName)} · попытка ${submission.attempt}</p><h3>${escapeHtml(submission.studentName)}</h3><span>${escapeHtml(submission.title)}</span></div><b class="submission-status ${escapeHtml(submission.status)}">${submission.status === "graded" ? `${submission.review.total}/${submission.review.maximum}` : "На проверке"}</b></header>
+      <header><div><p class="eyebrow">${escapeHtml(submission.groupName)} · попытка ${submission.attempt}</p><h3>${escapeHtml(submission.studentName)}</h3><span>${escapeHtml(submission.title)}${submission.late ? " · Сдано после срока" : ""}</span></div><b class="submission-status ${escapeHtml(submission.status)}">${submission.status === "graded" ? `${submission.review.total}/${submission.review.maximum}` : "На проверке"}</b></header>
       <div class="submission-audio">${submission.recordings.length ? submission.recordings.map(recording => `<label><span>${escapeHtml(recording.label)}</span><audio controls preload="none" src="${escapeHtml(recording.url)}"></audio>${transcriptMarkup(recording)}</label>`).join("") : "<p>Аудиозаписи отсутствуют.</p>"}</div>
       <button class="auth-link" type="button" data-attempt-history="${submission.id}">История попыток</button>
       <form class="review-form" data-review-submission="${submission.id}" data-review-tasks="${submission.tasks.join(",")}">

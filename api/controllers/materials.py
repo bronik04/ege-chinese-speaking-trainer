@@ -41,7 +41,8 @@ class MaterialControllerMixin:
             return
         with connect() as database:
             rows = database.execute(
-                "SELECT * FROM materials WHERE owner_id = ? ORDER BY updated_at DESC", (user["id"],)
+                "SELECT * FROM materials WHERE owner_id = ? AND status != 'archived' ORDER BY updated_at DESC",
+                (user["id"],),
             ).fetchall()
         self.send_json({"materials": [self.material_index_payload(dict(row)) for row in rows]})
 
@@ -56,7 +57,12 @@ class MaterialControllerMixin:
             return
         with connect() as database:
             row = database.execute("SELECT * FROM materials WHERE slug = ?", (material_id,)).fetchone()
-        if not row or not user or (row["status"] != "published" and row["owner_id"] != user["id"]):
+        if (
+            not row
+            or not user
+            or row["status"] == "archived"
+            or (row["status"] != "published" and row["owner_id"] != user["id"])
+        ):
             self.send_error_json(HTTPStatus.NOT_FOUND, "Материал не найден", "material_not_found")
             return
         self.send_json({"material": material_payload(dict(row))})
@@ -126,6 +132,7 @@ class MaterialControllerMixin:
         user = self.require_material_editor()
         if not user:
             return
+        unused_assets = []
         with connect() as database:
             row = database.execute(
                 "SELECT * FROM materials WHERE slug = ? AND owner_id = ?", (material_id, user["id"])
@@ -153,7 +160,30 @@ class MaterialControllerMixin:
                 "UPDATE materials SET content_json=?,status='published',published_at=?,updated_at=? WHERE id=?",
                 (json.dumps(content, ensure_ascii=False), now, now, row["id"]),
             )
+            all_assets = database.execute(
+                "SELECT id, storage_key FROM material_assets WHERE material_id = ?", (row["id"],)
+            ).fetchall()
+            assignment_asset_ids = set()
+            snapshots = database.execute(
+                "SELECT material_snapshot_json FROM assignments WHERE material_snapshot_json IS NOT NULL"
+            ).fetchall()
+            for snapshot in snapshots:
+                try:
+                    snapshot_payload = json.loads(snapshot["material_snapshot_json"])
+                    assignment_asset_ids.update(material_asset_ids(snapshot_payload.get("tasks", {})))
+                except (json.JSONDecodeError, ValueError, TypeError):
+                    continue
+            retained_asset_ids = asset_ids | assignment_asset_ids
+            unused_assets = [asset for asset in all_assets if asset["id"] not in retained_asset_ids]
+            for asset in unused_assets:
+                database.execute("DELETE FROM material_assets WHERE id = ?", (asset["id"],))
             self.audit(database, "material_published", user_id=user["id"], email=user["email"], details={"materialId": row["id"]})
+        storage = storage_from_env(MATERIAL_ASSET_DIR)
+        for asset in unused_assets:
+            try:
+                storage.delete(asset["storage_key"])
+            except Exception:
+                continue
         self.send_json({"material": {"id": material_id, "status": "published"}})
 
     def material_delete(self, material_id: str) -> None:
@@ -165,14 +195,10 @@ class MaterialControllerMixin:
             if not row:
                 self.send_error_json(HTTPStatus.NOT_FOUND, "Материал не найден", "material_not_found")
                 return
-            assets = database.execute("SELECT storage_key FROM material_assets WHERE material_id=?", (row["id"],)).fetchall()
-            database.execute("DELETE FROM materials WHERE id=?", (row["id"],))
-        storage = storage_from_env(MATERIAL_ASSET_DIR)
-        for asset in assets:
-            try:
-                storage.delete(asset["storage_key"])
-            except Exception:
-                continue
+            database.execute(
+                "UPDATE materials SET status='archived', published_at=NULL, updated_at=? WHERE id=?",
+                (int(time.time()), row["id"]),
+            )
         self.send_json({"ok": True})
 
     def material_asset_create(self, material_id: str) -> None:
@@ -212,13 +238,20 @@ class MaterialControllerMixin:
         temporary = Path(MATERIAL_ASSET_DIR / f".{secrets.token_hex(8)}.webp")
         temporary.parent.mkdir(parents=True, exist_ok=True)
         temporary.write_bytes(encoded.getvalue())
+        storage = storage_from_env(MATERIAL_ASSET_DIR)
         try:
-            storage_from_env(MATERIAL_ASSET_DIR).put(storage_key, temporary, "image/webp")
+            storage.put(storage_key, temporary, "image/webp")
             with connect() as database:
                 cursor = database.execute(
                     "INSERT INTO material_assets(material_id,storage_key,mime_type,size_bytes,created_at) VALUES (?,?,?,?,?)",
                     (material["id"], storage_key, "image/webp", len(encoded.getvalue()), int(time.time())),
                 )
+        except Exception:
+            try:
+                storage.delete(storage_key)
+            except Exception:
+                pass
+            raise
         finally:
             temporary.unlink(missing_ok=True)
         self.send_json({"asset": {"id": cursor.lastrowid, "url": f"/api/material-assets/{cursor.lastrowid}"}}, HTTPStatus.CREATED)
@@ -231,7 +264,9 @@ class MaterialControllerMixin:
                    JOIN materials ON materials.id=material_assets.material_id WHERE material_assets.id=?""",
                 (asset_id,),
             ).fetchone()
-        if not row or not user or (row["status"] != "published" and row["owner_id"] != user["id"]):
+        if not row or not user or (
+            row["status"] not in {"published", "archived"} and row["owner_id"] != user["id"]
+        ):
             self.send_error_json(HTTPStatus.NOT_FOUND, "Изображение не найдено", "asset_not_found")
             return
         try:
@@ -250,6 +285,13 @@ class MaterialControllerMixin:
         user = self.current_user()
         if not user:
             self.send_error_json(HTTPStatus.UNAUTHORIZED, "Войдите, чтобы создавать материалы", "authentication_required")
+            return None
+        if not user["emailVerified"]:
+            self.send_error_json(
+                HTTPStatus.FORBIDDEN,
+                "Подтвердите email для работы с материалами",
+                "email_verification_required",
+            )
             return None
         if not editor_allowed(user):
             self.send_error_json(HTTPStatus.FORBIDDEN, "Создание материалов недоступно", "editor_forbidden")

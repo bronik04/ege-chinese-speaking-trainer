@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { studentAssignmentsMarkup, teacherGroupsMarkup } from "../js/account-view.js";
+import { assignmentTasksMarkup, studentAssignmentsMarkup, teacherGroupsMarkup } from "../js/account-view.js";
 import { escapeHtml, mergeProgress } from "../js/progress.js";
 import { formatTime, stepsMarkup, taskMarkup } from "../js/task-view.js";
 import { auditMarkup } from "../js/account-security.js";
@@ -53,6 +53,21 @@ test("account markup escapes teacher-controlled text", () => {
     students: [],
   }]);
   assert.doesNotMatch(groups, /<b>group<\/b>/);
+});
+
+test("assignment UI marks late work and limits standalone task choices", () => {
+  const assignments = studentAssignmentsMarkup([{
+    id: 2,
+    groupName: "Group",
+    title: "Late work",
+    tasks: [2],
+    dueAt: 1,
+    latest: { status: "submitted", late: true },
+  }]);
+  assert.match(assignments, /Сдано после срока/);
+  const choices = assignmentTasksMarkup({ kind: "task", taskNumber: 2 });
+  assert.match(choices, /value="2"/);
+  assert.doesNotMatch(choices, /value="exam"|value="1"|value="3"/);
 });
 
 test("task markup escapes JSON content and keeps runner state", () => {

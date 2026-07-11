@@ -16,7 +16,7 @@ from api.runtime import AUDIO_DIR, DATA_DIR, EMAIL_RE, MAX_BODY, ROOT, SESSION_D
 from backend.accounts import record_audit
 from backend.mailer import send_email
 from backend.observability import log_event
-from backend.security import request_has_same_origin, token_digest
+from backend.security import email_in_allowlist, request_has_same_origin, token_digest
 from backend.storage import storage_from_env
 
 
@@ -135,6 +135,18 @@ class CommonControllerMixin:
             return None
         if user["role"] != role:
             self.send_error_json(HTTPStatus.FORBIDDEN, "Недостаточно прав")
+            return None
+        if role == "teacher" and not user["emailVerified"]:
+            self.send_error_json(
+                HTTPStatus.FORBIDDEN,
+                "Подтвердите email для доступа к кабинету преподавателя",
+                "email_verification_required",
+            )
+            return None
+        if role == "teacher" and not email_in_allowlist(user["email"], "TRAINER_TEACHER_EMAILS"):
+            self.send_error_json(
+                HTTPStatus.FORBIDDEN, "Роль преподавателя недоступна", "teacher_not_allowed"
+            )
             return None
         return user
 

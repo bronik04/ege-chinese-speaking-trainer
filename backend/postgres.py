@@ -127,7 +127,7 @@ CREATE TABLE IF NOT EXISTS assignments (
  id BIGSERIAL PRIMARY KEY, group_id BIGINT NOT NULL REFERENCES study_groups(id) ON DELETE CASCADE,
  teacher_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE, title TEXT NOT NULL, variant_id TEXT NOT NULL,
  tasks_json TEXT NOT NULL, due_at BIGINT, created_at BIGINT NOT NULL, updated_at BIGINT,
- source_assignment_id BIGINT REFERENCES assignments(id)
+ source_assignment_id BIGINT REFERENCES assignments(id), material_snapshot_json TEXT
 );
 CREATE TABLE IF NOT EXISTS submissions (
  id BIGSERIAL PRIMARY KEY, assignment_id BIGINT NOT NULL REFERENCES assignments(id) ON DELETE CASCADE,

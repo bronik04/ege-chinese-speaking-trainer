@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 900" role="img" aria-labelledby="title desc">
+  <title id="title">Место для фотографии преподавателя</title>
+  <desc id="desc">Декоративный портрет-заглушка в цветах проекта</desc>
+  <rect width="720" height="900" fill="#f4ecdb"/>
+  <path d="M0 0h720v900H0z" fill="none" stroke="#c9a227" stroke-width="18"/>
+  <circle cx="360" cy="310" r="132" fill="#eadfc4" stroke="#8b1a1a" stroke-width="8"/>
+  <path d="M161 802c22-194 95-294 199-294s177 100 199 294" fill="#5c0e0e"/>
+  <path d="M264 329c25 40 167 40 192 0" fill="none" stroke="#8b1a1a" stroke-width="8"/>
+  <path d="M101 100h105M514 100h105M101 800h60M559 800h60" stroke="#c9a227" stroke-width="8"/>
+  <text x="360" y="854" text-anchor="middle" fill="#e8d38a" font-family="Georgia, serif" font-size="30">ФОТО ПРЕПОДАВАТЕЛЯ</text>
+</svg>

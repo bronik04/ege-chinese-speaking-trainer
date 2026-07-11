@@ -62,7 +62,8 @@ def student_assignments(database: sqlite3.Connection, student_id: int) -> list[d
     rows = database.execute(
         """
         SELECT assignments.id, assignments.title, assignments.variant_id, assignments.tasks_json,
-               assignments.due_at, assignments.created_at, study_groups.name AS group_name
+               assignments.due_at, assignments.created_at, assignments.material_snapshot_json,
+               study_groups.name AS group_name
         FROM assignments
         JOIN study_groups ON study_groups.id = assignments.group_id
         JOIN group_members ON group_members.group_id = assignments.group_id
@@ -75,13 +76,18 @@ def student_assignments(database: sqlite3.Connection, student_id: int) -> list[d
         latest = database.execute(
             """
             SELECT submissions.id, submissions.status, submissions.attempt_number,
-                   reviews.total_score, reviews.max_score, reviews.comment
+                   submissions.submitted_at, reviews.total_score, reviews.max_score, reviews.comment
             FROM submissions LEFT JOIN reviews ON reviews.submission_id = submissions.id
             WHERE submissions.assignment_id = ? AND submissions.student_id = ?
             ORDER BY submissions.attempt_number DESC LIMIT 1
             """,
             (row["id"], student_id),
         ).fetchone()
+        latest_payload = dict(latest) if latest else None
+        if latest_payload:
+            latest_payload["late"] = bool(
+                row["due_at"] is not None and latest_payload["submitted_at"] > row["due_at"]
+            )
         result.append(
             {
                 "id": row["id"],
@@ -90,7 +96,9 @@ def student_assignments(database: sqlite3.Connection, student_id: int) -> list[d
                 "tasks": json.loads(row["tasks_json"]),
                 "dueAt": row["due_at"],
                 "groupName": row["group_name"],
-                "latest": dict(latest) if latest else None,
+                "material": json.loads(row["material_snapshot_json"]) if row["material_snapshot_json"] else None,
+                "materialUnavailable": row["material_snapshot_json"] is None,
+                "latest": latest_payload,
             }
         )
     return result
@@ -119,6 +127,7 @@ def teacher_submissions(
         f"""
         SELECT submissions.id, submissions.attempt_number, submissions.status, submissions.submitted_at,
                assignments.title, assignments.variant_id, assignments.tasks_json,
+               assignments.due_at,
                assignments.id AS assignment_id, users.id AS student_id, study_groups.id AS group_id,
                users.display_name AS student_name, users.email AS student_email,
                study_groups.name AS group_name, reviews.scores_json, reviews.total_score,
@@ -150,6 +159,7 @@ def teacher_submissions(
                 "studentId": row["student_id"],
                 "groupId": row["group_id"],
                 "submittedAt": row["submitted_at"],
+                "late": bool(row["due_at"] is not None and row["submitted_at"] > row["due_at"]),
                 "title": row["title"],
                 "variantId": row["variant_id"],
                 "tasks": json.loads(row["tasks_json"]),

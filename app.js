@@ -157,11 +157,12 @@ async function initVariants() {
   }
 }
 
-async function loadVariant(id) {
+async function loadVariant(id, snapshot = null) {
   setStartButtonsEnabled(false);
   const item = variantIndex.find(entry => entry.id === id);
-  if (!item) return;
+  if (!item && !snapshot) return;
   try {
+    if (snapshot) variantCache.set(id, snapshot);
     if (!variantCache.has(id)) {
       const response = await fetch(`/api/materials/${encodeURIComponent(id)}`);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);

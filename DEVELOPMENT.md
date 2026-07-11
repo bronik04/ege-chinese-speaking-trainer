@@ -46,6 +46,7 @@ cp .env.example .env
 - `TRAINER_SECURE_COOKIE=1` — защищённые cookie в продакшене;
 - `TRAINER_LOG_LEVEL` — уровень структурированных логов;
 - `TRAINER_MAX_AUDIO_SECONDS`, `TRAINER_MAX_AUDIO_BYTES` — ограничения аудио;
+- `TRAINER_TEACHER_EMAILS` — email, которым разрешена роль преподавателя;
 - `TRAINER_EDITOR_MODE` — политика авторов материалов;
 - `TRAINER_EDITOR_EMAILS` — email авторов для режима `allowlist`;
 - `DATABASE_URL` — подключение PostgreSQL;
@@ -57,18 +58,20 @@ cp .env.example .env
 
 Авторские материалы хранятся в таблицах `materials` и `material_assets`. Полный вариант содержит задания 1–3, отдельный материал — одно выбранное задание. Тайминги и требования формируются сервером и не принимаются из редактора.
 
-По умолчанию редактор разрешён всем вошедшим пользователям:
-
-```bash
-TRAINER_EDITOR_MODE=authenticated
-```
-
-Для ограничения владельцем проекта:
+Редактор доступен только подтверждённым email из allowlist:
 
 ```bash
 TRAINER_EDITOR_MODE=allowlist
 TRAINER_EDITOR_EMAILS=owner@example.ru
 ```
+
+Роль преподавателя также выдаётся по allowlist. До подтверждения email группы, назначения и проверка работ заблокированы:
+
+```bash
+TRAINER_TEACHER_EMAILS=teacher@example.ru
+```
+
+Назначение хранит неизменяемый снимок материала. Удаление или переиздание исходного варианта не меняет уже выданную работу. Работы после `dueAt` принимаются, но помечаются как просроченные.
 
 Изображения официальных вариантов находятся в `assets/variants/<год>/`, используют WebP и имя `candidate-XX.webp`.
 
@@ -187,4 +190,4 @@ npm run test:e2e
 .venv/bin/pre-commit run --all-files
 ```
 
-CI также проверяет PostgreSQL 16 с Alembic и восстановлением `pg_dump`, а S3-контракт — через MinIO. Минимальное Python-покрытие — 55%.
+CI также проверяет PostgreSQL 16 с Alembic и восстановлением `pg_dump`, а S3-контракт — через MinIO. Минимальное Python-покрытие — 70%.

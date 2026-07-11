@@ -46,11 +46,27 @@ function exampleMarkup(example) {
   return `<article class="example-card"><h4>${escapeHtml(example.title)}</h4><p class="example-context">${escapeHtml(example.context)}</p><div class="example-text" lang="zh">${example.paragraphs.map(paragraph => `<p>${escapeHtml(paragraph)}</p>`).join("")}</div><ul class="example-criteria">${example.criteria.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul></article>`;
 }
 
+function criteriaMarkup(criteria = []) {
+  if (!criteria.length) return "";
+  const maximum = criteria.reduce((sum, criterion) => sum + Number(criterion.maximum || 0), 0);
+  const scoreLabel = value => {
+    const number = Number(value);
+    if (number % 10 === 1 && number % 100 !== 11) return "балл";
+    if ([2, 3, 4].includes(number % 10) && ![12, 13, 14].includes(number % 100)) return "балла";
+    return "баллов";
+  };
+  const cards = criteria.map(criterion => {
+    const details = criterion.details?.length ? `<ul>${criterion.details.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : "";
+    return `<article class="criteria-card"><div><h4>${escapeHtml(criterion.title)}</h4><b>${escapeHtml(criterion.maximum)} ${scoreLabel(criterion.maximum)}</b></div><p>${escapeHtml(criterion.description)}</p>${details}</article>`;
+  }).join("");
+  return `<section class="reference-criteria" aria-labelledby="criteriaTitle"><header><div><p class="eyebrow">Самопроверка</p><h3 id="criteriaTitle">Критерии оценивания</h3></div><strong>Максимум ${maximum}</strong></header><p class="criteria-note">Если за решение коммуникативной задачи в заданиях 2 или 3 выставлено 0 баллов, остальные критерии также оцениваются в 0 баллов.</p><div class="criteria-grid">${cards}</div></section>`;
+}
+
 function taskMarkup(task, query) {
   const groups = task.groups.map((group, index) => groupMarkup(group, Boolean(query) || index === 0)).join("");
   const examples = task.examples.length ? `<div class="examples-heading"><p class="eyebrow">Разбор образца</p><h3>Примеры ответов</h3></div><div class="example-list">${task.examples.map(exampleMarkup).join("")}</div>` : "";
   if (!task.groups.length && !task.examples.length) return '<p class="reference-empty">По этому запросу ничего не найдено. Попробуйте другую формулировку.</p>';
-  return `<header class="reference-task-head"><div><p class="eyebrow">Задание ${escapeHtml(task.number)}</p><h2>${escapeHtml(task.title)}</h2><p>${escapeHtml(task.subtitle)}</p></div><span class="reference-timing">${escapeHtml(task.timing)}</span></header><ul class="reference-tips">${task.tips.map(tip => `<li>${escapeHtml(tip)}</li>`).join("")}</ul><div class="reference-groups">${groups}</div>${examples}`;
+  return `<header class="reference-task-head"><div><p class="eyebrow">Задание ${escapeHtml(task.number)}</p><h2>${escapeHtml(task.title)}</h2><p>${escapeHtml(task.subtitle)}</p></div><span class="reference-timing">${escapeHtml(task.timing)}</span></header><ul class="reference-tips">${task.tips.map(tip => `<li>${escapeHtml(tip)}</li>`).join("")}</ul>${criteriaMarkup(task.criteria)}<div class="reference-groups">${groups}</div>${examples}`;
 }
 
 function render() {

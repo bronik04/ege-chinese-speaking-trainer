@@ -80,7 +80,8 @@ export function createAccountAuthController(ctx) {
     $("authSubmitBtn").disabled = true;
     $("authMessage").textContent = "";
     try {
-      const payload = await api(`/api/auth/${mode}`, { method: "POST", body: JSON.stringify({ email, password, displayName, role }) });
+      const credentials = mode === "login" ? { email, password } : { email, password, displayName, role };
+      const payload = await api(`/api/auth/${mode}`, { method: "POST", body: JSON.stringify(credentials) });
       setUser(payload.user);
       ctx.switchProgressScope(user, { adoptGuest: mode === "register" });
       await ctx.refreshMaterials();

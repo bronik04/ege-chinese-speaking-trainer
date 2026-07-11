@@ -12,12 +12,17 @@ async function post(context, url, data) {
 }
 
 async function register(context, email, role = "student") {
-  return post(context, "/api/auth/register", {
+  const result = await post(context, "/api/auth/register", {
     email,
     password: "original123",
     displayName: role === "teacher" ? "E2E Teacher" : "E2E Student",
     role,
   });
+  if (role === "teacher") {
+    const token = await tokenFromOutbox(email, "verify");
+    await post(context, "/api/auth/email/confirm", { token });
+  }
+  return result;
 }
 
 async function tokenFromOutbox(email, parameter) {
@@ -34,6 +39,30 @@ async function tokenFromOutbox(email, parameter) {
   }).not.toBeNull();
   return token;
 }
+
+test("student registers, signs out and signs back in through the account form", async ({ page }) => {
+  const email = `ui-login-${Date.now()}@example.test`;
+  await page.goto("/");
+  await page.locator("#authButton").click();
+  await page.locator("#registerTab").click();
+  await page.locator("#authName").fill("UI Student");
+  await page.locator("#authEmail").fill(email);
+  await page.locator("#authPassword").fill("original123");
+  await page.locator("#authRole").selectOption("student");
+  await page.locator("#authSubmitBtn").click();
+  await expect(page.locator("#authButtonText")).toHaveText(email);
+
+  await page.locator("#authButton").click();
+  await page.locator("#logoutBtn").click();
+  await expect(page.locator("#authButtonText")).toHaveText("Войти");
+
+  await page.locator("#authButton").click();
+  await page.locator("#loginTab").click();
+  await page.locator("#authEmail").fill(email);
+  await page.locator("#authPassword").fill("original123");
+  await page.locator("#authSubmitBtn").click();
+  await expect(page.locator("#authButtonText")).toHaveText(email);
+});
 
 test("student resets a password through the emailed token", async ({ browser }) => {
   const email = `reset-${Date.now()}@example.test`;
@@ -53,6 +82,23 @@ test("student resets a password through the emailed token", async ({ browser }) 
   await post(login, "/api/auth/login", { email, password: "replacement123" });
   await account.close();
   await login.close();
+});
+
+test("unverified teacher cannot open privileged APIs", async ({ browser }) => {
+  const teacher = await browser.newContext({ baseURL });
+  await post(teacher, "/api/auth/register", {
+    email: "unverified-teacher@example.test",
+    password: "original123",
+    displayName: "Unverified Teacher",
+    role: "teacher",
+  });
+  const response = await teacher.request.post("/api/teacher/groups", {
+    headers: originHeaders,
+    data: { name: "Blocked group" },
+  });
+  expect(response.status()).toBe(403);
+  expect((await response.json()).code).toBe("email_verification_required");
+  await teacher.close();
 });
 
 test("student deletes the account and can no longer sign in", async ({ browser }) => {
@@ -80,7 +126,7 @@ test("teacher resends an assignment as a separate work item", async ({ browser }
   const stamp = Date.now();
   const teacher = await browser.newContext({ baseURL });
   const student = await browser.newContext({ baseURL });
-  await register(teacher, `resend-teacher-${stamp}@example.test`, "teacher");
+  await register(teacher, "resend-teacher@example.test", "teacher");
   await register(student, `resend-student-${stamp}@example.test`);
   const teacherPage = await teacher.newPage();
   await teacherPage.goto("/");

@@ -15,7 +15,14 @@ export default defineConfig({
     command: `${python} -m uvicorn asgi:app --host 127.0.0.1 --port 8091`,
     url: "http://127.0.0.1:8091/api/health",
     reuseExistingServer: false,
-    env: { ...process.env, TRAINER_DATA_DIR: dataDir, TRAINER_TRANSCRIPTION_ENABLED: "0" },
+    env: {
+      ...process.env,
+      TRAINER_DATA_DIR: dataDir,
+      TRAINER_TRANSCRIPTION_ENABLED: "0",
+      TRAINER_TEACHER_EMAILS: "workflow-teacher@example.test,resend-teacher@example.test,unverified-teacher@example.test,snapshot-teacher@example.test",
+      TRAINER_EDITOR_MODE: "allowlist",
+      TRAINER_EDITOR_EMAILS: "catalog-author@example.test",
+    },
   },
   projects: [{ name: "chromium", use: { browserName: "chromium" } }],
 });

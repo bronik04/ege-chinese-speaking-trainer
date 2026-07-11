@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 from pathlib import Path
+
+from backend.security import email_in_allowlist
 
 EXAM_SPEC = {
     1: {
@@ -39,17 +40,9 @@ EXAM_SPEC = {
 
 
 def editor_allowed(user: dict | None) -> bool:
-    if not user:
+    if not user or not user.get("emailVerified"):
         return False
-    mode = os.environ.get("TRAINER_EDITOR_MODE", "authenticated").strip().lower()
-    if mode == "authenticated":
-        return True
-    allowed = {
-        email.strip().lower()
-        for email in os.environ.get("TRAINER_EDITOR_EMAILS", "").split(",")
-        if email.strip()
-    }
-    return user["email"].lower() in allowed
+    return email_in_allowlist(user["email"], "TRAINER_EDITOR_EMAILS")
 
 
 def official_index(root: Path) -> list[dict]:
@@ -164,3 +157,13 @@ def material_payload(row: dict) -> dict:
         "status": row["status"],
         "tasks": tasks,
     }
+
+
+def assignment_material(root: Path, database, material_id: str) -> dict | None:
+    official = official_detail(root, material_id)
+    if official:
+        return official
+    row = database.execute(
+        "SELECT * FROM materials WHERE slug = ? AND status = 'published'", (material_id,)
+    ).fetchone()
+    return material_payload(dict(row)) if row else None

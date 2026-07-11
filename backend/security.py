@@ -2,10 +2,16 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import os
 import secrets
 from urllib.parse import urlparse
 
 PASSWORD_ITERATIONS = 260_000
+
+
+def email_in_allowlist(email: str, variable: str) -> bool:
+    allowed = {item.strip().lower() for item in os.environ.get(variable, "").split(",") if item.strip()}
+    return email.strip().lower() in allowed
 
 
 def password_hash(password: str) -> str:

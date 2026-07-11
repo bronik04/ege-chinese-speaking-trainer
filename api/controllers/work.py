@@ -6,10 +6,12 @@ import time
 from http import HTTPStatus
 from urllib.parse import parse_qs, urlparse
 
-from api.runtime import connect
+from api.runtime import ROOT, connect
 from backend.exports import submissions_csv, submissions_pdf
 from backend.grading import validate_scores
+from backend.materials import assignment_material
 from backend.queries import student_assignments, submission_history, teacher_assignments, teacher_submissions
+from backend.submissions import create_submission_with_retry
 
 
 class WorkControllerMixin:
@@ -51,10 +53,19 @@ class WorkControllerMixin:
             if not group:
                 self.send_error_json(HTTPStatus.NOT_FOUND, "Группа не найдена", "group_not_found")
                 return
+            material = assignment_material(ROOT, database, variant_id)
+            if not material or any(str(task) not in material.get("tasks", {}) for task in tasks):
+                self.send_error_json(
+                    HTTPStatus.BAD_REQUEST,
+                    "Материал не найден или не содержит выбранные задания",
+                    "invalid_assignment_material",
+                )
+                return
             cursor = database.execute(
                 """
-                INSERT INTO assignments(group_id, teacher_id, title, variant_id, tasks_json, due_at, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO assignments(group_id, teacher_id, title, variant_id, tasks_json, due_at, created_at,
+                                        updated_at, material_snapshot_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     group_id,
@@ -65,6 +76,7 @@ class WorkControllerMixin:
                     due_at,
                     int(time.time()),
                     int(time.time()),
+                    json.dumps(material, ensure_ascii=False, separators=(",", ":")),
                 ),
             )
             self.audit(
@@ -132,8 +144,9 @@ class WorkControllerMixin:
                 return
             now = int(time.time())
             cursor = database.execute(
-                """INSERT INTO assignments(group_id, teacher_id, title, variant_id, tasks_json, due_at, created_at, updated_at, source_assignment_id)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                """INSERT INTO assignments(group_id, teacher_id, title, variant_id, tasks_json, due_at, created_at,
+                                              updated_at, source_assignment_id, material_snapshot_json)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     source["group_id"],
                     user["id"],
@@ -144,6 +157,7 @@ class WorkControllerMixin:
                     now,
                     now,
                     assignment_id,
+                    source["material_snapshot_json"],
                 ),
             )
         self.send_json({"assignment": {"id": cursor.lastrowid}}, HTTPStatus.CREATED)
@@ -175,25 +189,36 @@ class WorkControllerMixin:
             if not assignment:
                 self.send_error_json(HTTPStatus.NOT_FOUND, "Задание не найдено", "assignment_not_found")
                 return
-            attempt = database.execute(
-                "SELECT COALESCE(MAX(attempt_number), 0) + 1 AS number FROM submissions WHERE assignment_id = ? AND student_id = ?",
-                (assignment_id, user["id"]),
-            ).fetchone()["number"]
-            cursor = database.execute(
-                """
-                INSERT INTO submissions(assignment_id, student_id, attempt_number, run_json, submitted_at)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (assignment_id, user["id"], attempt, encoded_run, int(time.time())),
+            assignment_details = database.execute(
+                "SELECT due_at FROM assignments WHERE id = ?", (assignment_id,)
+            ).fetchone()
+        submitted_at = int(time.time())
+        try:
+            submission_id, attempt = create_submission_with_retry(
+                connect, assignment_id, user["id"], encoded_run, submitted_at
             )
+        except RuntimeError:
+            self.send_error_json(
+                HTTPStatus.CONFLICT, "Не удалось создать попытку. Повторите запрос", "submission_conflict"
+            )
+            return
+        late = bool(assignment_details["due_at"] is not None and submitted_at > assignment_details["due_at"])
+        with connect() as database:
             self.audit(
                 database,
                 "submission_created",
                 user_id=user["id"],
                 email=user["email"],
-                details={"submissionId": cursor.lastrowid, "assignmentId": assignment_id, "attempt": attempt},
+                details={
+                    "submissionId": submission_id,
+                    "assignmentId": assignment_id,
+                    "attempt": attempt,
+                    "late": late,
+                },
             )
-        self.send_json({"submission": {"id": cursor.lastrowid, "attempt": attempt}}, HTTPStatus.CREATED)
+        self.send_json(
+            {"submission": {"id": submission_id, "attempt": attempt, "late": late}}, HTTPStatus.CREATED
+        )
 
     def teacher_submissions(self) -> None:
         user = self.require_role("teacher")

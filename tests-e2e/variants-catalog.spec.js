@@ -1,8 +1,31 @@
 import { expect, test } from "@playwright/test";
 import fs from "node:fs";
+import path from "node:path";
 
 const originHeaders = { Origin: "http://127.0.0.1:8091", "Sec-Fetch-Site": "same-origin" };
 const baseURL = "http://127.0.0.1:8091";
+let publishedSlug = null;
+
+test.describe.configure({ mode: "serial" });
+
+async function post(context, url, data) {
+  const response = await context.request.post(url, { headers: originHeaders, data });
+  expect(response.ok(), await response.text()).toBeTruthy();
+  return response.json();
+}
+
+async function verificationToken(email) {
+  const outbox = path.join(process.env.E2E_DATA_DIR, "outbox.log");
+  let token = null;
+  await expect.poll(() => {
+    if (!fs.existsSync(outbox)) return null;
+    const messages = fs.readFileSync(outbox, "utf8").trim().split("\n").filter(Boolean).map(JSON.parse);
+    const message = messages.findLast(item => item.to === email && item.body.includes("?verify="));
+    token = message ? new URL(message.body.trim().split("\n").at(-1)).searchParams.get("verify") : null;
+    return token;
+  }).not.toBeNull();
+  return token;
+}
 
 test("guest catalog exposes only the open 2026 variant", async ({ page }) => {
   await page.goto("/variants.html");
@@ -19,11 +42,18 @@ test("registered user publishes a standalone task and opens it from catalog", as
   const context = await browser.newContext({ baseURL });
   const stamp = Date.now();
   const slug = `e2e-photo-${stamp}`;
+  publishedSlug = slug;
+  const email = "catalog-author@example.test";
   const registration = await context.request.post("/api/auth/register", {
     headers: originHeaders,
-    data: { email: `${slug}@example.test`, password: "password123", displayName: "Автор", role: "student" },
+    data: { email, password: "password123", displayName: "Автор", role: "student" },
   });
   expect(registration.ok(), await registration.text()).toBeTruthy();
+  const confirmation = await context.request.post("/api/auth/email/confirm", {
+    headers: originHeaders,
+    data: { token: await verificationToken(email) },
+  });
+  expect(confirmation.ok(), await confirmation.text()).toBeTruthy();
 
   const draft = {
     slug, kind: "task", taskNumber: 2, title: "Авторское описание фотографии", year: 2027,
@@ -63,7 +93,7 @@ test("registered user publishes a standalone task and opens it from catalog", as
   await expect(page.locator("#variantSelect + .project-select-trigger .project-select-value")).toHaveCSS("white-space", "nowrap");
 
   await page.goto("/variant-editor.html");
-  await expect(page.locator("[data-account-link]")).toContainText(`${slug}@example.test`);
+  await expect(page.locator("[data-account-link]")).toContainText(email);
   await expect(page.locator("#editorTitle")).toHaveText("Новый материал");
   await expect(page.locator("select:not([data-project-select='ready'])")).toHaveCount(0);
   await page.locator(".project-select-trigger").first().click();
@@ -77,4 +107,42 @@ test("registered user publishes a standalone task and opens it from catalog", as
   await expect(page.locator("#taskNumberField")).toBeVisible();
   await expect(page.locator("#materialTitle")).toHaveCSS("font-family", /Georgia/);
   await context.close();
+});
+
+test("assigned snapshot opens after the author deletes the source material", async ({ browser }) => {
+  const teacher = await browser.newContext({ baseURL });
+  const student = await browser.newContext({ baseURL });
+  const author = await browser.newContext({ baseURL });
+  const teacherEmail = "snapshot-teacher@example.test";
+  await post(teacher, "/api/auth/register", {
+    email: teacherEmail, password: "password123", displayName: "Snapshot Teacher", role: "teacher",
+  });
+  await post(teacher, "/api/auth/email/confirm", { token: await verificationToken(teacherEmail) });
+  await post(student, "/api/auth/register", {
+    email: "snapshot-student@example.test", password: "password123", displayName: "Snapshot Student", role: "student",
+  });
+  const group = await post(teacher, "/api/teacher/groups", { name: "Snapshot group" });
+  await post(student, "/api/groups/join", { code: group.group.code });
+  await post(teacher, "/api/teacher/assignments", {
+    groupId: group.group.id, title: "Stable snapshot", variantId: publishedSlug, tasks: [2], dueAt: 1,
+  });
+  await post(author, "/api/auth/login", { email: "catalog-author@example.test", password: "password123" });
+  const deleted = await author.request.delete(`/api/materials/${publishedSlug}`, {
+    headers: originHeaders,
+    data: {},
+  });
+  expect(deleted.ok(), await deleted.text()).toBeTruthy();
+
+  const assignments = await (await student.request.get("/api/student/assignments")).json();
+  expect(assignments.assignments[0].material.id).toBe(publishedSlug);
+  expect(assignments.assignments[0].materialUnavailable).toBe(false);
+  const snapshotImage = assignments.assignments[0].material.tasks["2"].images[0];
+  expect((await student.request.get(snapshotImage)).ok()).toBeTruthy();
+  const page = await student.newPage();
+  await page.goto("/");
+  await page.locator("[data-start-assignment]").click();
+  await expect(page.locator("#runnerScreen")).toBeVisible();
+  await expect(page.locator("#modeLabel")).toContainText("задание преподавателя");
+  await expect(page.locator("#taskBadge")).toHaveText("Задание 2");
+  await Promise.all([teacher.close(), student.close(), author.close()]);
 });

@@ -1,7 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
-  <title id="title">口试 — тренажёр устной части</title>
+  <title id="title">口试 — устная часть китайского языка</title>
   <rect width="64" height="64" fill="#5c0e0e"/>
-  <rect x="4" y="4" width="56" height="56" fill="none" stroke="#c9a227" stroke-width="2"/>
-  <path d="M15 15h34v26H34l-10 9v-9h-9z" fill="none" stroke="#e8d38a" stroke-width="3" stroke-linejoin="miter"/>
-  <path d="M23 24h18M23 32h13" stroke="#e8d38a" stroke-width="3" stroke-linecap="square"/>
+  <path d="M5 17V5h12M47 5h12v12M59 47v12H47M17 59H5V47" fill="none" stroke="#c9a227" stroke-width="2.5"/>
+  <rect x="9" y="9" width="46" height="46" fill="none" stroke="#8f6f14" stroke-width="1"/>
+  <rect x="26" y="14" width="12" height="23" rx="6" fill="#e8d38a"/>
+  <path d="M21 31v2a11 11 0 0 0 22 0v-2M32 44v7M25 51h14" fill="none" stroke="#e8d38a" stroke-width="3" stroke-linecap="square"/>
+  <path d="M17 20c-3 4-3 10 0 14M47 20c3 4 3 10 0 14" fill="none" stroke="#c9a227" stroke-width="2" stroke-linecap="square"/>
 </svg>

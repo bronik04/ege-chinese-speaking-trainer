@@ -34,6 +34,7 @@ button:disabled { cursor: wait; opacity: .48; }
 .header-actions { display: flex; align-items: center; gap: 20px; }
 .header-link { color: var(--crimson-deep); border-bottom: 1px solid var(--crimson); padding: 5px 0; text-decoration: none; font: 800 10px/1 ui-monospace, monospace; text-transform: uppercase; letter-spacing: .1em; white-space: nowrap; }
 .header-link:hover { color: var(--crimson); }
+.header-link.active { color: var(--gold); border-bottom-color: var(--gold); }
 .project-select { width: 100%; position: relative; text-transform: none; letter-spacing: normal; }
 .project-select-native { position: absolute !important; width: 1px !important; height: 1px !important; margin: 0 !important; padding: 0 !important; opacity: 0; pointer-events: none; }
 .project-select-trigger { width: 100%; min-height: 42px; display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 10px 13px; border: 1px solid var(--line); color: var(--ink); background: var(--paper); text-align: left; text-transform: none; letter-spacing: normal; font: 15px/1.35 Georgia, serif; }
@@ -72,6 +73,7 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator { cursor: pointe
 h1, h2, p { text-wrap: pretty; }
 h1 { margin: 0; font: 500 clamp(48px, 5.8vw, 86px)/.96 "Cormorant Garamond", Georgia, serif; letter-spacing: -.03em; }
 h1 em { color: var(--crimson); font-weight: inherit; }
+.hero-chinese { color: var(--ink); font-family: "Noto Serif SC", "Songti SC", Georgia, serif; font-size: .76em; letter-spacing: .04em; }
 .hero-text { max-width: 590px; margin: 28px 0; color: var(--ink-soft); font-size: 18px; }
 .facts { display: flex; gap: 28px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--ink-soft); font-size: 13px; }
 .facts span { display: flex; align-items: baseline; gap: 7px; }
@@ -354,8 +356,9 @@ body.modal-open { overflow: hidden; }
   .brand-logo { width: 40px; height: 40px; flex-basis: 40px; }
   .brand small { display: none; }
   .header-actions { gap: 10px; }
+  .header-actions { width: 100%; justify-content: flex-start; overflow-x: auto; padding-bottom: 4px; }
   .account-btn { padding: 7px 9px; }
-  .header-primary .account-btn { max-width: 48vw; }
+  .header-actions .account-btn { margin-left: auto; flex: 0 0 auto; }
   .header-link { font-size: 9px; }
   .home-screen { padding-top: 23px; }
   h1 { font-size: 46px; }

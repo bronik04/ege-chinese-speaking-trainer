@@ -1,5 +1,5 @@
 import { api } from "./api.js";
-import { assignmentOptionsMarkup, studentAssignmentsMarkup } from "./account-view.js";
+import { assignmentOptionsMarkup, assignmentTasksMarkup, studentAssignmentsMarkup } from "./account-view.js";
 import { escapeHtml } from "./progress.js";
 
 const $ = (id) => document.getElementById(id);
@@ -36,7 +36,7 @@ export function createAccountAssignmentsController(ctx) {
   async function startAssignedRun(assignmentId) {
     const assignment = studentAssignments.find(item => item.id === assignmentId);
     if (!assignment) return;
-    await ctx.loadVariant(assignment.variantId);
+    await ctx.loadVariant(assignment.variantId, assignment.material);
     if (ctx.getVariant()?.id !== assignment.variantId) {
       toast("Не удалось загрузить вариант задания");
       return;
@@ -50,6 +50,12 @@ export function createAccountAssignmentsController(ctx) {
     const markup = assignmentOptionsMarkup(groups, ctx.getVariantIndex());
     $("assignmentGroup").innerHTML = markup.groups;
     $("assignmentVariant").innerHTML = markup.variants;
+    const updateTasks = () => {
+      const selected = ctx.getVariantIndex().find(item => item.id === $("assignmentVariant").value);
+      $("assignmentTasks").innerHTML = assignmentTasksMarkup(selected);
+    };
+    $("assignmentVariant").onchange = updateTasks;
+    updateTasks();
     $("createAssignmentBtn").disabled = !groups.length;
     $("submissionGroupFilter").innerHTML = '<option value="">Все группы</option>' + groups.map(group => `<option value="${group.id}">${escapeHtml(group.name)}</option>`).join("");
   }

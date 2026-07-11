@@ -1,5 +1,6 @@
 import http.client
 import json
+import os
 import tempfile
 import threading
 import unittest
@@ -29,6 +30,8 @@ class SecurityHelpersTest(unittest.TestCase):
 class ApiFlowTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        cls.original_teacher_emails = os.environ.get("TRAINER_TEACHER_EMAILS")
+        os.environ["TRAINER_TEACHER_EMAILS"] = "teacher@example.test"
         cls.temp_dir = tempfile.TemporaryDirectory()
         server.DATA_DIR = Path(cls.temp_dir.name)
         server.DB_PATH = server.DATA_DIR / "trainer.sqlite3"
@@ -56,6 +59,10 @@ class ApiFlowTest(unittest.TestCase):
         cls.httpd.server_close()
         cls.thread.join(timeout=2)
         recordings.validate_duration = cls.original_validate_duration
+        if cls.original_teacher_emails is None:
+            os.environ.pop("TRAINER_TEACHER_EMAILS", None)
+        else:
+            os.environ["TRAINER_TEACHER_EMAILS"] = cls.original_teacher_emails
         cls.temp_dir.cleanup()
 
     def request(self, method, path, payload=None, cookie=None, include_origin=True):
@@ -169,6 +176,13 @@ class ApiFlowTest(unittest.TestCase):
         self.assertEqual(status, 201)
         teacher_cookie = self.cookie_from(headers)
 
+        status, blocked, _ = self.request("POST", "/api/teacher/groups", {"name": "11 класс"}, teacher_cookie)
+        self.assertEqual(status, 403)
+        self.assertEqual(blocked["code"], "email_verification_required")
+        verification_token = self.token_from_outbox(teacher["email"], "verify")
+        status, _, _ = self.request("POST", "/api/auth/email/confirm", {"token": verification_token})
+        self.assertEqual(status, 200)
+
         student = {
             "email": "student@example.test",
             "password": "student123",
@@ -185,6 +199,20 @@ class ApiFlowTest(unittest.TestCase):
 
         status, _, _ = self.request("POST", "/api/groups/join", {"code": code}, student_cookie)
         self.assertEqual(status, 200)
+        status, invalid_assignment, _ = self.request(
+            "POST",
+            "/api/teacher/assignments",
+            {
+                "groupId": group_payload["group"]["id"],
+                "title": "Несуществующий вариант",
+                "variantId": "missing-variant",
+                "tasks": [1],
+                "dueAt": None,
+            },
+            teacher_cookie,
+        )
+        self.assertEqual(status, 400)
+        self.assertEqual(invalid_assignment["code"], "invalid_assignment_material")
         status, assignment_payload, _ = self.request(
             "POST",
             "/api/teacher/assignments",
@@ -193,7 +221,7 @@ class ApiFlowTest(unittest.TestCase):
                 "title": "Пробный вариант",
                 "variantId": "demo-2026",
                 "tasks": [1, 2],
-                "dueAt": None,
+                "dueAt": 1,
             },
             teacher_cookie,
         )
@@ -202,13 +230,15 @@ class ApiFlowTest(unittest.TestCase):
         status, assignments, _ = self.request("GET", "/api/student/assignments", cookie=student_cookie)
         self.assertEqual(status, 200)
         self.assertEqual(assignments["assignments"][0]["id"], assignment_id)
+        self.assertEqual(assignments["assignments"][0]["material"]["id"], "demo-2026")
+        self.assertFalse(assignments["assignments"][0]["materialUnavailable"])
         status, teacher_assignments, _ = self.request("GET", "/api/teacher/assignments", cookie=teacher_cookie)
         self.assertEqual(status, 200)
         self.assertEqual(teacher_assignments["assignments"][0]["id"], assignment_id)
         status, _, _ = self.request(
             "PUT",
             f"/api/teacher/assignments/{assignment_id}",
-            {"title": "Обновлённый вариант", "dueAt": None},
+            {"title": "Обновлённый вариант", "dueAt": 1},
             teacher_cookie,
         )
         self.assertEqual(status, 200)
@@ -226,6 +256,7 @@ class ApiFlowTest(unittest.TestCase):
         )
         self.assertEqual(status, 201)
         submission_id = submission_payload["submission"]["id"]
+        self.assertTrue(submission_payload["submission"]["late"])
         status, recording_payload = self.request_audio(
             f"/api/submissions/{submission_id}/recordings?task=2&label=Answer", b"test-audio", student_cookie
         )
@@ -238,6 +269,7 @@ class ApiFlowTest(unittest.TestCase):
 
         status, teacher_submissions, _ = self.request("GET", "/api/teacher/submissions", cookie=teacher_cookie)
         self.assertEqual(status, 200)
+        self.assertTrue(teacher_submissions["submissions"][0]["late"])
         self.assertEqual(teacher_submissions["submissions"][0]["recordings"][0]["id"], recording_id)
         status, history, _ = self.request("GET", f"/api/teacher/submissions/{submission_id}", cookie=teacher_cookie)
         self.assertEqual(status, 200)
@@ -294,12 +326,29 @@ class ApiFlowTest(unittest.TestCase):
         self.assertIsNone(deleted)
         self.assertIsNone(deletion_event["user_id"])
 
+    def test_teacher_registration_requires_allowlist(self):
+        status, payload, _ = self.request(
+            "POST",
+            "/api/auth/register",
+            {
+                "email": "impostor@example.test",
+                "password": "password123",
+                "displayName": "Not a teacher",
+                "role": "teacher",
+            },
+        )
+        self.assertEqual(status, 403)
+        self.assertEqual(payload["code"], "teacher_not_allowed")
+
     def test_migrations_are_recorded(self):
         with server.connect() as database:
             versions = [
                 row["version"] for row in database.execute("SELECT version FROM schema_migrations ORDER BY version")
             ]
-        self.assertEqual(versions, [1, 2, 3, 4, 5, 6])
+        self.assertEqual(versions, [1, 2, 3, 4, 5, 6, 7])
+        with server.connect() as database:
+            columns = {row["name"] for row in database.execute("PRAGMA table_info(assignments)")}
+        self.assertIn("material_snapshot_json", columns)
 
     def test_mutation_without_origin_is_rejected(self):
         status, payload, _ = self.request(

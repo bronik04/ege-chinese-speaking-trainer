@@ -1,0 +1,36 @@
+.about-shell { padding: 52px 4vw 90px; }
+.about-hero { display: grid; grid-template-columns: minmax(280px, .75fr) minmax(0, 1.25fr); gap: clamp(45px, 8vw, 120px); align-items: center; }
+.about-portrait { margin: 0; position: relative; }
+.about-portrait::before { content: "师"; position: absolute; left: -26px; top: -28px; z-index: -1; color: var(--gold-pale); font: 700 100px/1 "Noto Serif SC", serif; }
+.about-portrait img { width: 100%; display: block; border: 1px solid var(--line); border-top: 5px solid var(--crimson); background: var(--cream); }
+.about-portrait figcaption { padding: 9px 0; color: var(--ink-soft); font-size: 11px; }
+.about-intro h1 { color: var(--ink); }
+.about-intro > p:not(.eyebrow) { max-width: 680px; color: var(--ink-soft); font-size: 18px; }
+.about-intro .about-role { margin: 28px 0 12px; color: var(--crimson-deep); font-weight: 700; }
+.draft-note { display: inline-block; margin-top: 18px; padding: 10px 13px; color: var(--crimson-deep); background: var(--gold-pale); font: 700 10px/1.45 ui-monospace, monospace; text-transform: uppercase; letter-spacing: .06em; }
+.about-section { margin-top: 80px; padding-top: 34px; border-top: 3px solid var(--crimson); }
+.about-section h2, .about-method h2, .about-contact h2 { margin: 0; color: var(--crimson-deep); font: 600 clamp(38px, 5vw, 58px)/.98 "Cormorant Garamond", Georgia, serif; }
+.achievement-grid { margin-top: 26px; display: grid; grid-template-columns: repeat(2, 1fr); border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
+.achievement-grid article { min-height: 190px; padding: 25px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); background: rgba(251, 246, 236, .8); }
+.achievement-grid article > span { color: var(--gold); font: 700 12px/1 ui-monospace, monospace; }
+.achievement-grid h3 { margin: 25px 0 8px; color: var(--crimson-deep); font: 600 29px/1 "Cormorant Garamond", Georgia, serif; }
+.achievement-grid p { margin: 0; color: var(--ink-soft); font-size: 13px; }
+.achievement-grid .achievement-placeholder { background: var(--cream); }
+.achievement-placeholder h3, .achievement-placeholder p { opacity: .72; }
+.about-method { margin-top: 70px; padding: 40px; display: grid; grid-template-columns: .9fr 1.1fr; gap: clamp(35px, 7vw, 100px); color: var(--cream); background: linear-gradient(135deg, var(--crimson-deep), var(--crimson)); border-bottom: 4px solid var(--gold); }
+.about-method .eyebrow, .about-method h2, .about-method h2 em { color: var(--gold-pale); }
+.method-list { display: grid; gap: 15px; }
+.method-list p { margin: 0; padding-bottom: 15px; color: var(--cream-deep); border-bottom: 1px solid rgba(232, 211, 138, .28); }
+.method-list p:last-child { border-bottom: 0; }
+.method-list b { color: var(--gold-pale); }
+.about-contact { margin-top: 65px; padding: 32px 0; display: grid; grid-template-columns: 1fr 1fr; gap: 35px; align-items: end; border-block: 1px solid var(--line); }
+.about-contact > div:last-child { display: grid; justify-items: start; gap: 10px; }
+.about-contact a { color: var(--crimson-deep); border-bottom: 1px solid var(--crimson); text-decoration: none; font-weight: 700; }
+
+@media (max-width: 800px) {
+  .about-shell { padding: 30px 0 65px; }
+  .about-hero, .about-method, .about-contact { grid-template-columns: 1fr; }
+  .about-portrait { max-width: 440px; }
+  .achievement-grid { grid-template-columns: 1fr; }
+  .about-method { padding: 28px 23px; }
+}

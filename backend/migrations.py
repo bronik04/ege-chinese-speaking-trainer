@@ -217,6 +217,12 @@ def migration_006_materials(database: sqlite3.Connection) -> None:
     )
 
 
+def migration_007_assignment_material_snapshots(database: sqlite3.Connection) -> None:
+    columns = {row["name"] for row in database.execute("PRAGMA table_info(assignments)")}
+    if "material_snapshot_json" not in columns:
+        database.execute("ALTER TABLE assignments ADD COLUMN material_snapshot_json TEXT")
+
+
 MIGRATIONS = [
     (1, migration_001_core),
     (2, migration_002_assignments_and_reviews),
@@ -224,6 +230,7 @@ MIGRATIONS = [
     (4, migration_004_assignment_delivery),
     (5, migration_005_transcriptions),
     (6, migration_006_materials),
+    (7, migration_007_assignment_material_snapshots),
 ]
 
 

@@ -10,11 +10,12 @@ from urllib.parse import unquote
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
+from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from api.errors import default_error_code, error_payload
 from api.routes import accounts, groups, materials, recordings, work
-from api.runtime import ROOT, init_database
+from api.runtime import ROOT, connect, init_database
 from backend.database import close_connections, engine_name
 from backend.observability import (
     configure_logging,
@@ -103,14 +104,25 @@ async def http_error(_, error: StarletteHTTPException):
 
 @app.get("/api/health")
 async def health():
+    try:
+        await run_in_threadpool(_check_database)
+    except Exception:
+        return JSONResponse(
+            {"ok": False, "database": engine_name(), "errors": error_monitor.snapshot()}, status_code=503
+        )
     return {"ok": True, "database": engine_name(), "errors": error_monitor.snapshot()}
+
+
+def _check_database() -> None:
+    with connect() as database:
+        database.execute("SELECT 1").fetchone()
 
 
 @app.get("/{path:path}")
 async def static_files(path: str):
     relative = unquote(path) or "index.html"
     candidate = (ROOT / relative).resolve()
-    allowed = relative in {"index.html", "app.js", "styles.css", "variants.html", "variants.css", "variant-editor.html", "variant-editor.css", "reference.html", "reference.css"} or relative.startswith(
+    allowed = relative in {"index.html", "app.js", "styles.css", "variants.html", "variants.css", "variant-editor.html", "variant-editor.css", "reference.html", "reference.css", "about.html", "about.css"} or relative.startswith(
         ("assets/", "js/", "data/reference/")
     )
     if not allowed or (ROOT not in candidate.parents and candidate != ROOT) or not candidate.is_file():

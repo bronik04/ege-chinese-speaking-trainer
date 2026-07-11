@@ -6,6 +6,19 @@ import path from "node:path";
 
 const originHeaders = { Origin: "http://127.0.0.1:8091", "Sec-Fetch-Site": "same-origin" };
 
+async function verificationToken(email) {
+  const outbox = path.join(process.env.E2E_DATA_DIR, "outbox.log");
+  let token = null;
+  await expect.poll(() => {
+    if (!fs.existsSync(outbox)) return null;
+    const messages = fs.readFileSync(outbox, "utf8").trim().split("\n").filter(Boolean).map(JSON.parse);
+    const message = messages.findLast(item => item.to === email && item.body.includes("?verify="));
+    token = message ? new URL(message.body.trim().split("\n").at(-1)).searchParams.get("verify") : null;
+    return token;
+  }).not.toBeNull();
+  return token;
+}
+
 async function post(context, url, data) {
   const response = await context.request.post(url, { headers: originHeaders, data });
   expect(response.ok(), await response.text()).toBeTruthy();
@@ -16,9 +29,11 @@ test("student submits audio and teacher reviews it", async ({ browser }) => {
   const stamp = Date.now();
   const teacher = await browser.newContext({ baseURL: "http://127.0.0.1:8091" });
   const student = await browser.newContext({ baseURL: "http://127.0.0.1:8091" });
+  const teacherEmail = "workflow-teacher@example.test";
   await post(teacher, "/api/auth/register", {
-    email: `teacher-${stamp}@example.test`, password: "password123", displayName: "E2E Teacher", role: "teacher",
+    email: teacherEmail, password: "password123", displayName: "E2E Teacher", role: "teacher",
   });
+  await post(teacher, "/api/auth/email/confirm", { token: await verificationToken(teacherEmail) });
   await post(student, "/api/auth/register", {
     email: `student-${stamp}@example.test`, password: "password123", displayName: "E2E Student", role: "student",
   });

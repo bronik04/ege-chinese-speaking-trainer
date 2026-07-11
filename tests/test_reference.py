@@ -17,7 +17,13 @@ class ReferenceLibraryTest(unittest.TestCase):
             self.assertTrue(task["title"])
             self.assertTrue(task["tips"])
             self.assertTrue(task["groups"])
+            self.assertTrue(task["criteria"])
             self.assertGreater(sum(len(group["items"]) for group in task["groups"]), 5)
+
+        self.assertEqual(
+            [sum(criterion["maximum"] for criterion in task["criteria"]) for task in tasks],
+            [5, 7, 8],
+        )
 
     def test_phrases_and_examples_have_required_content(self):
         for task in self.library["tasks"]:
