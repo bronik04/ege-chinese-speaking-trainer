@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#5C0E0E">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <title>Каталог вариантов · 口试</title>
+  <link rel="stylesheet" href="/styles/base.css">
+  <link rel="stylesheet" href="/styles/pages/variants.css">
+</head>
+<body>
+  <div class="page-motif" aria-hidden="true">卷</div>
+  <header class="site-header">
+    <div class="header-primary"><a class="brand" href="index.html" aria-label="Вернуться в тренажёр"><img class="brand-logo" src="/assets/logo.svg" alt="" width="48" height="48"><span><b>口试</b><small>устная часть · китайский язык</small></span></a></div>
+    <div class="header-actions"><a class="header-link" href="reference.html">Справочник</a><a class="header-link" href="about.html">Обо мне</a><a class="header-link" href="index.html">← К тренажёру</a><a class="account-btn global-account" data-account-link href="index.html?account=1"><span class="account-dot"></span><span data-account-label>Войти</span></a></div>
+  </header>
+
+  <main class="app-shell catalog-shell">
+    <section class="catalog-hero">
+      <div>
+        <p class="eyebrow">Библиотека материалов</p>
+        <h1>Варианты<br><em>для тренировки.</em></h1>
+      </div>
+      <div class="catalog-intro">
+        <p>Официальные демонстрационные и открытые варианты устной части ЕГЭ по китайскому языку. Выберите материал и сразу переходите к экзамену или отдельному заданию.</p>
+        <div class="catalog-facts">
+          <span><b id="catalogCount">—</b> вариантов</span>
+          <span><b id="catalogYears">—</b> учебных лет</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="catalog-panel" aria-labelledby="catalogTitle">
+      <header class="catalog-heading">
+        <div><p class="eyebrow">Экзаменационные материалы</p><h2 id="catalogTitle">Все варианты</h2></div>
+        <label class="catalog-search">Поиск<input id="variantSearch" type="search" placeholder="Например, 2026 или ФИПИ" autocomplete="off"></label>
+      </header>
+      <div class="year-filters" id="yearFilters" aria-label="Фильтр по году"></div>
+      <p class="catalog-status" id="catalogStatus" aria-live="polite">Загружаем варианты…</p>
+      <div class="variant-catalog" id="variantCatalog"></div>
+    </section>
+
+  </main>
+
+  <footer class="site-footer"><div class="site-footer-inner"><div class="footer-brand"><img src="/assets/logo.svg" alt="" width="48" height="48"><div><b>口试</b><span>Подготовка к устной части ЕГЭ по китайскому языку</span></div></div><div class="footer-about"><p class="eyebrow">Разработка и методика</p><b>Николай Бровкин</b><span>Преподаватель китайского языка</span></div><div class="footer-links"><a href="mailto:bronik04@gmail.com">bronik04@gmail.com</a><a href="https://github.com/bronik04" target="_blank" rel="noreferrer">GitHub · bronik04</a></div></div><p class="footer-bottom">© <span data-current-year></span> 口试 · Учебный проект</p></footer>
+
+  <script type="module" src="/js/catalog/variants-page.js"></script>
+</body>
+</html>

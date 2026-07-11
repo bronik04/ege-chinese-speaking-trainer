@@ -61,7 +61,7 @@ test("registered user publishes a standalone task and opens it from catalog", as
   };
   const created = await context.request.post("/api/materials", { headers: originHeaders, data: draft });
   expect(created.ok(), await created.text()).toBeTruthy();
-  const photo = fs.readFileSync("assets/variants/2026/candidate-03.webp");
+  const photo = fs.readFileSync("public/assets/variants/2026/candidate-03.webp");
   const uploaded = await context.request.post(`/api/materials/${slug}/assets`, {
     headers: { ...originHeaders, "Content-Type": "image/webp" }, data: photo,
   });

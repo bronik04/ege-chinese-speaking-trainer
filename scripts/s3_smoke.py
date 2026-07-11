@@ -6,7 +6,7 @@ from pathlib import Path
 
 import boto3
 
-from backend.storage import S3AudioStorage
+from trainer.infrastructure.storage import S3AudioStorage
 
 
 def main() -> None:

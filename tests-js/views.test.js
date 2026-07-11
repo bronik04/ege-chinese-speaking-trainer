@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { assignmentTasksMarkup, studentAssignmentsMarkup, teacherGroupsMarkup } from "../js/account-view.js";
-import { escapeHtml, mergeProgress } from "../js/progress.js";
-import { formatTime, stepsMarkup, taskMarkup } from "../js/task-view.js";
-import { auditMarkup } from "../js/account-security.js";
-import { api } from "../js/api.js";
-import { catalogMarkup, filterVariants, variantKind } from "../js/variant-catalog.js";
+import { assignmentTasksMarkup, studentAssignmentsMarkup, teacherGroupsMarkup } from "../frontend/js/account/account-view.js";
+import { escapeHtml, mergeProgress } from "../frontend/js/shared/progress.js";
+import { formatTime, stepsMarkup, taskMarkup } from "../frontend/js/runner/task-view.js";
+import { auditMarkup } from "../frontend/js/account/account-security.js";
+import { api } from "../frontend/js/shared/api.js";
+import { catalogMarkup, filterVariants, variantKind } from "../frontend/js/catalog/variant-catalog.js";
 
 test("escapeHtml protects every HTML-sensitive character", () => {
   assert.equal(escapeHtml(`<script data-x="'">&`), "&lt;script data-x=&quot;&#39;&quot;&gt;&amp;");

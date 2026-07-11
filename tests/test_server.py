@@ -8,9 +8,10 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import server
-from api import runtime
-from api.controllers import common, recordings
-from backend.security import password_hash, password_matches, request_has_same_origin
+from trainer.api import dependencies, runtime
+from trainer.api.controllers import recordings
+from trainer.api.security import request_has_same_origin
+from trainer.domain.accounts import password_hash, password_matches
 
 
 class SecurityHelpersTest(unittest.TestCase):
@@ -39,8 +40,8 @@ class ApiFlowTest(unittest.TestCase):
         runtime.DATA_DIR = server.DATA_DIR
         runtime.DB_PATH = server.DB_PATH
         runtime.AUDIO_DIR = server.AUDIO_DIR
-        common.DATA_DIR = server.DATA_DIR
-        common.AUDIO_DIR = server.AUDIO_DIR
+        dependencies.DATA_DIR = server.DATA_DIR
+        dependencies.AUDIO_DIR = server.AUDIO_DIR
         recordings.DATA_DIR = server.DATA_DIR
         recordings.AUDIO_DIR = server.AUDIO_DIR
         cls.original_validate_duration = recordings.validate_duration

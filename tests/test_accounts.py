@@ -2,9 +2,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from backend.accounts import consume_rate_limit, consume_token, issue_token, record_audit
-from backend.database import connect, initialize
-from backend.mailer import send_email
+from trainer.infrastructure.database.accounts import consume_rate_limit, consume_token, issue_token, record_audit
+from trainer.infrastructure.database.core import connect, initialize
+from trainer.infrastructure.mailer import send_email
 
 
 class AccountSecurityTest(unittest.TestCase):

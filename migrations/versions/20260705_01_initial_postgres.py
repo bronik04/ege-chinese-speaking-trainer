@@ -2,7 +2,7 @@
 
 from alembic import op
 
-from backend.postgres import POSTGRES_SCHEMA
+from trainer.infrastructure.database.postgres import POSTGRES_SCHEMA
 
 revision = "20260705_01"
 down_revision = None

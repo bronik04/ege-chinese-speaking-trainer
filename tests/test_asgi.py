@@ -7,8 +7,8 @@ from fastapi.testclient import TestClient
 
 import asgi
 import server
-from api import runtime
-from api.controllers import common, recordings
+from trainer.api import dependencies, runtime
+from trainer.api.controllers import recordings
 
 
 class FastApiSmokeTest(unittest.TestCase):
@@ -21,8 +21,8 @@ class FastApiSmokeTest(unittest.TestCase):
         runtime.DATA_DIR = server.DATA_DIR
         runtime.DB_PATH = server.DB_PATH
         runtime.AUDIO_DIR = server.AUDIO_DIR
-        common.DATA_DIR = server.DATA_DIR
-        common.AUDIO_DIR = server.AUDIO_DIR
+        dependencies.DATA_DIR = server.DATA_DIR
+        dependencies.AUDIO_DIR = server.AUDIO_DIR
         recordings.DATA_DIR = server.DATA_DIR
         recordings.AUDIO_DIR = server.AUDIO_DIR
         cls.client_context = TestClient(asgi.app)
@@ -40,19 +40,21 @@ class FastApiSmokeTest(unittest.TestCase):
         self.assertEqual(set(health["errors"]), {"responses4xx", "responses5xx", "lastFailureAt"})
         self.assertEqual(self.client.get("/").status_code, 200)
         self.assertEqual(self.client.get("/variants.html").status_code, 200)
-        self.assertEqual(self.client.get("/variants.css").status_code, 200)
+        self.assertEqual(self.client.get("/styles/pages/variants.css").status_code, 200)
         self.assertEqual(self.client.get("/variant-editor.html").status_code, 200)
-        self.assertEqual(self.client.get("/variant-editor.css").status_code, 200)
+        self.assertEqual(self.client.get("/styles/pages/variant-editor.css").status_code, 200)
         self.assertEqual(self.client.get("/reference.html").status_code, 200)
-        self.assertEqual(self.client.get("/reference.css").status_code, 200)
+        self.assertEqual(self.client.get("/styles/pages/reference.css").status_code, 200)
         self.assertEqual(self.client.get("/about.html").status_code, 200)
-        self.assertEqual(self.client.get("/about.css").status_code, 200)
-        self.assertEqual(self.client.get("/data/reference/library.json").status_code, 200)
-        self.assertEqual(self.client.get("/data/variants/index.json").status_code, 404)
+        self.assertEqual(self.client.get("/styles/pages/about.css").status_code, 200)
+        self.assertEqual(self.client.get("/js/runner/app.js").status_code, 200)
+        self.assertEqual(self.client.get("/assets/logo.svg").status_code, 200)
+        self.assertEqual(self.client.get("/content/reference/library.json").status_code, 200)
+        self.assertEqual(self.client.get("/content/variants/index.json").status_code, 404)
         self.assertEqual(self.client.get("/var/trainer.sqlite3").status_code, 404)
 
     def test_health_returns_503_when_database_is_unavailable(self):
-        with patch("asgi.connect", side_effect=OSError("database unavailable")):
+        with patch("trainer.main.connect", side_effect=OSError("database unavailable")):
             response = self.client.get("/api/health")
         self.assertEqual(response.status_code, 503)
         self.assertFalse(response.json()["ok"])

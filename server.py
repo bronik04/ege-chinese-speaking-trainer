@@ -10,10 +10,10 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
-from api.controller import ApiController
-from api.runtime import AUDIO_DIR, DATA_DIR, DB_PATH, MAX_AUDIO_BODY, MAX_BODY, ROOT, connect, init_database
-from backend.database import engine_name
-from backend.observability import configure_logging, error_monitor, log_event
+from trainer.api.controller import ApiController
+from trainer.api.runtime import AUDIO_DIR, DATA_DIR, DB_PATH, MAX_AUDIO_BODY, MAX_BODY, ROOT, connect, init_database
+from trainer.infrastructure.database.core import engine_name
+from trainer.infrastructure.observability import configure_logging, error_monitor, log_event
 
 __all__ = [
     "AUDIO_DIR",

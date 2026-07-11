@@ -2,7 +2,7 @@ import json
 import logging
 import unittest
 
-from backend.observability import ErrorMonitor, JsonFormatter, reset_request_id, set_request_id
+from trainer.infrastructure.observability import ErrorMonitor, JsonFormatter, reset_request_id, set_request_id
 
 
 class ObservabilityTest(unittest.TestCase):

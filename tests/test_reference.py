@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parent.parent
 class ReferenceLibraryTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.library = json.loads((ROOT / "data/reference/library.json").read_text(encoding="utf-8"))
+        cls.library = json.loads((ROOT / "content/reference/library.json").read_text(encoding="utf-8"))
 
     def test_all_exam_tasks_have_reference_materials(self):
         tasks = self.library["tasks"]

@@ -1,6 +1,6 @@
 FROM python:3.12-slim-bookworm
 
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PYTHONPATH=/app/src TRAINER_PROJECT_ROOT=/app
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl gnupg \
     && install -d /usr/share/postgresql-common/pgdg \

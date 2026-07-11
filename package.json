@@ -3,9 +3,11 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "lint": "npm run lint:js",
+    "check": "npm run lint && npm test",
     "test": "node --test tests-js/*.test.js",
     "test:e2e": "playwright test",
-    "lint:js": "eslint app.js js tests-js tests-e2e playwright.config.js"
+    "lint:js": "eslint frontend/js tests-js tests-e2e playwright.config.js"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",

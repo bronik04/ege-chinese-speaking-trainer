@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import time
 
-from backend.postgres import connect, initialize
+from trainer.infrastructure.database.postgres import connect, initialize
 
 
 def main() -> None:

@@ -1,6 +1,6 @@
 import unittest
 
-from backend.grading import validate_scores
+from trainer.domain.grading import validate_scores
 
 
 class GradingTest(unittest.TestCase):

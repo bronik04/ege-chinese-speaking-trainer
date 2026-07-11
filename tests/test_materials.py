@@ -13,9 +13,9 @@ from PIL import Image
 
 import asgi
 import server
-from api import runtime
-from api.controllers import common, materials, recordings
-from backend.materials import EXAM_SPEC, build_content
+from trainer.api import dependencies, runtime
+from trainer.api.controllers import materials, recordings
+from trainer.domain.materials import EXAM_SPEC, build_content
 
 
 class MaterialApiTest(unittest.TestCase):
@@ -34,8 +34,8 @@ class MaterialApiTest(unittest.TestCase):
         runtime.DB_PATH = server.DB_PATH
         runtime.AUDIO_DIR = server.AUDIO_DIR
         runtime.MATERIAL_ASSET_DIR = root / "material-assets"
-        common.DATA_DIR = root
-        common.AUDIO_DIR = server.AUDIO_DIR
+        dependencies.DATA_DIR = root
+        dependencies.AUDIO_DIR = server.AUDIO_DIR
         materials.MATERIAL_ASSET_DIR = runtime.MATERIAL_ASSET_DIR
         recordings.DATA_DIR = root
         recordings.AUDIO_DIR = server.AUDIO_DIR
@@ -115,7 +115,9 @@ class MaterialApiTest(unittest.TestCase):
         self.assertEqual(upload.status_code, 201, upload.text)
         asset_url = upload.json()["asset"]["url"]
         draft["content"] = {"2": {"images": [asset_url, asset_url, asset_url]}}
-        self.assertEqual(self.client.put("/api/materials/author-photo-task", headers=self.origin, json=draft).status_code, 200)
+        self.assertEqual(
+            self.client.put("/api/materials/author-photo-task", headers=self.origin, json=draft).status_code, 200
+        )
         published = self.client.post("/api/materials/author-photo-task/publish", headers=self.origin, json={})
         self.assertEqual(published.status_code, 200, published.text)
         detail = self.client.get("/api/materials/author-photo-task").json()["material"]
@@ -162,12 +164,25 @@ class MaterialApiTest(unittest.TestCase):
             "full",
             None,
             {
-                "1": {"situation": "Достаточно длинная ситуация", "banner": "欢迎", "questions": ["Вопрос"] * 5, "image": "/api/material-assets/1", "imageAlt": "Фото"},
+                "1": {
+                    "situation": "Достаточно длинная ситуация",
+                    "banner": "欢迎",
+                    "questions": ["Вопрос"] * 5,
+                    "image": "/api/material-assets/1",
+                    "imageAlt": "Фото",
+                },
                 "2": {"images": ["/api/material-assets/1"] * 3},
-                "3": {"title": "Проект «Отдых»", "images": ["/api/material-assets/1"] * 2, "imageLabels": ["Первое", "Второе"]},
+                "3": {
+                    "title": "Проект «Отдых»",
+                    "images": ["/api/material-assets/1"] * 2,
+                    "imageLabels": ["Первое", "Второе"],
+                },
             },
         )
-        self.assertEqual([(content[str(n)]["prepSeconds"], content[str(n)]["answerSeconds"]) for n in (1, 2, 3)], [(90, 20), (120, 120), (180, 180)])
+        self.assertEqual(
+            [(content[str(n)]["prepSeconds"], content[str(n)]["answerSeconds"]) for n in (1, 2, 3)],
+            [(90, 20), (120, 120), (180, 180)],
+        )
 
     def test_asset_upload_deletes_stored_object_when_metadata_insert_fails(self):
         email = "cleanup@example.test"
@@ -205,8 +220,9 @@ class MaterialApiTest(unittest.TestCase):
                 raise sqlite3.IntegrityError("metadata failed")
             return original_connect()
 
-        with patch.object(materials, "connect", side_effect=failing_connect), patch.object(
-            materials, "storage_from_env", return_value=storage
+        with (
+            patch.object(materials, "connect", side_effect=failing_connect),
+            patch.object(materials, "storage_from_env", return_value=storage),
         ):
             response = self.client.post(
                 "/api/materials/cleanup-task/assets",

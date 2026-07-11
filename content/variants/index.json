@@ -1,0 +1,9 @@
+[
+  { "id": "open-2026", "year": 2026, "label": "Официальный вариант 2026", "file": "content/variants/open-2026.json" },
+  { "id": "demo-2026", "year": 2026, "label": "Демоверсия 2026", "file": "content/variants/demo-2026.json" },
+  { "id": "demo-2025", "year": 2025, "label": "Демоверсия 2025", "file": "content/variants/demo-2025.json" },
+  { "id": "demo-2024", "year": 2024, "label": "Демоверсия 2024", "file": "content/variants/demo-2024.json" },
+  { "id": "demo-2023", "year": 2023, "label": "Демоверсия 2023", "file": "content/variants/demo-2023.json" },
+  { "id": "demo-2022", "year": 2022, "label": "Демоверсия 2022", "file": "content/variants/demo-2022.json" },
+  { "id": "demo-2021", "year": 2021, "label": "Демоверсия 2021", "file": "content/variants/demo-2021.json" }
+]

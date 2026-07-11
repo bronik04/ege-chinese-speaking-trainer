@@ -5,9 +5,9 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from backend.database import connect, initialize
-from backend.queries import safe_progress
-from backend.submissions import create_submission_with_retry
+from trainer.infrastructure.database.core import connect, initialize
+from trainer.infrastructure.database.queries.progress import safe_progress
+from trainer.infrastructure.database.submissions import create_submission_with_retry
 
 
 class DatabaseTest(unittest.TestCase):

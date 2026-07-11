@@ -100,4 +100,8 @@
 
 ## Для разработчика и владельца проекта
 
-Установка, архитектура, переменные окружения, резервное копирование, Docker, PostgreSQL, S3/R2, почта, расшифровка и тесты описаны в [DEVELOPMENT.md](DEVELOPMENT.md).
+- [DEVELOPMENT.md](DEVELOPMENT.md) — установка, запуск, deployment, backup и тесты;
+- [CONTRIBUTING.md](CONTRIBUTING.md) — единый порядок внесения изменений;
+- [docs/architecture.md](docs/architecture.md) — текущая и целевая архитектура;
+- [SECURITY.md](SECURITY.md) — работа с секретами, аккаунтами и аудиозаписями;
+- [AGENTS.md](AGENTS.md) — обязательные правила для разработчиков и AI-агентов.

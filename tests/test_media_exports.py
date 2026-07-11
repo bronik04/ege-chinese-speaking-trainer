@@ -5,8 +5,8 @@ import unittest
 import wave
 from pathlib import Path
 
-from backend.audio import validate_duration
-from backend.exports import submissions_csv, submissions_pdf
+from trainer.infrastructure.audio import validate_duration
+from trainer.infrastructure.exports import submissions_csv, submissions_pdf
 
 
 class AudioValidationTest(unittest.TestCase):

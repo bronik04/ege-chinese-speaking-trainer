@@ -4,10 +4,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from backend.database import connect, initialize
-from backend.postgres import POSTGRES_SCHEMA, Connection
-from backend.storage import LocalAudioStorage, S3AudioStorage, storage_from_env
-from backend.transcription import claim, complete, enqueue, fail
+from trainer.infrastructure.database.core import connect, initialize
+from trainer.infrastructure.database.postgres import POSTGRES_SCHEMA, Connection
+from trainer.infrastructure.storage import LocalAudioStorage, S3AudioStorage, storage_from_env
+from trainer.services.transcription import claim, complete, enqueue, fail
 
 
 class LocalStorageTest(unittest.TestCase):
@@ -105,7 +105,7 @@ class TranscriptionQueueTest(unittest.TestCase):
         self.assertEqual(dict(row), {"transcript_status": "completed", "transcript_text": "你好"})
 
     def test_worker_downloads_and_transcribes_recording(self):
-        from scripts import transcription_worker
+        from trainer.workers import transcription as transcription_worker
 
         audio_root = self.root / "audio"
         audio_root.mkdir(exist_ok=True)
@@ -117,8 +117,8 @@ class TranscriptionQueueTest(unittest.TestCase):
         transcriber = Mock()
         transcriber.transcribe.return_value = "这是学生的回答"
         with (
-            patch.object(transcription_worker.server, "connect", side_effect=lambda: connect(self.path)),
-            patch.object(transcription_worker.server, "AUDIO_DIR", audio_root),
+            patch.object(transcription_worker.runtime, "connect", side_effect=lambda: connect(self.path)),
+            patch.object(transcription_worker.runtime, "AUDIO_DIR", audio_root),
         ):
             self.assertTrue(transcription_worker.process_one(transcriber))
 
