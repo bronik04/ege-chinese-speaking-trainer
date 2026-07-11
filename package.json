@@ -5,7 +5,7 @@
   "scripts": {
     "lint": "npm run lint:js",
     "check": "npm run lint && npm test",
-    "test": "node --test tests-js/*.test.js",
+    "test": "node --test tests-js/unit/*.test.js",
     "test:e2e": "playwright test",
     "lint:js": "eslint frontend/js tests-js tests-e2e playwright.config.js"
   },

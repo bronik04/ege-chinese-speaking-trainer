@@ -16,7 +16,7 @@ class PackageLayoutTest(unittest.TestCase):
     def test_project_root_points_to_repository(self):
         config = importlib.import_module("trainer.config")
 
-        self.assertEqual(config.PROJECT_ROOT, Path(__file__).resolve().parent.parent)
+        self.assertEqual(config.PROJECT_ROOT, Path(__file__).resolve().parents[2])
 
     def test_worker_does_not_import_legacy_server(self):
         sys.modules.pop("trainer.workers.transcription", None)
@@ -32,7 +32,7 @@ class PackageLayoutTest(unittest.TestCase):
         self.assertTrue(hasattr(legacy, "TrainerHandler"))
 
     def test_frontend_content_and_public_files_are_separated(self):
-        root = Path(__file__).resolve().parent.parent
+        root = Path(__file__).resolve().parents[2]
         expected = (
             "frontend/pages/index.html",
             "frontend/js/account/account-controller.js",

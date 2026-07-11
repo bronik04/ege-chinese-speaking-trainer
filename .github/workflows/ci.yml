@@ -40,7 +40,15 @@ jobs:
           python3 -m pip install --no-deps --no-build-isolation -e .
           npm ci
       - name: Quality gate
-        run: make check PYTHON=python
+        run: PATH="$(python -c 'import sys; print(sys.prefix)')/bin:$PATH" python -m pre_commit run --all-files
+      - name: Test unit layer
+        run: |
+          python -m coverage erase
+          make test-unit PYTHON=python PYTHON_TEST="python -m coverage run -m unittest"
+      - name: Test integration layer and coverage
+        run: |
+          make test-integration PYTHON=python PYTHON_TEST="python -m coverage run --append -m unittest"
+          python -m coverage report
       - name: Install E2E browser
         run: npx playwright install --with-deps chromium
       - name: Test browser workflow

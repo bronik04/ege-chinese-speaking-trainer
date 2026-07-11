@@ -36,7 +36,11 @@ make run
 - `frontend/pages/reference.html`, `frontend/js/reference/reference-page.js` и `content/reference/` — учебный справочник;
 - `content/variants/` — официальные варианты;
 - `migrations/` — канонические Alembic-миграции SQLite и PostgreSQL;
-- `tests/`, `tests-js/`, `tests-e2e/` — серверные, клиентские и браузерные тесты.
+- `tests/unit/` — быстрые Python-тесты бизнес-правил, контента и архитектурных границ;
+- `tests/integration/` — Python-тесты с API, БД, файловой системой или внешними adapters;
+- `tests/fixtures/` и `tests-e2e/fixtures/` — общие данные соответствующего тестового слоя;
+- `tests-js/unit/` — unit-тесты браузерных JavaScript-модулей;
+- `tests-e2e/` — отдельные Playwright-сценарии.
 
 ## Конфигурация окружения
 
@@ -211,10 +215,16 @@ API возвращает единый формат:
 make install
 .venv/bin/pre-commit install
 make lint
+make test-unit
+make test-integration
 make test
 npx playwright install chromium
 make test-e2e
 ```
+
+`make test-unit` запускает JavaScript unit-тесты и быстрый Python-слой. `make test-integration` отдельно
+проверяет API, SQLite, filesystem и adapters. `make test` запускает оба слоя и строит общий coverage-отчёт.
+Playwright остаётся отдельным browser layer и не входит в быстрый unit-check.
 
 Все проверки перед коммитом:
 

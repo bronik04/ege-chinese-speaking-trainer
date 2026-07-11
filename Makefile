@@ -6,7 +6,9 @@ PORT ?= 8080
 
 PYTHON_BIN_DIR := $(abspath $(dir $(PYTHON)))
 
-.PHONY: install run lint test test-e2e check docker-check docker-build ensure-python
+.PHONY: install run lint test-unit test-integration test test-e2e check docker-check docker-build ensure-python
+
+PYTHON_TEST ?= $(PYTHON) -m unittest
 
 ensure-python:
 	@if ! command -v "$(PYTHON)" >/dev/null 2>&1 && [ ! -x "$(PYTHON)" ]; then \
@@ -29,10 +31,17 @@ lint: ensure-python
 	$(NPM) run lint
 	$(PYTHON) -m scripts.check_json
 
-test: ensure-python
+test-unit: ensure-python
 	$(NPM) test
+	$(PYTHON_TEST) discover -s tests/unit -v
+
+test-integration: ensure-python
+	$(PYTHON_TEST) discover -s tests/integration -v
+
+test: ensure-python
 	$(PYTHON) -m coverage erase
-	$(PYTHON) -m coverage run -m unittest discover -s tests -v
+	$(MAKE) test-unit PYTHON="$(PYTHON)" NPM="$(NPM)" PYTHON_TEST="$(PYTHON) -m coverage run -m unittest"
+	$(MAKE) test-integration PYTHON="$(PYTHON)" PYTHON_TEST="$(PYTHON) -m coverage run --append -m unittest"
 	$(PYTHON) -m coverage report
 
 test-e2e: ensure-python

@@ -6,7 +6,7 @@ from pathlib import Path
 
 from scripts.validate_content import ContentValidationError, validate_repository
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 
 
 class ReferenceLibraryTest(unittest.TestCase):
