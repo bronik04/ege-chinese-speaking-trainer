@@ -5,7 +5,7 @@ import sqlite3
 import time
 from pathlib import Path
 
-from trainer.infrastructure.database.sqlite_migrations import apply_migrations
+from trainer.infrastructure.database.migrations import upgrade_sqlite_database
 
 
 class ClosingConnection(sqlite3.Connection):
@@ -36,9 +36,9 @@ def initialize(data_dir: Path, audio_dir: Path, database_path: Path) -> None:
         from trainer.infrastructure.database.postgres import initialize as initialize_postgres
 
         initialize_postgres(database_url)
+    else:
+        upgrade_sqlite_database(database_path)
     with connect(database_path) as database:
-        if not database_url:
-            apply_migrations(database)
         database.execute("DELETE FROM sessions WHERE expires_at <= ?", (int(time.time()),))
         database.execute("DELETE FROM account_tokens WHERE expires_at <= ?", (int(time.time()),))
         database.execute("DELETE FROM auth_rate_limits WHERE updated_at <= ?", (int(time.time()) - 30 * 86400,))

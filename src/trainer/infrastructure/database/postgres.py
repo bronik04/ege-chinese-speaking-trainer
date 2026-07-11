@@ -7,8 +7,6 @@ import threading
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
-from trainer.config import PROJECT_ROOT
-
 IDENTITY_TABLES = {
     "users",
     "study_groups",
@@ -101,6 +99,8 @@ def close_pools() -> None:
         _POOLS.clear()
 
 
+# Frozen PostgreSQL baseline used only by the published 20260705_01 Alembic revision.
+# New schema changes belong in new, cross-dialect Alembic revisions.
 POSTGRES_SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at BIGINT NOT NULL);
 CREATE TABLE IF NOT EXISTS users (
@@ -197,9 +197,6 @@ CREATE INDEX IF NOT EXISTS material_assets_material_idx ON material_assets(mater
 
 
 def initialize(url: str) -> None:
-    from alembic import command
-    from alembic.config import Config
+    from trainer.infrastructure.database.migrations import upgrade_database
 
-    config = Config(str(PROJECT_ROOT / "alembic.ini"))
-    config.set_main_option("sqlalchemy.url", url.replace("postgresql://", "postgresql+psycopg://", 1))
-    command.upgrade(config, "head")
+    upgrade_database(url)

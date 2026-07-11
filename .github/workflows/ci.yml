@@ -51,6 +51,7 @@ jobs:
         env:
           TEST_DATABASE_URL: postgresql://trainer:trainer-test-password@127.0.0.1:5432/trainer_test
         run: |
+          python -m unittest tests.integration.test_migrations -v
           python -m scripts.postgres_smoke
           python -m scripts.postgres_restore_smoke
       - name: Test S3 adapter with MinIO

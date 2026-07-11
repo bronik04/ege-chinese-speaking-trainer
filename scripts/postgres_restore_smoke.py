@@ -10,6 +10,7 @@ import psycopg
 from psycopg import sql
 
 from scripts.backup import create_backup
+from trainer.infrastructure.database.migrations import head_revision
 
 
 def database_url(base_url: str, name: str) -> str:
@@ -37,6 +38,10 @@ def main() -> None:
                 ).fetchone()[0]
                 if tables < 10:
                     raise RuntimeError("Restored PostgreSQL schema is incomplete")
+                revision = database.execute("SELECT version_num FROM alembic_version").fetchone()[0]
+                expected_revision = head_revision()
+                if revision != expected_revision:
+                    raise RuntimeError(f"Restored PostgreSQL revision is {revision}, expected {expected_revision}")
         finally:
             with psycopg.connect(admin_url, autocommit=True) as database:
                 database.execute(

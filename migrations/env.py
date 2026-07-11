@@ -12,8 +12,12 @@ target_metadata = None
 
 
 def run_migrations_offline() -> None:
+    url = config.get_main_option("sqlalchemy.url")
     context.configure(
-        url=config.get_main_option("sqlalchemy.url"), literal_binds=True, dialect_opts={"paramstyle": "named"}
+        url=url,
+        literal_binds=True,
+        dialect_opts={"paramstyle": "named"},
+        render_as_batch=url.startswith("sqlite"),
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -24,7 +28,7 @@ def run_migrations_online() -> None:
         config.get_section(config.config_ini_section, {}), prefix="sqlalchemy.", poolclass=pool.NullPool
     )
     with connectable.connect() as connection:
-        context.configure(connection=connection)
+        context.configure(connection=connection, render_as_batch=connection.dialect.name == "sqlite")
         with context.begin_transaction():
             context.run_migrations()
 
