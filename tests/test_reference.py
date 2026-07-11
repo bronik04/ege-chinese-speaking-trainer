@@ -1,6 +1,10 @@
 import json
+import shutil
+import tempfile
 import unittest
 from pathlib import Path
+
+from scripts.validate_content import ContentValidationError, validate_repository
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -34,6 +38,19 @@ class ReferenceLibraryTest(unittest.TestCase):
             for example in task["examples"]:
                 self.assertTrue(example["paragraphs"])
                 self.assertTrue(example["criteria"])
+
+    def test_reference_schema_requires_examples_and_criteria(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            shutil.copytree(ROOT / "content", root / "content")
+            shutil.copytree(ROOT / "public", root / "public")
+            library_path = root / "content/reference/library.json"
+            library = json.loads(library_path.read_text(encoding="utf-8"))
+            del library["tasks"][0]["examples"]
+            library_path.write_text(json.dumps(library), encoding="utf-8")
+
+            with self.assertRaisesRegex(ContentValidationError, "examples"):
+                validate_repository(root, schema_root=ROOT / "schemas")
 
 
 if __name__ == "__main__":

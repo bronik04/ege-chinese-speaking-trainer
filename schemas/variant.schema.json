@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.test/schemas/variant.schema.json",
+  "title": "Официальный вариант устной части ЕГЭ",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "year", "label", "source", "totalMinutes", "tasks"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+    "year": { "type": "integer", "minimum": 2021, "maximum": 2100 },
+    "label": { "$ref": "#/$defs/nonEmptyString" },
+    "source": { "$ref": "#/$defs/nonEmptyString" },
+    "totalMinutes": { "type": "integer", "minimum": 1, "maximum": 60 },
+    "tasks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["1", "2", "3"],
+      "properties": {
+        "1": { "$ref": "#/$defs/task1" },
+        "2": { "$ref": "#/$defs/task2" },
+        "3": { "$ref": "#/$defs/task3" }
+      }
+    }
+  },
+  "$defs": {
+    "nonEmptyString": { "type": "string", "minLength": 1 },
+    "imagePath": {
+      "type": "string",
+      "pattern": "^assets/variants/[a-z0-9-]+/candidate-[0-9]{2}\\.webp$"
+    },
+    "timing": {
+      "type": "object",
+      "properties": {
+        "prepSeconds": { "type": "integer", "minimum": 0 },
+        "answerSeconds": { "type": "integer", "minimum": 1 },
+        "title": { "$ref": "#/$defs/nonEmptyString" }
+      },
+      "required": ["prepSeconds", "answerSeconds", "title"]
+    },
+    "task1": {
+      "allOf": [{ "$ref": "#/$defs/timing" }],
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["prepSeconds", "answerSeconds", "title", "situation", "banner", "questions", "image", "imageAlt"],
+      "properties": {
+        "prepSeconds": { "type": "integer", "const": 90 },
+        "answerSeconds": { "type": "integer", "const": 20 },
+        "title": { "$ref": "#/$defs/nonEmptyString" },
+        "situation": { "$ref": "#/$defs/nonEmptyString" },
+        "banner": { "$ref": "#/$defs/nonEmptyString" },
+        "questions": { "type": "array", "minItems": 5, "maxItems": 5, "items": { "$ref": "#/$defs/nonEmptyString" } },
+        "image": { "$ref": "#/$defs/imagePath" },
+        "imageAlt": { "$ref": "#/$defs/nonEmptyString" }
+      }
+    },
+    "task2": {
+      "allOf": [{ "$ref": "#/$defs/timing" }],
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["prepSeconds", "answerSeconds", "title", "lead", "starter", "prompts", "images"],
+      "properties": {
+        "prepSeconds": { "type": "integer", "const": 120 },
+        "answerSeconds": { "type": "integer", "const": 120 },
+        "title": { "$ref": "#/$defs/nonEmptyString" },
+        "lead": { "$ref": "#/$defs/nonEmptyString" },
+        "starter": { "$ref": "#/$defs/nonEmptyString" },
+        "prompts": { "type": "array", "minItems": 3, "items": { "$ref": "#/$defs/nonEmptyString" } },
+        "images": { "type": "array", "minItems": 3, "maxItems": 3, "items": { "$ref": "#/$defs/imagePath" } }
+      }
+    },
+    "task3": {
+      "allOf": [{ "$ref": "#/$defs/timing" }],
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["prepSeconds", "answerSeconds", "title", "lead", "prompts", "images", "imageLabels"],
+      "properties": {
+        "prepSeconds": { "type": "integer", "const": 180 },
+        "answerSeconds": { "type": "integer", "const": 180 },
+        "title": { "$ref": "#/$defs/nonEmptyString" },
+        "lead": { "$ref": "#/$defs/nonEmptyString" },
+        "prompts": { "type": "array", "minItems": 4, "maxItems": 4, "items": { "$ref": "#/$defs/nonEmptyString" } },
+        "images": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "$ref": "#/$defs/imagePath" } },
+        "imageLabels": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "$ref": "#/$defs/nonEmptyString" } }
+      }
+    }
+  }
+}

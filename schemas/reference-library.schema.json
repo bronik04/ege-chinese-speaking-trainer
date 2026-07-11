@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.test/schemas/reference-library.schema.json",
+  "title": "Справочник устной части ЕГЭ",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "tasks"],
+  "properties": {
+    "version": { "type": "integer", "minimum": 1 },
+    "tasks": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": { "$ref": "#/$defs/task" }
+    }
+  },
+  "$defs": {
+    "text": { "type": "string", "minLength": 1 },
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "number", "title", "subtitle", "timing", "tips", "criteria", "groups", "examples"],
+      "properties": {
+        "id": { "enum": ["task-1", "task-2", "task-3"] },
+        "number": { "type": "string", "pattern": "^0[1-3]$" },
+        "title": { "$ref": "#/$defs/text" },
+        "subtitle": { "$ref": "#/$defs/text" },
+        "timing": { "$ref": "#/$defs/text" },
+        "tips": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/text" } },
+        "criteria": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/criterion" } },
+        "groups": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/group" } },
+        "examples": { "type": "array", "items": { "$ref": "#/$defs/example" } }
+      }
+    },
+    "criterion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "maximum", "description"],
+      "properties": {
+        "title": { "$ref": "#/$defs/text" },
+        "maximum": { "type": "integer", "minimum": 1 },
+        "description": { "$ref": "#/$defs/text" },
+        "details": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/text" } }
+      }
+    },
+    "group": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "items"],
+      "properties": {
+        "title": { "$ref": "#/$defs/text" },
+        "description": { "$ref": "#/$defs/text" },
+        "items": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/phrase" } }
+      }
+    },
+    "phrase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ru", "zh"],
+      "properties": {
+        "ru": { "$ref": "#/$defs/text" },
+        "zh": { "$ref": "#/$defs/text" }
+      }
+    },
+    "example": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "context", "paragraphs", "criteria"],
+      "properties": {
+        "title": { "$ref": "#/$defs/text" },
+        "context": { "$ref": "#/$defs/text" },
+        "paragraphs": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/text" } },
+        "criteria": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/text" } }
+      }
+    }
+  }
+}

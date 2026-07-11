@@ -24,3 +24,9 @@ repos:
         entry: python -m scripts.check_json
         language: system
         types: [json]
+      - id: validate-content
+        name: Validate content schemas and assets
+        entry: python -m scripts.validate_content
+        language: system
+        pass_filenames: false
+        files: ^(content/|public/assets/variants/|schemas/|scripts/validate_content\.py$)

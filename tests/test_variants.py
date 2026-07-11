@@ -1,6 +1,10 @@
 import json
+import shutil
+import tempfile
 import unittest
 from pathlib import Path
+
+from scripts.validate_content import ContentValidationError, validate_repository
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -46,6 +50,29 @@ class VariantsTest(unittest.TestCase):
         self.assertEqual(len(images), 42)
         self.assertFalse(list((ROOT / "public/assets/variants").glob("*/*.jpg")))
         self.assertLess(sum(image.stat().st_size for image in images), 3_000_000)
+
+    def test_json_schema_rejects_unknown_variant_fields(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            shutil.copytree(ROOT / "content", root / "content")
+            shutil.copytree(ROOT / "public", root / "public")
+            document_path = root / "content/variants/open-2026.json"
+            document = json.loads(document_path.read_text(encoding="utf-8"))
+            document["unexpected"] = True
+            document_path.write_text(json.dumps(document), encoding="utf-8")
+
+            with self.assertRaisesRegex(ContentValidationError, "unexpected"):
+                validate_repository(root, schema_root=ROOT / "schemas")
+
+    def test_content_validator_rejects_missing_variant_image(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            shutil.copytree(ROOT / "content", root / "content")
+            shutil.copytree(ROOT / "public", root / "public")
+            (root / "public/assets/variants/open-2026/candidate-01.webp").unlink()
+
+            with self.assertRaisesRegex(ContentValidationError, "candidate-01.webp"):
+                validate_repository(root, schema_root=ROOT / "schemas")
 
 
 if __name__ == "__main__":
