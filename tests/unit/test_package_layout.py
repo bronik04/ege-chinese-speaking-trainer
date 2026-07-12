@@ -50,7 +50,7 @@ class PackageLayoutTest(unittest.TestCase):
             with self.subTest(relative=relative):
                 self.assertTrue((root / relative).is_file(), relative)
 
-        for legacy in ("index.html", "js", "styles.css"):
+        for legacy in ("index.html", "js", "data", "assets", "styles.css"):
             with self.subTest(legacy=legacy):
                 self.assertFalse((root / legacy).exists(), legacy)
 

@@ -4,7 +4,7 @@ import time
 from http import HTTPStatus
 
 from trainer.api.errors import error_payload
-from trainer.api.runtime import MATERIAL_ASSET_DIR, connect
+from trainer.api.runtime import ASSIGNMENT_ASSET_DIR, MATERIAL_ASSET_DIR, connect
 from trainer.domain.accounts import email_in_allowlist, password_hash, password_matches, token_digest
 from trainer.infrastructure.database.accounts import (
     audit_events,
@@ -232,6 +232,12 @@ class AuthControllerMixin:
                    WHERE materials.owner_id=?""",
                 (user["id"],),
             ).fetchall()
+            assignment_assets = database.execute(
+                """SELECT assignment_material_assets.storage_key FROM assignment_material_assets
+                   JOIN assignments ON assignments.id=assignment_material_assets.assignment_id
+                   WHERE assignments.teacher_id=?""",
+                (user["id"],),
+            ).fetchall()
             self.audit(database, "account_deleted", user_id=user["id"], email=user["email"])
             database.execute("DELETE FROM users WHERE id = ?", (user["id"],))
         self.delete_audio_files([row["file_name"] for row in files])
@@ -239,6 +245,12 @@ class AuthControllerMixin:
         for asset in material_assets:
             try:
                 storage.delete(asset["storage_key"])
+            except Exception:
+                continue
+        assignment_storage = storage_from_env(ASSIGNMENT_ASSET_DIR)
+        for asset in assignment_assets:
+            try:
+                assignment_storage.delete(asset["storage_key"])
             except Exception:
                 continue
         self.send_json({"ok": True}, clear_cookie=True)

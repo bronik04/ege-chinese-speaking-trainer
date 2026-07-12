@@ -10,7 +10,7 @@ from pathlib import Path
 
 from trainer.infrastructure.storage import AudioStorage
 
-MATERIAL_ASSET_URL = re.compile(r"/api/material-assets/(\d+)")
+ASSET_URL = re.compile(r"/api/(material|assignment)-assets/(\d+)")
 
 
 def copy_assignment_assets(
@@ -21,7 +21,7 @@ def copy_assignment_assets(
     target_storage: AudioStorage,
 ) -> dict:
     rewritten = copy.deepcopy(material)
-    urls: dict[int, str] = {}
+    urls: dict[tuple[str, int], str] = {}
     created_keys: list[str] = []
     created_ids: list[int] = []
 
@@ -32,22 +32,26 @@ def copy_assignment_assets(
             return [replace(item) for item in value]
         if not isinstance(value, str):
             return value
-        match = MATERIAL_ASSET_URL.fullmatch(value)
+        match = ASSET_URL.fullmatch(value)
         if not match:
             return value
-        source_id = int(match.group(1))
-        if source_id in urls:
-            return urls[source_id]
+        source_kind = match.group(1)
+        source_id = int(match.group(2))
+        cache_key = (source_kind, source_id)
+        if cache_key in urls:
+            return urls[cache_key]
+        source_table = "material_assets" if source_kind == "material" else "assignment_material_assets"
         row = database.execute(
-            "SELECT storage_key,mime_type,size_bytes FROM material_assets WHERE id=?",
+            f"SELECT storage_key,mime_type,size_bytes FROM {source_table} WHERE id=?",
             (source_id,),
         ).fetchone()
         if not row:
-            raise ValueError(f"Material asset {source_id} does not exist")
+            raise ValueError(f"{source_kind.title()} asset {source_id} does not exist")
         suffix = Path(row["storage_key"]).suffix or ".bin"
         target_key = f"assignments/{assignment_id}/{secrets.token_urlsafe(18)}{suffix}"
         created_keys.append(target_key)
-        data = source_storage.read(row["storage_key"])
+        active_source_storage = source_storage if source_kind == "material" else target_storage
+        data = active_source_storage.read(row["storage_key"])
         temporary_path = None
         try:
             with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as temporary:
@@ -64,7 +68,7 @@ def copy_assignment_assets(
         )
         created_ids.append(cursor.lastrowid)
         snapshot_url = f"/api/assignment-assets/{cursor.lastrowid}"
-        urls[source_id] = snapshot_url
+        urls[cache_key] = snapshot_url
         return snapshot_url
 
     try:

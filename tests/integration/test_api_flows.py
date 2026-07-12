@@ -41,6 +41,7 @@ class ApiFlowTest(unittest.TestCase):
         runtime.MATERIAL_ASSET_DIR = root / "material-assets"
         runtime.ASSIGNMENT_ASSET_DIR = root / "assignment-assets"
         auth.MATERIAL_ASSET_DIR = runtime.MATERIAL_ASSET_DIR
+        auth.ASSIGNMENT_ASSET_DIR = runtime.ASSIGNMENT_ASSET_DIR
         dependencies.DATA_DIR = root
         dependencies.AUDIO_DIR = runtime.AUDIO_DIR
         recordings.DATA_DIR = root
@@ -252,6 +253,24 @@ class ApiFlowTest(unittest.TestCase):
         status, _, _ = self.request_bytes(snapshot_asset_url, outsider_cookie)
         self.assertEqual(status, 404)
 
+        status, repeated_snapshot, _ = self.request(
+            "POST",
+            f"/api/teacher/assignments/{snapshot_assignment['assignment']['id']}/resend",
+            {},
+            teacher_cookie,
+        )
+        self.assertEqual(status, 201)
+        status, repeated_assignments, _ = self.request("GET", "/api/student/assignments", cookie=student_cookie)
+        self.assertEqual(status, 200)
+        repeated_material = next(
+            item["material"]
+            for item in repeated_assignments["assignments"]
+            if item["id"] == repeated_snapshot["assignment"]["id"]
+        )
+        repeated_asset_url = repeated_material["tasks"]["2"]["images"][0]
+        self.assertRegex(repeated_asset_url, r"^/api/assignment-assets/\d+$")
+        self.assertNotEqual(repeated_asset_url, snapshot_asset_url)
+
         with runtime.connect() as database:
             database.execute("UPDATE materials SET status='draft' WHERE id=?", (material_id,))
         status, image_data, _ = self.request_bytes(snapshot_asset_url, student_cookie)
@@ -387,6 +406,10 @@ class ApiFlowTest(unittest.TestCase):
             ).fetchone()
         self.assertIsNone(deleted)
         self.assertIsNone(deletion_event["user_id"])
+        self.assertTrue(list(runtime.ASSIGNMENT_ASSET_DIR.rglob("*.webp")))
+        status, _, _ = self.request("DELETE", "/api/account", {"password": teacher["password"]}, teacher_cookie)
+        self.assertEqual(status, 200)
+        self.assertEqual(list(runtime.ASSIGNMENT_ASSET_DIR.rglob("*.webp")), [])
 
     def test_teacher_registration_requires_allowlist(self):
         status, payload, _ = self.request(

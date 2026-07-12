@@ -208,6 +208,18 @@ class WorkControllerMixin:
                     source["material_snapshot_json"],
                 ),
             )
+            source_snapshot = json.loads(source["material_snapshot_json"])
+            snapshot = copy_assignment_assets(
+                database,
+                cursor.lastrowid,
+                source_snapshot,
+                storage_from_env(runtime.MATERIAL_ASSET_DIR),
+                storage_from_env(runtime.ASSIGNMENT_ASSET_DIR),
+            )
+            database.execute(
+                "UPDATE assignments SET material_snapshot_json=? WHERE id=?",
+                (json.dumps(snapshot, ensure_ascii=False, separators=(",", ":")), cursor.lastrowid),
+            )
         self.send_json({"assignment": {"id": cursor.lastrowid}}, HTTPStatus.CREATED)
 
     def submission_create(self, assignment_id: int) -> None:
