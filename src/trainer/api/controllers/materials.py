@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import secrets
 import time
 from http import HTTPStatus
@@ -32,7 +33,12 @@ class MaterialControllerMixin:
                     "SELECT * FROM materials WHERE status = 'published' ORDER BY year DESC, updated_at DESC"
                 ).fetchall()
             items.extend(self.material_index_payload(dict(row)) for row in rows)
-        self.send_json({"materials": items, "canCreate": editor_allowed(user)})
+        self.send_json(
+            {
+                "materials": items,
+                "canCreate": editor_allowed(user, os.environ.get("TRAINER_EDITOR_EMAILS", "")),
+            }
+        )
 
     def materials_mine(self) -> None:
         user = self.require_material_editor()
@@ -332,7 +338,7 @@ class MaterialControllerMixin:
                 "email_verification_required",
             )
             return None
-        if not editor_allowed(user):
+        if not editor_allowed(user, os.environ.get("TRAINER_EDITOR_EMAILS", "")):
             self.send_error_json(HTTPStatus.FORBIDDEN, "Создание материалов недоступно", "editor_forbidden")
             return None
         return user

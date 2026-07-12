@@ -17,9 +17,9 @@ src/trainer/domain/         чистые бизнес-правила
 src/trainer/services/       прикладные сервисы
 src/trainer/infrastructure/ БД и внешние adapters
 src/trainer/workers/  фоновые процессы
-js/ + *.html/*.css    браузерный frontend
-data/                 версионируемые JSON-материалы
-assets/               публичные изображения
+frontend/             HTML, CSS и браузерные JavaScript-модули
+content/              версионируемые JSON-материалы
+public/               публичные браузерные assets
 migrations/           Alembic-миграции PostgreSQL
 scripts/              backup, smoke checks и worker
 tests*/               Python, JavaScript и Playwright
@@ -41,8 +41,7 @@ src/trainer/
 frontend/
 ├── pages/
 ├── js/
-├── styles/
-└── assets/
+└── styles/
 content/
 ├── variants/
 └── reference/
@@ -55,7 +54,8 @@ backups/                 резервные копии
 tmp/                     воспроизводимые временные файлы
 ```
 
-Это направление миграции, а не разрешение заранее создавать пустые каталоги или дублирующие модули.
+Это рабочая структура и одновременно правило дальнейшей декомпозиции. Плоский модуль превращается в пакет только
+когда внутри появились реальные отдельные ответственности; пустые каталоги и дублирующие слои не создаются.
 
 ## Границы и зависимости
 
@@ -87,8 +87,8 @@ Browser
 
 | Категория | Назначение | Git | Публичный доступ |
 |---|---|---:|---:|
-| `content/` (сейчас `data/`) | проверяемые учебные материалы | да | только через разрешённый API |
-| `public/` (сейчас часть `assets/`) | браузерные изображения и стили | да | да |
+| `content/` | проверяемые учебные материалы | да | только через разрешённый API |
+| `public/` | браузерные изображения и стили | да | да |
 | `var/` | SQLite, аудио, material assets, outbox | нет | нет |
 | `backups/` | резервные копии БД и файлов | нет | нет |
 | `tmp/` | восстанавливаемые промежуточные результаты | нет | нет |
@@ -100,7 +100,7 @@ Browser
 1. Сначала фиксируются правила и тесты текущего поведения.
 2. Затем вводится единый command layer и package metadata.
 3. Python-модули размещены в пакете `src/trainer` с совместимым `asgi.py`; следующим этапом backend делится по обязанностям.
-4. После стабилизации backend переносятся frontend, content и public assets с сохранением URL.
+4. Frontend, content и public assets разделены с сохранением прежних URL.
 5. Миграции SQLite/PostgreSQL унифицируются отдельной задачей.
 6. Compatibility runtime изолирован в `legacy/` и удаляется после одного стабильного релизного цикла и подтверждения FastAPI/E2E-сценариев.
 
@@ -114,8 +114,8 @@ Browser
 | Бизнес-правило | `src/trainer/domain` | `src/trainer/domain` | независимый unit test |
 | SQL или migration | `src/trainer/infrastructure/database`, `migrations/` | `src/trainer/infrastructure/database` | чистая и обновляемая БД |
 | S3/filesystem/SMTP/OpenAI | `src/trainer/infrastructure` | `src/trainer/infrastructure` | adapter unit test и smoke test |
-| UI rendering | `js/`, HTML/CSS в корне | `frontend/` | JS test; Playwright для сценария |
-| Вариант или справочник | `data/` и `assets/variants` | `content/` и `public/` | JSON check и профильный content test |
+| UI rendering | `frontend/` | `frontend/` | JS test; Playwright для сценария |
+| Вариант или справочник | `content/` и `public/assets/variants` | те же каталоги | JSON check и профильный content test |
 | Worker или backup | `scripts/` | `workers/` или `scripts/` | unit/integration test и dry-run/smoke |
 
 Правила безопасной работы с данными находятся в [SECURITY.md](../SECURITY.md), а пошаговый workflow — в [CONTRIBUTING.md](../CONTRIBUTING.md).

@@ -38,10 +38,10 @@ EXAM_SPEC = {
 }
 
 
-def editor_allowed(user: dict | None) -> bool:
+def editor_allowed(user: dict | None, editor_emails: str) -> bool:
     if not user or not user.get("emailVerified"):
         return False
-    return email_in_allowlist(user["email"], "TRAINER_EDITOR_EMAILS")
+    return email_in_allowlist(user["email"], editor_emails)
 
 
 def validate_slug(value: str) -> str:

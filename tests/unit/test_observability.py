@@ -2,10 +2,26 @@ import json
 import logging
 import unittest
 
-from trainer.infrastructure.observability import ErrorMonitor, JsonFormatter, reset_request_id, set_request_id
+from trainer.infrastructure.observability import (
+    ErrorMonitor,
+    JsonFormatter,
+    current_request_id,
+    reset_request_id,
+    set_request_id,
+)
 
 
 class ObservabilityTest(unittest.TestCase):
+    def test_generated_request_id_is_scoped_and_reset(self):
+        before = current_request_id()
+        token = set_request_id()
+        try:
+            generated = current_request_id()
+            self.assertRegex(generated, r"^[0-9a-f]{32}$")
+        finally:
+            reset_request_id(token)
+        self.assertEqual(current_request_id(), before)
+
     def test_json_formatter_includes_event_fields_and_request_id(self):
         token = set_request_id("unit-request-123")
         try:

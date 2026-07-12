@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import os
 import time
 from http import HTTPStatus
 
+from trainer.api import runtime
 from trainer.api.errors import error_payload
-from trainer.api.runtime import ASSIGNMENT_ASSET_DIR, MATERIAL_ASSET_DIR, connect
+from trainer.api.runtime import connect
 from trainer.domain.accounts import email_in_allowlist, password_hash, password_matches, token_digest
 from trainer.infrastructure.database.accounts import (
     audit_events,
@@ -14,7 +16,7 @@ from trainer.infrastructure.database.accounts import (
     issue_token,
 )
 from trainer.infrastructure.database.core import INTEGRITY_ERRORS
-from trainer.infrastructure.storage import storage_from_env
+from trainer.services.accounts import delete_account_storage
 
 
 class AuthControllerMixin:
@@ -36,7 +38,7 @@ class AuthControllerMixin:
         if not 2 <= len(display_name) <= 80:
             self.send_error_json(HTTPStatus.BAD_REQUEST, "Укажите имя длиной от 2 до 80 символов")
             return
-        if role == "teacher" and not email_in_allowlist(email, "TRAINER_TEACHER_EMAILS"):
+        if role == "teacher" and not email_in_allowlist(email, os.environ.get("TRAINER_TEACHER_EMAILS", "")):
             self.send_error_json(HTTPStatus.FORBIDDEN, "Роль преподавателя недоступна", "teacher_not_allowed")
             return
         try:
@@ -240,17 +242,12 @@ class AuthControllerMixin:
             ).fetchall()
             self.audit(database, "account_deleted", user_id=user["id"], email=user["email"])
             database.execute("DELETE FROM users WHERE id = ?", (user["id"],))
-        self.delete_audio_files([row["file_name"] for row in files])
-        storage = storage_from_env(MATERIAL_ASSET_DIR)
-        for asset in material_assets:
-            try:
-                storage.delete(asset["storage_key"])
-            except Exception:
-                continue
-        assignment_storage = storage_from_env(ASSIGNMENT_ASSET_DIR)
-        for asset in assignment_assets:
-            try:
-                assignment_storage.delete(asset["storage_key"])
-            except Exception:
-                continue
+        delete_account_storage(
+            runtime.AUDIO_DIR,
+            [item["file_name"] for item in files],
+            runtime.MATERIAL_ASSET_DIR,
+            [item["storage_key"] for item in material_assets],
+            runtime.ASSIGNMENT_ASSET_DIR,
+            [item["storage_key"] for item in assignment_assets],
+        )
         self.send_json({"ok": True}, clear_cookie=True)

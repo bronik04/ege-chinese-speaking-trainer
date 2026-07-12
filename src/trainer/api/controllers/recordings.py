@@ -11,7 +11,7 @@ from urllib.parse import parse_qs, urlparse
 
 from trainer.api.runtime import AUDIO_DIR, DATA_DIR, MAX_AUDIO_BODY, connect
 from trainer.infrastructure.audio import validate_duration
-from trainer.infrastructure.storage import storage_from_env
+from trainer.services.recordings import delete_recordings, read_recording, write_recording
 from trainer.services.transcription import enabled as transcription_enabled
 from trainer.services.transcription import enqueue as enqueue_transcription
 
@@ -67,9 +67,8 @@ class RecordingControllerMixin:
             temporary_path.unlink(missing_ok=True)
             self.send_error_json(HTTPStatus.UNPROCESSABLE_ENTITY, "Некорректная или слишком длинная аудиозапись")
             return
-        storage = storage_from_env(AUDIO_DIR)
         try:
-            storage.put(relative, temporary_path, mime_type)
+            write_recording(AUDIO_DIR, relative, temporary_path, mime_type)
             with connect() as database:
                 cursor = database.execute(
                     """
@@ -100,10 +99,7 @@ class RecordingControllerMixin:
                     details={"submissionId": submission_id, "task": task, "size": len(data)},
                 )
         except Exception:
-            try:
-                storage.delete(relative)
-            except Exception:
-                pass
+            delete_recordings(AUDIO_DIR, [relative])
             raise
         finally:
             temporary_path.unlink(missing_ok=True)
@@ -129,7 +125,7 @@ class RecordingControllerMixin:
             self.send_error_json(HTTPStatus.NOT_FOUND, "Запись не найдена")
             return
         try:
-            data = storage_from_env(AUDIO_DIR).read(row["file_name"])
+            data = read_recording(AUDIO_DIR, row["file_name"])
         except (FileNotFoundError, OSError, ValueError):
             self.send_error_json(HTTPStatus.NOT_FOUND, "Файл записи не найден")
             return

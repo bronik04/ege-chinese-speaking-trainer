@@ -8,9 +8,29 @@ import time
 from contextlib import suppress
 from pathlib import Path
 
-from trainer.infrastructure.storage import AudioStorage
+from trainer.infrastructure.storage import AudioStorage, storage_from_env
 
 ASSET_URL = re.compile(r"/api/(material|assignment)-assets/(\d+)")
+
+
+def copy_assignment_assets_from_env(
+    database,
+    assignment_id: int,
+    material: dict,
+    source_root: Path,
+    target_root: Path,
+) -> dict:
+    return copy_assignment_assets(
+        database,
+        assignment_id,
+        material,
+        storage_from_env(source_root),
+        storage_from_env(target_root),
+    )
+
+
+def read_assignment_asset(root: Path, key: str) -> bytes:
+    return storage_from_env(root).read(key)
 
 
 def copy_assignment_assets(

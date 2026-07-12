@@ -13,8 +13,7 @@ from trainer.infrastructure.database.queries.assignments import student_assignme
 from trainer.infrastructure.database.queries.submissions import submission_history, teacher_submissions
 from trainer.infrastructure.database.submissions import create_submission_with_retry
 from trainer.infrastructure.exports import submissions_csv, submissions_pdf
-from trainer.infrastructure.storage import storage_from_env
-from trainer.services.assignment_assets import copy_assignment_assets
+from trainer.services.assignment_assets import copy_assignment_assets_from_env, read_assignment_asset
 from trainer.services.materials import assignment_material
 
 
@@ -83,12 +82,12 @@ class WorkControllerMixin:
                     json.dumps(material, ensure_ascii=False, separators=(",", ":")),
                 ),
             )
-            snapshot = copy_assignment_assets(
+            snapshot = copy_assignment_assets_from_env(
                 database,
                 cursor.lastrowid,
                 material,
-                storage_from_env(runtime.MATERIAL_ASSET_DIR),
-                storage_from_env(runtime.ASSIGNMENT_ASSET_DIR),
+                runtime.MATERIAL_ASSET_DIR,
+                runtime.ASSIGNMENT_ASSET_DIR,
             )
             database.execute(
                 "UPDATE assignments SET material_snapshot_json=? WHERE id=?",
@@ -132,7 +131,7 @@ class WorkControllerMixin:
             self.send_error_json(HTTPStatus.NOT_FOUND, "Изображение не найдено", "asset_not_found")
             return
         try:
-            data = storage_from_env(runtime.ASSIGNMENT_ASSET_DIR).read(row["storage_key"])
+            data = read_assignment_asset(runtime.ASSIGNMENT_ASSET_DIR, row["storage_key"])
         except (FileNotFoundError, OSError, ValueError):
             self.send_error_json(HTTPStatus.NOT_FOUND, "Изображение не найдено", "asset_not_found")
             return
@@ -209,12 +208,12 @@ class WorkControllerMixin:
                 ),
             )
             source_snapshot = json.loads(source["material_snapshot_json"])
-            snapshot = copy_assignment_assets(
+            snapshot = copy_assignment_assets_from_env(
                 database,
                 cursor.lastrowid,
                 source_snapshot,
-                storage_from_env(runtime.MATERIAL_ASSET_DIR),
-                storage_from_env(runtime.ASSIGNMENT_ASSET_DIR),
+                runtime.MATERIAL_ASSET_DIR,
+                runtime.ASSIGNMENT_ASSET_DIR,
             )
             database.execute(
                 "UPDATE assignments SET material_snapshot_json=? WHERE id=?",

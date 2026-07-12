@@ -30,6 +30,7 @@ lint: ensure-python
 	$(PYTHON) -m ruff format --check .
 	$(NPM) run lint
 	$(PYTHON) -m scripts.check_json
+	PATH="$(PYTHON_BIN_DIR):$$PATH" $(PYTHON) -m pre_commit run check-yaml --all-files
 
 test-unit: ensure-python
 	$(NPM) test

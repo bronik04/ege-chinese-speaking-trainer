@@ -30,12 +30,12 @@ make run
 - `src/trainer/infrastructure/` — БД, storage, mailer, exports и внешние adapters;
 - `src/trainer/workers/` — фоновые процессы, запускаемые через wrappers из `scripts/`;
 - `legacy/` — изолированный compatibility HTTP runtime и его ручные тесты;
-- `app.js` — точка сборки основного интерфейса;
-- `js/account-*-controller.js` — части кабинета пользователя и преподавателя;
-- `js/runner-controller.js` — экзаменационный сценарий;
-- `js/project-select.js` — единый интерфейс выпадающих списков;
+- `frontend/js/runner/app.js` — точка сборки основного интерфейса;
+- `frontend/js/account/` — части кабинета пользователя и преподавателя;
+- `frontend/js/runner/` — экзаменационный сценарий;
+- `frontend/js/shared/project-select.js` — единый интерфейс выпадающих списков;
 - `frontend/pages/variants.html` и `frontend/js/catalog/variant-catalog.js` — каталог материалов;
-- `variant-editor.html` и `js/material-editor.js` — редактор вариантов и заданий;
+- `frontend/pages/variant-editor.html` и `frontend/js/materials/material-editor.js` — редактор вариантов и заданий;
 - `frontend/pages/reference.html`, `frontend/js/reference/reference-page.js` и `content/reference/` — учебный справочник;
 - `content/variants/` — официальные варианты;
 - `migrations/` — канонические Alembic-миграции SQLite и PostgreSQL;
