@@ -67,6 +67,10 @@ cp .env.example .env
 - `DATABASE_URL` — подключение PostgreSQL;
 - `TRAINER_AUDIO_STORAGE` — `local` или `s3`.
 
+В production `TRAINER_PUBLIC_URL` обязателен: ссылки подтверждения email и сброса пароля строятся только из этого
+адреса. Если переменная не задана, используется development fallback `http://127.0.0.1:8080`; заголовки `Host`,
+`Origin` и forwarded-заголовки для account links не используются.
+
 ## Материалы и политика авторов
 
 Официальные варианты хранятся в `content/variants/` и доступны только через `/api/materials`. Гостю API возвращает только `open-2026`.

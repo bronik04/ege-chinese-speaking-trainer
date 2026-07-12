@@ -15,6 +15,10 @@ from trainer.infrastructure.mailer import send_email
 from trainer.infrastructure.storage import storage_from_env
 
 
+def account_public_url() -> str:
+    return os.environ.get("TRAINER_PUBLIC_URL", "").rstrip("/") or "http://127.0.0.1:8080"
+
+
 class ApiDependenciesMixin:
     def create_session(self, user_id: int) -> str:
         token = secrets.token_urlsafe(32)
@@ -87,10 +91,7 @@ class ApiDependenciesMixin:
         )
 
     def send_account_link(self, kind: str, email: str, token: str) -> str:
-        public_url = os.environ.get("TRAINER_PUBLIC_URL", "").rstrip("/")
-        if not public_url:
-            origin = self.headers.get("Origin")
-            public_url = origin.rstrip("/") if origin else f"http://{self.headers.get('Host', '127.0.0.1:8080')}"
+        public_url = account_public_url()
         parameter = "verify" if kind == "email_verification" else "reset"
         url = f"{public_url}/?{parameter}={quote(token)}"
         if kind == "email_verification":
