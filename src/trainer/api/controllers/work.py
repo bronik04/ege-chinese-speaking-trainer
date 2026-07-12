@@ -6,12 +6,15 @@ import time
 from http import HTTPStatus
 from urllib.parse import parse_qs, urlparse
 
+from trainer.api import runtime
 from trainer.api.runtime import ROOT, connect
 from trainer.domain.grading import validate_scores
 from trainer.infrastructure.database.queries.assignments import student_assignments, teacher_assignments
 from trainer.infrastructure.database.queries.submissions import submission_history, teacher_submissions
 from trainer.infrastructure.database.submissions import create_submission_with_retry
 from trainer.infrastructure.exports import submissions_csv, submissions_pdf
+from trainer.infrastructure.storage import storage_from_env
+from trainer.services.assignment_assets import copy_assignment_assets
 from trainer.services.materials import assignment_material
 
 
@@ -79,6 +82,17 @@ class WorkControllerMixin:
                     int(time.time()),
                     json.dumps(material, ensure_ascii=False, separators=(",", ":")),
                 ),
+            )
+            snapshot = copy_assignment_assets(
+                database,
+                cursor.lastrowid,
+                material,
+                storage_from_env(runtime.MATERIAL_ASSET_DIR),
+                storage_from_env(runtime.ASSIGNMENT_ASSET_DIR),
+            )
+            database.execute(
+                "UPDATE assignments SET material_snapshot_json=? WHERE id=?",
+                (json.dumps(snapshot, ensure_ascii=False, separators=(",", ":")), cursor.lastrowid),
             )
             self.audit(
                 database,

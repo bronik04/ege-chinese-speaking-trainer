@@ -38,6 +38,8 @@ class ApiFlowTest(unittest.TestCase):
         runtime.DATA_DIR = root
         runtime.DB_PATH = root / "trainer.sqlite3"
         runtime.AUDIO_DIR = root / "audio"
+        runtime.MATERIAL_ASSET_DIR = root / "material-assets"
+        runtime.ASSIGNMENT_ASSET_DIR = root / "assignment-assets"
         dependencies.DATA_DIR = root
         dependencies.AUDIO_DIR = runtime.AUDIO_DIR
         recordings.DATA_DIR = root
@@ -176,6 +178,49 @@ class ApiFlowTest(unittest.TestCase):
 
         status, _, _ = self.request("POST", "/api/groups/join", {"code": code}, student_cookie)
         self.assertEqual(status, 200)
+        with runtime.connect() as database:
+            student_id = database.execute("SELECT id FROM users WHERE email=?", (student["email"],)).fetchone()["id"]
+            material_id = database.execute(
+                """INSERT INTO materials(slug,owner_id,kind,task_number,title,year,source,status,content_json,
+                                          created_at,updated_at,published_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("snapshot-task", student_id, "task", 2, "Snapshot task", 2027, "Author", "published", "{}", 1, 1, 1),
+            ).lastrowid
+            storage_key = f"materials/{material_id}/source.webp"
+            asset_id = database.execute(
+                """INSERT INTO material_assets(material_id,storage_key,mime_type,size_bytes,created_at)
+                   VALUES (?,?,?,?,?)""",
+                (material_id, storage_key, "image/webp", 14, 1),
+            ).lastrowid
+            material_content = {"2": {"images": [f"/api/material-assets/{asset_id}"] * 3}}
+            database.execute(
+                "UPDATE materials SET content_json=? WHERE id=?",
+                (json.dumps(material_content), material_id),
+            )
+        material_path = runtime.MATERIAL_ASSET_DIR / storage_key
+        material_path.parent.mkdir(parents=True, exist_ok=True)
+        material_path.write_bytes(b"snapshot-image")
+        status, snapshot_assignment, _ = self.request(
+            "POST",
+            "/api/teacher/assignments",
+            {
+                "groupId": group_payload["group"]["id"],
+                "title": "Авторское задание",
+                "variantId": "snapshot-task",
+                "tasks": [2],
+                "dueAt": None,
+            },
+            teacher_cookie,
+        )
+        self.assertEqual(status, 201)
+        status, snapshot_assignments, _ = self.request("GET", "/api/student/assignments", cookie=student_cookie)
+        self.assertEqual(status, 200)
+        snapshot = next(
+            item
+            for item in snapshot_assignments["assignments"]
+            if item["id"] == snapshot_assignment["assignment"]["id"]
+        )
+        self.assertRegex(snapshot["material"]["tasks"]["2"]["images"][0], r"^/api/assignment-assets/\d+$")
         status, invalid_assignment, _ = self.request(
             "POST",
             "/api/teacher/assignments",
@@ -211,7 +256,7 @@ class ApiFlowTest(unittest.TestCase):
         self.assertFalse(assignments["assignments"][0]["materialUnavailable"])
         status, teacher_assignments, _ = self.request("GET", "/api/teacher/assignments", cookie=teacher_cookie)
         self.assertEqual(status, 200)
-        self.assertEqual(teacher_assignments["assignments"][0]["id"], assignment_id)
+        self.assertIn(assignment_id, {item["id"] for item in teacher_assignments["assignments"]})
         status, _, _ = self.request(
             "PUT",
             f"/api/teacher/assignments/{assignment_id}",
