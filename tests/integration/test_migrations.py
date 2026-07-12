@@ -9,13 +9,14 @@ from pathlib import Path
 from unittest.mock import patch
 
 from trainer.infrastructure.database.migrations import (
-    BASELINE_REVISION,
     apply_sqlite_baseline,
+    head_revision,
     upgrade_sqlite_database,
 )
 
 EXPECTED_TABLES = {
     "account_tokens",
+    "assignment_material_assets",
     "assignments",
     "audit_log",
     "auth_rate_limits",
@@ -70,9 +71,17 @@ class SqliteMigrationTest(unittest.TestCase):
                     row[0] for row in database.execute("SELECT version FROM schema_migrations ORDER BY version")
                 ]
                 revision = database.execute("SELECT version_num FROM alembic_version").fetchone()[0]
+                assignment_asset_columns = {
+                    row[1] for row in database.execute("PRAGMA table_info(assignment_material_assets)")
+                }
             self.assertEqual(versions, list(range(1, 8)))
-            self.assertEqual(revision, BASELINE_REVISION)
+            self.assertEqual(revision, head_revision())
             self.assertEqual(sqlite_schema(path)[0], EXPECTED_TABLES)
+            self.assertEqual(
+                assignment_asset_columns,
+                {"id", "assignment_id", "storage_key", "mime_type", "size_bytes", "created_at"},
+            )
+            self.assertIn("assignment_material_assets_assignment_idx", sqlite_schema(path)[1])
 
     def test_existing_legacy_database_is_stamped_without_data_loss(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -90,7 +99,7 @@ class SqliteMigrationTest(unittest.TestCase):
                 email = database.execute("SELECT email FROM users").fetchone()[0]
                 revision = database.execute("SELECT version_num FROM alembic_version").fetchone()[0]
             self.assertEqual(email, "kept@example.test")
-            self.assertEqual(revision, BASELINE_REVISION)
+            self.assertEqual(revision, head_revision())
 
     def test_repeated_upgrade_is_idempotent(self):
         with tempfile.TemporaryDirectory() as directory:
