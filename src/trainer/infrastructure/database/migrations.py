@@ -8,7 +8,7 @@ from alembic import command
 from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.script import ScriptDirectory
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 
 from trainer.config import PROJECT_ROOT
 from trainer.infrastructure.database.sqlite_migrations import MIGRATIONS, apply_migrations
@@ -30,7 +30,19 @@ def _config(database_url: str) -> Config:
 
 
 def upgrade_database(database_url: str) -> None:
-    command.upgrade(_config(database_url), "head")
+    normalized = normalize_database_url(database_url)
+    if not normalized.startswith("postgresql+"):
+        command.upgrade(_config(database_url), "head")
+        return
+    engine = create_engine(normalized)
+    try:
+        with engine.begin() as connection:
+            connection.execute(text("SELECT pg_advisory_xact_lock(2026071204)"))
+            config = _config(database_url)
+            config.attributes["connection"] = connection
+            command.upgrade(config, "head")
+    finally:
+        engine.dispose()
 
 
 def head_revision() -> str:

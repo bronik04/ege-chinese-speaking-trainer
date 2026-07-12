@@ -19,18 +19,25 @@ def copy_assignment_assets_from_env(
     material: dict,
     source_root: Path,
     target_root: Path,
+    created_keys: list[str] | None = None,
 ) -> dict:
-    return copy_assignment_assets(
-        database,
-        assignment_id,
-        material,
-        storage_from_env(source_root),
-        storage_from_env(target_root),
+    arguments = (database, assignment_id, material, storage_from_env(source_root), storage_from_env(target_root))
+    return (
+        copy_assignment_assets(*arguments, created_keys)
+        if created_keys is not None
+        else copy_assignment_assets(*arguments)
     )
 
 
 def read_assignment_asset(root: Path, key: str) -> bytes:
     return storage_from_env(root).read(key)
+
+
+def delete_assignment_assets(root: Path, keys: list[str]) -> None:
+    storage = storage_from_env(root)
+    for key in keys:
+        with suppress(Exception):
+            storage.delete(key)
 
 
 def copy_assignment_assets(
@@ -39,6 +46,7 @@ def copy_assignment_assets(
     material: dict,
     source_storage: AudioStorage,
     target_storage: AudioStorage,
+    external_created_keys: list[str] | None = None,
 ) -> dict:
     rewritten = copy.deepcopy(material)
     urls: dict[tuple[str, int], str] = {}
@@ -70,6 +78,8 @@ def copy_assignment_assets(
         suffix = Path(row["storage_key"]).suffix or ".bin"
         target_key = f"assignments/{assignment_id}/{secrets.token_urlsafe(18)}{suffix}"
         created_keys.append(target_key)
+        if external_created_keys is not None:
+            external_created_keys.append(target_key)
         active_source_storage = source_storage if source_kind == "material" else target_storage
         data = active_source_storage.read(row["storage_key"])
         temporary_path = None

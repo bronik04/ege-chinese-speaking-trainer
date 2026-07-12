@@ -60,16 +60,20 @@ def claim(database, now: int | None = None):
     return dict(job) if changed else None
 
 
-def complete(database, job_id: int, recording_id: int, text: str, now: int | None = None) -> None:
+def complete(database, job: dict, text: str, now: int | None = None) -> None:
     timestamp = now or int(time.time())
-    database.execute(
-        "UPDATE recordings SET transcript_status = 'completed', transcript_text = ?, transcript_error = NULL, transcribed_at = ? WHERE id = ?",
-        (text.strip(), timestamp, recording_id),
-    )
-    database.execute(
-        "UPDATE transcription_jobs SET status = 'completed', last_error = NULL, updated_at = ? WHERE id = ?",
-        (timestamp, job_id),
-    )
+    lease_attempt = int(job["attempts"]) + 1
+    changed = database.execute(
+        "UPDATE transcription_jobs SET status = 'completed', last_error = NULL, updated_at = ? "
+        "WHERE id = ? AND status = 'processing' AND attempts = ?",
+        (timestamp, job["id"], lease_attempt),
+    ).rowcount
+    if changed:
+        database.execute(
+            "UPDATE recordings SET transcript_status = 'completed', transcript_text = ?, transcript_error = NULL, "
+            "transcribed_at = ? WHERE id = ?",
+            (text.strip(), timestamp, job["recording_id"]),
+        )
 
 
 def fail(database, job: dict, error: Exception, max_attempts: int = 3, now: int | None = None) -> None:
@@ -79,11 +83,13 @@ def fail(database, job: dict, error: Exception, max_attempts: int = 3, now: int 
     status = "failed" if final else "pending"
     retry_at = timestamp if final else timestamp + min(300, 15 * (2 ** max(0, attempts - 1)))
     message = str(error)[:500]
-    database.execute(
-        "UPDATE transcription_jobs SET status = ?, available_at = ?, locked_at = NULL, last_error = ?, updated_at = ? WHERE id = ?",
-        (status, retry_at, message, timestamp, job["id"]),
-    )
-    database.execute(
-        "UPDATE recordings SET transcript_status = ?, transcript_error = ? WHERE id = ?",
-        (status, message, job["recording_id"]),
-    )
+    changed = database.execute(
+        "UPDATE transcription_jobs SET status = ?, available_at = ?, locked_at = NULL, last_error = ?, updated_at = ? "
+        "WHERE id = ? AND status = 'processing' AND attempts = ?",
+        (status, retry_at, message, timestamp, job["id"], attempts),
+    ).rowcount
+    if changed:
+        database.execute(
+            "UPDATE recordings SET transcript_status = ?, transcript_error = ? WHERE id = ?",
+            (status, message, job["recording_id"]),
+        )

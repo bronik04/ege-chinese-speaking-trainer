@@ -69,6 +69,12 @@ class AccountStorageServiceTest(unittest.TestCase):
         materials.delete.assert_called_once_with("material.webp")
         assignments.delete.assert_called_once_with("assignment.webp")
 
+    @patch("trainer.services.accounts.storage_from_env")
+    def test_account_cleanup_propagates_storage_failure(self, factory):
+        factory.return_value.delete.side_effect = OSError("storage unavailable")
+        with self.assertRaisesRegex(OSError, "storage unavailable"):
+            delete_account_storage(Path("audio"), ["recording.webm"], Path("materials"), [], Path("assignments"), [])
+
 
 if __name__ == "__main__":
     unittest.main()

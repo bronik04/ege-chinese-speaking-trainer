@@ -31,34 +31,27 @@ def consume_rate_limit(
     moment = int(time.time()) if now is None else int(now)
     subject = _subject_hash(client_ip, email)
     row = database.execute(
-        "SELECT attempts, window_started_at, blocked_until FROM auth_rate_limits WHERE kind = ? AND subject_hash = ?",
-        (kind, subject),
+        """
+        INSERT INTO auth_rate_limits(kind,subject_hash,attempts,window_started_at,blocked_until,updated_at)
+        VALUES (?,?,1,?,0,?)
+        ON CONFLICT(kind,subject_hash) DO UPDATE SET
+          attempts=CASE WHEN excluded.updated_at-auth_rate_limits.window_started_at>=? THEN 1
+                        ELSE auth_rate_limits.attempts+1 END,
+          window_started_at=CASE WHEN excluded.updated_at-auth_rate_limits.window_started_at>=?
+                                 THEN excluded.updated_at ELSE auth_rate_limits.window_started_at END,
+          blocked_until=CASE
+            WHEN excluded.updated_at-auth_rate_limits.window_started_at>=? THEN 0
+            WHEN auth_rate_limits.blocked_until>excluded.updated_at THEN auth_rate_limits.blocked_until
+            WHEN auth_rate_limits.attempts>=? THEN
+              CASE WHEN auth_rate_limits.window_started_at+?>excluded.updated_at
+                   THEN auth_rate_limits.window_started_at+? ELSE excluded.updated_at+1 END
+            ELSE 0 END,
+          updated_at=excluded.updated_at
+        RETURNING attempts,blocked_until
+        """,
+        (kind, subject, moment, moment, window, window, window, limit, window, window),
     ).fetchone()
-    if row and row["blocked_until"] > moment:
-        return row["blocked_until"] - moment
-    if not row or moment - row["window_started_at"] >= window:
-        database.execute(
-            """
-            INSERT INTO auth_rate_limits(kind, subject_hash, attempts, window_started_at, blocked_until, updated_at)
-            VALUES (?, ?, 1, ?, 0, ?)
-            ON CONFLICT(kind, subject_hash) DO UPDATE SET attempts = 1,
-                window_started_at = excluded.window_started_at, blocked_until = 0, updated_at = excluded.updated_at
-            """,
-            (kind, subject, moment, moment),
-        )
-        return 0
-    if row["attempts"] >= limit:
-        blocked_until = max(moment + 1, row["window_started_at"] + window)
-        database.execute(
-            "UPDATE auth_rate_limits SET blocked_until = ?, updated_at = ? WHERE kind = ? AND subject_hash = ?",
-            (blocked_until, moment, kind, subject),
-        )
-        return blocked_until - moment
-    database.execute(
-        "UPDATE auth_rate_limits SET attempts = attempts + 1, updated_at = ? WHERE kind = ? AND subject_hash = ?",
-        (moment, kind, subject),
-    )
-    return 0
+    return max(0, int(row["blocked_until"]) - moment)
 
 
 def clear_rate_limit(database: sqlite3.Connection, kind: str, client_ip: str, email: str) -> None:
@@ -84,17 +77,20 @@ def consume_token(database: sqlite3.Connection, kind: str, token: str, now: int 
         return None
     moment = int(time.time()) if now is None else int(now)
     digest = hashlib.sha256(token.encode()).hexdigest()
-    row = database.execute(
+    consumed = database.execute(
         """
-        SELECT users.id, users.email, users.display_name, users.role, users.email_verified_at
-        FROM account_tokens JOIN users ON users.id = account_tokens.user_id
-        WHERE account_tokens.token_hash = ? AND account_tokens.kind = ? AND account_tokens.expires_at > ?
+        DELETE FROM account_tokens
+        WHERE token_hash = ? AND kind = ? AND expires_at > ?
+        RETURNING user_id
         """,
         (digest, kind, moment),
     ).fetchone()
-    if row:
-        database.execute("DELETE FROM account_tokens WHERE token_hash = ?", (digest,))
-    return row
+    if not consumed:
+        return None
+    return database.execute(
+        "SELECT id,email,display_name,role,email_verified_at FROM users WHERE id = ?",
+        (consumed["user_id"],),
+    ).fetchone()
 
 
 def record_audit(

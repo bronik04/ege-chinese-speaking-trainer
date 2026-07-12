@@ -5,7 +5,7 @@ services:
     env_file: .env
     volumes:
       - trainer_data:/app/var
-      - ./backups:/app/backups
+      - trainer_backups:/app/backups
     ports:
       - "${TRAINER_BIND_ADDRESS:-127.0.0.1}:${TRAINER_PORT:-8080}:8080"
   transcription-worker:
@@ -32,5 +32,6 @@ services:
       - caddy_config:/config
 volumes:
   trainer_data:
+  trainer_backups:
   caddy_data:
   caddy_config:

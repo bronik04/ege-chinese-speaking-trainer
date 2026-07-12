@@ -162,7 +162,8 @@ class PostgresMigrationTest(unittest.TestCase):
             postgres_indexes = {
                 row[0]
                 for row in database.execute(
-                    "SELECT indexname FROM pg_indexes WHERE schemaname='public' AND indexname NOT LIKE '%_pkey'"
+                    "SELECT indexname FROM pg_indexes WHERE schemaname='public' "
+                    "AND tablename NOT IN ('alembic_version','schema_migrations') AND indexname NOT LIKE '%_pkey'"
                 )
                 if not row[0].endswith("_key")
             }

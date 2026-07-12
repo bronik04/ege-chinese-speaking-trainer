@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import secrets
 import time
-from contextlib import suppress
 from pathlib import Path
 from urllib.parse import quote
 
@@ -120,5 +119,4 @@ def delete_account_storage(
     ):
         storage = storage_from_env(root)
         for key in keys:
-            with suppress(Exception):
-                storage.delete(key)
+            storage.delete(key)

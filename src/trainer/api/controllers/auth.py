@@ -240,14 +240,22 @@ class AuthControllerMixin:
                    WHERE assignments.teacher_id=?""",
                 (user["id"],),
             ).fetchall()
+            try:
+                delete_account_storage(
+                    runtime.AUDIO_DIR,
+                    [item["file_name"] for item in files],
+                    runtime.MATERIAL_ASSET_DIR,
+                    [item["storage_key"] for item in material_assets],
+                    runtime.ASSIGNMENT_ASSET_DIR,
+                    [item["storage_key"] for item in assignment_assets],
+                )
+            except Exception:
+                self.send_error_json(
+                    HTTPStatus.SERVICE_UNAVAILABLE,
+                    "Не удалось удалить приватные файлы; повторите попытку",
+                    "storage_cleanup_failed",
+                )
+                return
             self.audit(database, "account_deleted", user_id=user["id"], email=user["email"])
             database.execute("DELETE FROM users WHERE id = ?", (user["id"],))
-        delete_account_storage(
-            runtime.AUDIO_DIR,
-            [item["file_name"] for item in files],
-            runtime.MATERIAL_ASSET_DIR,
-            [item["storage_key"] for item in material_assets],
-            runtime.ASSIGNMENT_ASSET_DIR,
-            [item["storage_key"] for item in assignment_assets],
-        )
         self.send_json({"ok": True}, clear_cookie=True)

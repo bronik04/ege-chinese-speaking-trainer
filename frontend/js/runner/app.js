@@ -279,7 +279,6 @@ $("soundToggle").addEventListener("click", runner.toggleSound);
 
 window.addEventListener("beforeunload", runner.cleanup);
 
-recoverInterruptedRun();
 renderProgress();
 setAuthMode("login");
 
@@ -288,6 +287,8 @@ async function initialize() {
   await initVariants();
   await handleAccountLinks();
   await initAuth();
+  recoverInterruptedRun();
+  renderProgress();
   const url = new URL(window.location.href);
   if (url.searchParams.get("account") === "1") {
     openModal($("authModal"));

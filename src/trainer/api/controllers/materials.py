@@ -309,7 +309,7 @@ class MaterialControllerMixin:
                    JOIN materials ON materials.id=material_assets.material_id WHERE material_assets.id=?""",
                 (asset_id,),
             ).fetchone()
-        if not row or not user or (row["status"] not in {"published", "archived"} and row["owner_id"] != user["id"]):
+        if not row or not user or (row["status"] != "published" and row["owner_id"] != user["id"]):
             self.send_error_json(HTTPStatus.NOT_FOUND, "Изображение не найдено", "asset_not_found")
             return
         try:

@@ -25,7 +25,7 @@ def process_one(transcriber=None) -> bool:
             storage.download(job["file_name"], Path(temporary.name))
             text = transcriber.transcribe(Path(temporary.name))
         with runtime.connect() as database:
-            complete(database, job["id"], job["recording_id"], text)
+            complete(database, job, text)
     except Exception as error:
         with runtime.connect() as database:
             fail(database, job, error)

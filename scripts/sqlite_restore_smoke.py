@@ -22,7 +22,11 @@ def _extract_archive(archive_path: Path, target: Path) -> None:
 
 def restore_sqlite_backup(backup: Path, target: Path) -> None:
     database_backup = backup / "trainer.sqlite3"
-    archives = (backup / "audio.tar.gz", backup / "material-assets.tar.gz")
+    archives = (
+        backup / "audio.tar.gz",
+        backup / "material-assets.tar.gz",
+        backup / "assignment-assets.tar.gz",
+    )
     missing = [path.name for path in (database_backup, *archives) if not path.is_file()]
     if missing:
         raise RuntimeError(f"Incomplete SQLite backup: {', '.join(missing)}")
@@ -47,6 +51,8 @@ def run_smoke() -> None:
         (data / "audio/1/sample.webm").write_bytes(b"audio-smoke")
         (data / "material-assets/materials/1").mkdir(parents=True)
         (data / "material-assets/materials/1/photo.webp").write_bytes(b"asset-smoke")
+        (data / "assignment-assets/assignments/1").mkdir(parents=True)
+        (data / "assignment-assets/assignments/1/photo.webp").write_bytes(b"snapshot-smoke")
         with closing(sqlite3.connect(data / "trainer.sqlite3")) as database:
             with database:
                 database.execute("CREATE TABLE smoke(value TEXT NOT NULL)")
@@ -61,6 +67,8 @@ def run_smoke() -> None:
             raise RuntimeError("Restored audio does not match source")
         if (restored / "material-assets/materials/1/photo.webp").read_bytes() != b"asset-smoke":
             raise RuntimeError("Restored material asset does not match source")
+        if (restored / "assignment-assets/assignments/1/photo.webp").read_bytes() != b"snapshot-smoke":
+            raise RuntimeError("Restored assignment asset does not match source")
 
 
 def main() -> None:

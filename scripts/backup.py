@@ -40,6 +40,7 @@ def create_backup(
         for directory_name, archive_name in (
             ("audio", "audio.tar.gz"),
             ("material-assets", "material-assets.tar.gz"),
+            ("assignment-assets", "assignment-assets.tar.gz"),
         ):
             source = data_dir / directory_name
             with tarfile.open(target / archive_name, "w:gz") as archive:
