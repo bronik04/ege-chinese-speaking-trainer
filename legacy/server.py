@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compatibility HTTP server; production uses native FastAPI routes from asgi.py."""
+"""Legacy compatibility HTTP server; production uses FastAPI routes from asgi.py."""
 
 from __future__ import annotations
 

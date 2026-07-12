@@ -11,7 +11,7 @@
 ```text
 src/trainer/main.py  FastAPI application и статическая выдача
 asgi.py              совместимый ASGI wrapper
-server.py            legacy HTTP runtime
+legacy/server.py     изолированный compatibility HTTP runtime
 src/trainer/api/      HTTP, schemas и controllers
 src/trainer/domain/         чистые бизнес-правила
 src/trainer/services/       прикладные сервисы
@@ -102,7 +102,7 @@ Browser
 3. Python-модули размещены в пакете `src/trainer` с совместимым `asgi.py`; следующим этапом backend делится по обязанностям.
 4. После стабилизации backend переносятся frontend, content и public assets с сохранением URL.
 5. Миграции SQLite/PostgreSQL унифицируются отдельной задачей.
-6. `server.py` удаляется только после подтверждения отсутствия потребителей legacy runtime.
+6. Compatibility runtime изолирован в `legacy/` и удаляется после одного стабильного релизного цикла и подтверждения FastAPI/E2E-сценариев.
 
 Каждый шаг должен завершаться рабочим приложением и самостоятельным commit. Массовое перемещение backend, frontend и данных в одном изменении не допускается.
 

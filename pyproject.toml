@@ -25,7 +25,7 @@ quote-style = "double"
 [tool.coverage.run]
 branch = true
 relative_files = true
-source = ["server", "trainer"]
+source = ["trainer"]
 
 [tool.coverage.report]
 show_missing = true

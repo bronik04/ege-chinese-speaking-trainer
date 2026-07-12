@@ -104,4 +104,5 @@
 - [CONTRIBUTING.md](CONTRIBUTING.md) — единый порядок внесения изменений;
 - [docs/architecture.md](docs/architecture.md) — текущая и целевая архитектура;
 - [SECURITY.md](SECURITY.md) — работа с секретами, аккаунтами и аудиозаписями;
-- [AGENTS.md](AGENTS.md) — обязательные правила для разработчиков и AI-агентов.
+- [AGENTS.md](AGENTS.md) — обязательные правила для разработчиков и AI-агентов;
+- [legacy/README.md](legacy/README.md) — временно сохранённый compatibility runtime, не входящий в основной workflow.

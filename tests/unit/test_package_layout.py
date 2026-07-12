@@ -20,16 +20,17 @@ class PackageLayoutTest(unittest.TestCase):
 
     def test_worker_does_not_import_legacy_server(self):
         sys.modules.pop("trainer.workers.transcription", None)
-        sys.modules.pop("server", None)
+        sys.modules.pop("legacy.server", None)
 
         importlib.import_module("trainer.workers.transcription")
 
-        self.assertNotIn("server", sys.modules)
+        self.assertNotIn("legacy.server", sys.modules)
 
-    def test_legacy_server_remains_available(self):
-        legacy = importlib.import_module("server")
+    def test_legacy_server_is_outside_the_main_runtime_path(self):
+        root = Path(__file__).resolve().parents[2]
 
-        self.assertTrue(hasattr(legacy, "TrainerHandler"))
+        self.assertFalse((root / "server.py").exists())
+        self.assertTrue((root / "legacy/server.py").is_file())
 
     def test_frontend_content_and_public_files_are_separated(self):
         root = Path(__file__).resolve().parents[2]

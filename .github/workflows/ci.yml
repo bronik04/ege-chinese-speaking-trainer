@@ -49,6 +49,18 @@ jobs:
         run: |
           make test-integration PYTHON=python PYTHON_TEST="python -m coverage run --append -m unittest"
           python -m coverage report
+      - name: Smoke test FastAPI runtime
+        run: |
+          python -m uvicorn asgi:app --host 127.0.0.1 --port 8080 &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+          for attempt in {1..30}; do
+            if curl -fsS http://127.0.0.1:8080/api/health; then
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
       - name: Install E2E browser
         run: npx playwright install --with-deps chromium
       - name: Test browser workflow

@@ -11,7 +11,7 @@ make install
 make run
 ```
 
-Откройте `http://127.0.0.1:8080`. Основной и единственный целевой production runtime — FastAPI + Uvicorn через `asgi.py`. `server.py` имеет статус legacy: он временно сохранён для совместимости, не получает новые возможности и будет удалён отдельной задачей после проверки оставшихся потребителей.
+Откройте `http://127.0.0.1:8080`. Единственный основной production runtime — FastAPI + Uvicorn через `asgi.py`. Временно сохранённый compatibility runtime изолирован в `legacy/`; его ручной запуск описан только в [legacy/README.md](legacy/README.md).
 
 По умолчанию используется SQLite в `var/trainer.sqlite3`. Каталог `var/` исключён из Git.
 
@@ -27,6 +27,7 @@ make run
 - `src/trainer/services/` — прикладные сервисы материалов и транскрибации;
 - `src/trainer/infrastructure/` — БД, storage, mailer, exports и внешние adapters;
 - `src/trainer/workers/` — фоновые процессы, запускаемые через wrappers из `scripts/`;
+- `legacy/` — изолированный compatibility HTTP runtime и его ручные тесты;
 - `app.js` — точка сборки основного интерфейса;
 - `js/account-*-controller.js` — части кабинета пользователя и преподавателя;
 - `js/runner-controller.js` — экзаменационный сценарий;

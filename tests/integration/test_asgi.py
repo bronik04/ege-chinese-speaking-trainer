@@ -6,7 +6,6 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 import asgi
-import server
 from trainer.api import dependencies, runtime
 from trainer.api.controllers import recordings
 
@@ -15,16 +14,16 @@ class FastApiSmokeTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.temp_dir = tempfile.TemporaryDirectory()
-        server.DATA_DIR = Path(cls.temp_dir.name)
-        server.DB_PATH = server.DATA_DIR / "trainer.sqlite3"
-        server.AUDIO_DIR = server.DATA_DIR / "audio"
-        runtime.DATA_DIR = server.DATA_DIR
-        runtime.DB_PATH = server.DB_PATH
-        runtime.AUDIO_DIR = server.AUDIO_DIR
-        dependencies.DATA_DIR = server.DATA_DIR
-        dependencies.AUDIO_DIR = server.AUDIO_DIR
-        recordings.DATA_DIR = server.DATA_DIR
-        recordings.AUDIO_DIR = server.AUDIO_DIR
+        root = Path(cls.temp_dir.name)
+        database_path = root / "trainer.sqlite3"
+        audio_dir = root / "audio"
+        runtime.DATA_DIR = root
+        runtime.DB_PATH = database_path
+        runtime.AUDIO_DIR = audio_dir
+        dependencies.DATA_DIR = root
+        dependencies.AUDIO_DIR = audio_dir
+        recordings.DATA_DIR = root
+        recordings.AUDIO_DIR = audio_dir
         cls.client_context = TestClient(asgi.app)
         cls.client = cls.client_context.__enter__()
 

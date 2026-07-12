@@ -12,7 +12,6 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 import asgi
-import server
 from trainer.api import dependencies, runtime
 from trainer.api.controllers import materials, recordings
 from trainer.domain.materials import EXAM_SPEC, build_content
@@ -27,18 +26,17 @@ class MaterialApiTest(unittest.TestCase):
         os.environ["TRAINER_EDITOR_EMAILS"] = "author@example.test,cleanup@example.test"
         cls.temp_dir = tempfile.TemporaryDirectory()
         root = Path(cls.temp_dir.name)
-        server.DATA_DIR = root
-        server.DB_PATH = root / "trainer.sqlite3"
-        server.AUDIO_DIR = root / "audio"
+        database_path = root / "trainer.sqlite3"
+        audio_dir = root / "audio"
         runtime.DATA_DIR = root
-        runtime.DB_PATH = server.DB_PATH
-        runtime.AUDIO_DIR = server.AUDIO_DIR
+        runtime.DB_PATH = database_path
+        runtime.AUDIO_DIR = audio_dir
         runtime.MATERIAL_ASSET_DIR = root / "material-assets"
         dependencies.DATA_DIR = root
-        dependencies.AUDIO_DIR = server.AUDIO_DIR
+        dependencies.AUDIO_DIR = audio_dir
         materials.MATERIAL_ASSET_DIR = runtime.MATERIAL_ASSET_DIR
         recordings.DATA_DIR = root
-        recordings.AUDIO_DIR = server.AUDIO_DIR
+        recordings.AUDIO_DIR = audio_dir
         cls.client_context = TestClient(asgi.app)
         cls.client = cls.client_context.__enter__()
         cls.origin = {"Origin": "http://testserver", "Sec-Fetch-Site": "same-origin"}
@@ -126,7 +124,7 @@ class MaterialApiTest(unittest.TestCase):
         self.assertEqual(detail["tasks"]["2"]["prompts"], EXAM_SPEC[2]["prompts"])
         self.assertEqual(self.client.get(asset_url).status_code, 200)
 
-        with server.connect() as database:
+        with runtime.connect() as database:
             teacher_id = database.execute(
                 "INSERT INTO users(email,password_hash,display_name,role,created_at) VALUES (?,?,?,?,?)",
                 ("snapshot-owner@example.test", "x", "Teacher", "teacher", 1),

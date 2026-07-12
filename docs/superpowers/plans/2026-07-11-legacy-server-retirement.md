@@ -38,16 +38,17 @@
 
 **Files:**
 - Move: `server.py` → `legacy/server.py`
-- Move: `tests/integration/test_server.py` → `legacy/tests/test_server.py`
+- Move and adapt: `tests/integration/test_server.py` → `tests/integration/test_api_flows.py`
+- Create: `legacy/tests/test_server.py`
 - Create: `legacy/__init__.py`
 - Create: `legacy/tests/__init__.py`
 - Create: `legacy/README.md`
 
 **Interfaces:**
 - Consumes: текущая `TrainerHandler` и `main()` без изменения HTTP-поведения.
-- Produces: `legacy.server` и ручная команда `PYTHONPATH=src python -m legacy.server`.
+- Produces: `legacy.server`, FastAPI API-flow coverage и ручная команда `PYTHONPATH=src python -m legacy.server`.
 
-- [ ] Перенести runtime без изменения handler-логики и изменить legacy-тест на `from legacy import server`.
+- [ ] Перенести runtime без изменения handler-логики; API-flow сценарии перевести на FastAPI `TestClient`, а в legacy-тесте оставить health smoke через `from legacy import server`.
 - [ ] Описать в `legacy/README.md` запуск `PYTHONPATH=src python -m legacy.server --host 127.0.0.1 --port 8080` и ручную проверку `PYTHONPATH=src python -m unittest discover -s legacy/tests -v`.
 - [ ] Запустить ручную legacy-проверку; ожидать прежние legacy-сценарии PASS.
 

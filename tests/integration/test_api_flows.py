@@ -1,13 +1,13 @@
-import http.client
 import json
 import os
 import tempfile
-import threading
 import unittest
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-import server
+from fastapi.testclient import TestClient
+
+import asgi
 from trainer.api import dependencies, runtime
 from trainer.api.controllers import recordings
 from trainer.api.security import request_has_same_origin
@@ -34,31 +34,23 @@ class ApiFlowTest(unittest.TestCase):
         cls.original_teacher_emails = os.environ.get("TRAINER_TEACHER_EMAILS")
         os.environ["TRAINER_TEACHER_EMAILS"] = "teacher@example.test"
         cls.temp_dir = tempfile.TemporaryDirectory()
-        server.DATA_DIR = Path(cls.temp_dir.name)
-        server.DB_PATH = server.DATA_DIR / "trainer.sqlite3"
-        server.AUDIO_DIR = server.DATA_DIR / "audio"
-        runtime.DATA_DIR = server.DATA_DIR
-        runtime.DB_PATH = server.DB_PATH
-        runtime.AUDIO_DIR = server.AUDIO_DIR
-        dependencies.DATA_DIR = server.DATA_DIR
-        dependencies.AUDIO_DIR = server.AUDIO_DIR
-        recordings.DATA_DIR = server.DATA_DIR
-        recordings.AUDIO_DIR = server.AUDIO_DIR
+        root = Path(cls.temp_dir.name)
+        runtime.DATA_DIR = root
+        runtime.DB_PATH = root / "trainer.sqlite3"
+        runtime.AUDIO_DIR = root / "audio"
+        dependencies.DATA_DIR = root
+        dependencies.AUDIO_DIR = runtime.AUDIO_DIR
+        recordings.DATA_DIR = root
+        recordings.AUDIO_DIR = runtime.AUDIO_DIR
         cls.original_validate_duration = recordings.validate_duration
         recordings.validate_duration = lambda path, task: 1.0
-        server.init_database()
-        cls.httpd = server.ThreadingHTTPServer(("127.0.0.1", 0), server.TrainerHandler)
-        cls.httpd.daemon_threads = True
-        cls.thread = threading.Thread(target=cls.httpd.serve_forever, daemon=True)
-        cls.thread.start()
-        cls.host, cls.port = cls.httpd.server_address
-        cls.origin = f"http://{cls.host}:{cls.port}"
+        cls.client_context = TestClient(asgi.app)
+        cls.client = cls.client_context.__enter__()
+        cls.origin = "http://testserver"
 
     @classmethod
     def tearDownClass(cls):
-        cls.httpd.shutdown()
-        cls.httpd.server_close()
-        cls.thread.join(timeout=2)
+        cls.client_context.__exit__(None, None, None)
         recordings.validate_duration = cls.original_validate_duration
         if cls.original_teacher_emails is None:
             os.environ.pop("TRAINER_TEACHER_EMAILS", None)
@@ -67,30 +59,21 @@ class ApiFlowTest(unittest.TestCase):
         cls.temp_dir.cleanup()
 
     def request(self, method, path, payload=None, cookie=None, include_origin=True):
-        connection = http.client.HTTPConnection(self.host, self.port, timeout=3)
         headers = {}
-        body = None
-        if payload is not None:
-            body = json.dumps(payload, ensure_ascii=False).encode()
-            headers["Content-Type"] = "application/json"
         if include_origin:
             headers["Origin"] = self.origin
             headers["Sec-Fetch-Site"] = "same-origin"
         if cookie:
             headers["Cookie"] = cookie
-        connection.request(method, path, body=body, headers=headers)
-        response = connection.getresponse()
-        data = json.loads(response.read() or b"{}")
-        response_headers = dict(response.getheaders())
-        connection.close()
-        return response.status, data, response_headers
+        self.client.cookies.clear()
+        response = self.client.request(method, path, json=payload, headers=headers)
+        return response.status_code, response.json() if response.content else {}, dict(response.headers)
 
     def request_audio(self, path, data, cookie):
-        connection = http.client.HTTPConnection(self.host, self.port, timeout=3)
-        connection.request(
-            "POST",
+        self.client.cookies.clear()
+        response = self.client.post(
             path,
-            body=data,
+            content=data,
             headers={
                 "Content-Type": "audio/webm",
                 "Origin": self.origin,
@@ -98,27 +81,20 @@ class ApiFlowTest(unittest.TestCase):
                 "Cookie": cookie,
             },
         )
-        response = connection.getresponse()
-        payload = json.loads(response.read() or b"{}")
-        connection.close()
-        return response.status, payload
+        return response.status_code, response.json()
 
     def request_bytes(self, path, cookie):
-        connection = http.client.HTTPConnection(self.host, self.port, timeout=3)
-        connection.request("GET", path, headers={"Cookie": cookie})
-        response = connection.getresponse()
-        data = response.read()
-        content_type = response.getheader("Content-Type")
-        connection.close()
-        return response.status, data, content_type
+        self.client.cookies.clear()
+        response = self.client.get(path, headers={"Cookie": cookie})
+        return response.status_code, response.content, response.headers.get("Content-Type")
 
     @staticmethod
     def cookie_from(headers):
-        return headers["Set-Cookie"].split(";", 1)[0]
+        return headers["set-cookie"].split(";", 1)[0]
 
     @classmethod
     def token_from_outbox(cls, email, parameter):
-        entries = [json.loads(line) for line in (server.DATA_DIR / "outbox.log").read_text().splitlines()]
+        entries = [json.loads(line) for line in (runtime.DATA_DIR / "outbox.log").read_text().splitlines()]
         message = next(
             entry for entry in reversed(entries) if entry["to"] == email and f"?{parameter}=" in entry["body"]
         )
@@ -308,18 +284,18 @@ class ApiFlowTest(unittest.TestCase):
         self.assertEqual(visible_student["completedRuns"], 1)
         self.assertEqual(visible_student["completedTasks"], 2)
 
-        with server.connect() as database:
+        with runtime.connect() as database:
             file_name = database.execute("SELECT file_name FROM recordings WHERE id = ?", (recording_id,)).fetchone()[
                 "file_name"
             ]
-        audio_path = server.AUDIO_DIR / file_name
+        audio_path = runtime.AUDIO_DIR / file_name
         self.assertTrue(audio_path.is_file())
         status, _, _ = self.request("DELETE", "/api/account", {"password": "student123"}, student_cookie)
         self.assertEqual(status, 200)
         self.assertFalse(audio_path.exists())
         status, _, _ = self.request("GET", "/api/auth/me", cookie=student_cookie)
         self.assertEqual(status, 401)
-        with server.connect() as database:
+        with runtime.connect() as database:
             deleted = database.execute("SELECT id FROM users WHERE email = ?", (student["email"],)).fetchone()
             deletion_event = database.execute(
                 "SELECT user_id FROM audit_log WHERE email = ? AND action = 'account_deleted'", (student["email"],)
@@ -342,12 +318,12 @@ class ApiFlowTest(unittest.TestCase):
         self.assertEqual(payload["code"], "teacher_not_allowed")
 
     def test_migrations_are_recorded(self):
-        with server.connect() as database:
+        with runtime.connect() as database:
             versions = [
                 row["version"] for row in database.execute("SELECT version FROM schema_migrations ORDER BY version")
             ]
         self.assertEqual(versions, [1, 2, 3, 4, 5, 6, 7])
-        with server.connect() as database:
+        with runtime.connect() as database:
             columns = {row["name"] for row in database.execute("PRAGMA table_info(assignments)")}
         self.assertIn("material_snapshot_json", columns)
 
@@ -369,7 +345,7 @@ class ApiFlowTest(unittest.TestCase):
             self.assertEqual(status, 401)
         status, body, headers = self.request("POST", "/api/auth/login", payload)
         self.assertEqual(status, 429)
-        self.assertIn("Retry-After", headers)
+        self.assertIn("retry-after", headers)
         self.assertGreater(body["retryAfter"], 0)
 
 
