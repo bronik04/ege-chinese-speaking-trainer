@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from trainer.infrastructure.database.core import connect, initialize
-from trainer.infrastructure.database.postgres import POSTGRES_SCHEMA, Connection
+from trainer.infrastructure.database.postgres import IDENTITY_TABLES, POSTGRES_SCHEMA, Connection
 from trainer.infrastructure.storage import LocalAudioStorage, S3AudioStorage, storage_from_env
 from trainer.services.transcription import claim, complete, enqueue, fail
 
@@ -146,6 +146,9 @@ class TranscriptionQueueTest(unittest.TestCase):
 
 
 class PostgresCompatibilityTest(unittest.TestCase):
+    def test_assignment_assets_return_generated_identifiers(self):
+        self.assertIn("assignment_material_assets", IDENTITY_TABLES)
+
     def test_placeholder_and_ignore_translation(self):
         self.assertEqual(Connection._translate("SELECT * FROM users WHERE id = ?"), "SELECT * FROM users WHERE id = %s")
         translated = Connection._translate("INSERT OR IGNORE INTO group_members VALUES (?, ?, ?)")

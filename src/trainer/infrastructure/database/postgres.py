@@ -17,6 +17,7 @@ IDENTITY_TABLES = {
     "transcription_jobs",
     "materials",
     "material_assets",
+    "assignment_material_assets",
 }
 _POOLS: dict[str, ConnectionPool] = {}
 _POOL_LOCK = threading.Lock()
