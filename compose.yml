@@ -6,14 +6,17 @@ services:
     volumes:
       - trainer_data:/app/var
       - ./backups:/app/backups
-    expose: ["8080"]
+    ports:
+      - "${TRAINER_BIND_ADDRESS:-127.0.0.1}:${TRAINER_PORT:-8080}:8080"
   transcription-worker:
     profiles: ["transcription"]
     build: .
     restart: unless-stopped
     command: ["python", "-m", "scripts.transcription_worker"]
     env_file: .env
-    depends_on: [app]
+    depends_on:
+      app:
+        condition: service_healthy
     volumes:
       - trainer_data:/app/var
   caddy:

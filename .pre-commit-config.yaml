@@ -30,3 +30,8 @@ repos:
         language: system
         pass_filenames: false
         files: ^(content/|public/assets/variants/|schemas/|scripts/validate_content\.py$)
+      - id: repository-hygiene
+        name: Check repository hygiene
+        entry: python -m scripts.check_repository_hygiene
+        language: system
+        pass_filenames: false

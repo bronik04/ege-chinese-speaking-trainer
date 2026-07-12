@@ -8,6 +8,11 @@ services:
   transcription-worker:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-trainer}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-trainer}
+    depends_on:
+      app:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped

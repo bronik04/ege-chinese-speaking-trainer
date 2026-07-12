@@ -61,6 +61,12 @@ jobs:
             sleep 1
           done
           exit 1
+      - name: Test operational commands
+        run: |
+          python -m scripts.sqlite_restore_smoke
+          worker_data="$(mktemp -d)"
+          trap 'rm -rf "$worker_data"' EXIT
+          TRAINER_DATA_DIR="$worker_data" python -m trainer.workers.transcription --once
       - name: Install E2E browser
         run: npx playwright install --with-deps chromium
       - name: Test browser workflow
@@ -87,5 +93,18 @@ jobs:
           python -m scripts.s3_smoke
       - name: Validate Docker image
         run: |
+          created_env=0
+          if [ ! -f .env ]; then cp .env.example .env; created_env=1; fi
+          trap 'docker compose down -v --remove-orphans; if [ "$created_env" = 1 ]; then rm -f .env; fi' EXIT
           make docker-check
           make docker-build
+          test "$(docker run --rm --entrypoint id chinese-speaking-trainer:test -u)" = "10001"
+          docker compose up -d --build app
+          for attempt in {1..60}; do
+            if curl -fsS http://127.0.0.1:8080/api/health; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose logs app
+          exit 1

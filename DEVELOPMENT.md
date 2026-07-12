@@ -4,6 +4,8 @@
 
 Архитектурные границы и направление миграции описаны в [docs/architecture.md](docs/architecture.md), порядок внесения изменений — в [CONTRIBUTING.md](CONTRIBUTING.md), правила безопасности — в [SECURITY.md](SECURITY.md). Обязательные ориентиры для разработчиков и AI-агентов находятся в [AGENTS.md](AGENTS.md).
 
+Эксплуатационные процедуры: [backup/restore](docs/runbooks/backup-restore.md), [transcription worker](docs/runbooks/transcription-worker.md) и [incident response](docs/runbooks/incident-response.md).
+
 ## Локальный запуск
 
 ```bash
@@ -54,6 +56,7 @@ cp .env.example .env
 Основные переменные:
 
 - `TRAINER_DATA_DIR` — БД, локальные аудио и изображения;
+- `TRAINER_BIND_ADDRESS`, `TRAINER_PORT` — локальная публикация app-порта в Compose; по умолчанию `127.0.0.1:8080`;
 - `TRAINER_PUBLIC_URL` — публичный HTTPS-адрес;
 - `TRAINER_SECURE_COOKIE=1` — защищённые cookie в продакшене;
 - `TRAINER_LOG_LEVEL` — уровень структурированных логов;
@@ -196,6 +199,14 @@ docker compose exec app python scripts/backup.py --data-dir /app/var --output-di
 
 Для SQLite используется Backup API, для PostgreSQL — `pg_dump`. В локальном режиме отдельно архивируются аудио и изображения авторских материалов. Копии следует ежедневно переносить на другой сервер или в объектное хранилище и регулярно проверять восстановление. Для R2 резервирование бакета настраивается у провайдера.
 
+Проверка восстановления SQLite:
+
+```bash
+python -m scripts.sqlite_restore_smoke
+```
+
+Полная процедура и rollback описаны в [backup/restore runbook](docs/runbooks/backup-restore.md).
+
 ## Ошибки и наблюдаемость
 
 API возвращает единый формат:
@@ -235,4 +246,13 @@ make check
 
 Для проверки deployment-конфигурации используйте `make docker-check`, для локальной сборки image — `make docker-build`. Низкоуровневые команды (`.venv/bin/python -m ruff`, `npm run lint:js`, `python -m coverage`) остаются доступны для диагностики отдельных ошибок.
 
-CI также проверяет PostgreSQL 16 с Alembic и восстановлением `pg_dump`, а S3-контракт — через MinIO. Минимальное Python-покрытие — 70%.
+Финальный deployment smoke:
+
+```bash
+docker compose config
+docker compose up -d --build app
+curl -fsS http://127.0.0.1:8080/api/health
+docker compose down -v
+```
+
+CI также проверяет SQLite/PostgreSQL restore, worker `--once`, PostgreSQL 16 с Alembic, S3 через MinIO, non-root image и Compose health. Минимальное Python-покрытие — 70%.
