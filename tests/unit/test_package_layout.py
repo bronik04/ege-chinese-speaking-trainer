@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -50,9 +51,15 @@ class PackageLayoutTest(unittest.TestCase):
             with self.subTest(relative=relative):
                 self.assertTrue((root / relative).is_file(), relative)
 
-        for legacy in ("index.html", "js", "data", "assets", "styles.css"):
-            with self.subTest(legacy=legacy):
-                self.assertFalse((root / legacy).exists(), legacy)
+        legacy_paths = ("index.html", "js", "data", "assets", "styles.css")
+        tracked_legacy = subprocess.run(
+            ["git", "ls-files", "--", *legacy_paths],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.splitlines()
+        self.assertEqual(tracked_legacy, [])
 
 
 if __name__ == "__main__":
