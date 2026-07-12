@@ -1,14 +1,13 @@
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
 FORBIDDEN_PATHS = {".env"}
 FORBIDDEN_PREFIXES = ("var/", "backups/", "tmp/", "test-results/", "playwright-report/")
 SECRET_FILENAMES = {"id_rsa", "id_ed25519"}
-PRIVATE_KEY_MARKERS = tuple(
-    b"-----BEGIN " + (key_type + b" " if key_type else b"") + b"PRIVATE KEY-----" for key_type in (b"", b"RSA")
-)
+PRIVATE_KEY_MARKER = re.compile(rb"-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----")
 
 
 def check_repository(root: Path, tracked_paths: list[str]) -> list[str]:
@@ -29,7 +28,7 @@ def check_repository(root: Path, tracked_paths: list[str]) -> list[str]:
         except OSError as error:
             failures.append(f"Cannot inspect tracked file {relative}: {error}")
             continue
-        if any(marker in content for marker in PRIVATE_KEY_MARKERS):
+        if PRIVATE_KEY_MARKER.search(content):
             failures.append(f"Tracked private key content: {relative}")
     return failures
 

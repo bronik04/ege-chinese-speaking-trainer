@@ -6,6 +6,18 @@ from scripts.check_repository_hygiene import check_repository
 
 
 class RepositoryHygieneTest(unittest.TestCase):
+    def test_rejects_common_private_key_markers(self):
+        markers = ("", "ENCRYPTED ", "RSA ", "EC ", "DSA ", "OPENSSH ")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for index, prefix in enumerate(markers):
+                path = root / f"credential-{index}.pem"
+                path.write_text(f"-----BEGIN {prefix}PRIVATE KEY-----\nsecret\n")
+
+            failures = check_repository(root, [f"credential-{index}.pem" for index in range(len(markers))])
+
+            self.assertEqual(len(failures), len(markers))
+
     def test_allows_placeholder_environment_example(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
