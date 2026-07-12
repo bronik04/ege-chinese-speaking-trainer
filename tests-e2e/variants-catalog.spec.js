@@ -137,6 +137,7 @@ test("assigned snapshot opens after the author deletes the source material", asy
   expect(assignments.assignments[0].material.id).toBe(publishedSlug);
   expect(assignments.assignments[0].materialUnavailable).toBe(false);
   const snapshotImage = assignments.assignments[0].material.tasks["2"].images[0];
+  expect(snapshotImage).toMatch(/^\/api\/assignment-assets\/\d+$/);
   expect((await student.request.get(snapshotImage)).ok()).toBeTruthy();
   const page = await student.newPage();
   await page.goto("/");

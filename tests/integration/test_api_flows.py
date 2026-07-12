@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 import asgi
 from trainer.api import dependencies, runtime
-from trainer.api.controllers import recordings
+from trainer.api.controllers import auth, recordings
 from trainer.api.security import request_has_same_origin
 from trainer.domain.accounts import password_hash, password_matches
 
@@ -40,6 +40,7 @@ class ApiFlowTest(unittest.TestCase):
         runtime.AUDIO_DIR = root / "audio"
         runtime.MATERIAL_ASSET_DIR = root / "material-assets"
         runtime.ASSIGNMENT_ASSET_DIR = root / "assignment-assets"
+        auth.MATERIAL_ASSET_DIR = runtime.MATERIAL_ASSET_DIR
         dependencies.DATA_DIR = root
         dependencies.AUDIO_DIR = runtime.AUDIO_DIR
         recordings.DATA_DIR = root
@@ -172,6 +173,16 @@ class ApiFlowTest(unittest.TestCase):
         self.assertEqual(status, 201)
         student_cookie = self.cookie_from(headers)
 
+        author = {
+            "email": "snapshot-author@example.test",
+            "password": "author123",
+            "displayName": "Автор материала",
+            "role": "student",
+        }
+        status, _, headers = self.request("POST", "/api/auth/register", author)
+        self.assertEqual(status, 201)
+        author_cookie = self.cookie_from(headers)
+
         status, group_payload, _ = self.request("POST", "/api/teacher/groups", {"name": "11 класс"}, teacher_cookie)
         self.assertEqual(status, 201)
         code = group_payload["group"]["code"]
@@ -179,12 +190,12 @@ class ApiFlowTest(unittest.TestCase):
         status, _, _ = self.request("POST", "/api/groups/join", {"code": code}, student_cookie)
         self.assertEqual(status, 200)
         with runtime.connect() as database:
-            student_id = database.execute("SELECT id FROM users WHERE email=?", (student["email"],)).fetchone()["id"]
+            author_id = database.execute("SELECT id FROM users WHERE email=?", (author["email"],)).fetchone()["id"]
             material_id = database.execute(
                 """INSERT INTO materials(slug,owner_id,kind,task_number,title,year,source,status,content_json,
                                           created_at,updated_at,published_at)
                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-                ("snapshot-task", student_id, "task", 2, "Snapshot task", 2027, "Author", "published", "{}", 1, 1, 1),
+                ("snapshot-task", author_id, "task", 2, "Snapshot task", 2027, "Author", "published", "{}", 1, 1, 1),
             ).lastrowid
             storage_key = f"materials/{material_id}/source.webp"
             asset_id = database.execute(
@@ -220,7 +231,36 @@ class ApiFlowTest(unittest.TestCase):
             for item in snapshot_assignments["assignments"]
             if item["id"] == snapshot_assignment["assignment"]["id"]
         )
-        self.assertRegex(snapshot["material"]["tasks"]["2"]["images"][0], r"^/api/assignment-assets/\d+$")
+        snapshot_asset_url = snapshot["material"]["tasks"]["2"]["images"][0]
+        self.assertRegex(snapshot_asset_url, r"^/api/assignment-assets/\d+$")
+        status, image_data, content_type = self.request_bytes(snapshot_asset_url, student_cookie)
+        self.assertEqual(status, 200, image_data)
+        self.assertEqual(image_data, b"snapshot-image")
+        self.assertEqual(content_type, "image/webp")
+        status, _, _ = self.request_bytes(snapshot_asset_url, teacher_cookie)
+        self.assertEqual(status, 200)
+
+        outsider = {
+            "email": "snapshot-outsider@example.test",
+            "password": "outsider123",
+            "displayName": "Посторонний пользователь",
+            "role": "student",
+        }
+        status, _, headers = self.request("POST", "/api/auth/register", outsider)
+        self.assertEqual(status, 201)
+        outsider_cookie = self.cookie_from(headers)
+        status, _, _ = self.request_bytes(snapshot_asset_url, outsider_cookie)
+        self.assertEqual(status, 404)
+
+        with runtime.connect() as database:
+            database.execute("UPDATE materials SET status='draft' WHERE id=?", (material_id,))
+        status, image_data, _ = self.request_bytes(snapshot_asset_url, student_cookie)
+        self.assertEqual(status, 200, image_data)
+
+        status, _, _ = self.request("DELETE", "/api/account", {"password": author["password"]}, author_cookie)
+        self.assertEqual(status, 200)
+        status, image_data, _ = self.request_bytes(snapshot_asset_url, student_cookie)
+        self.assertEqual(status, 200, image_data)
         status, invalid_assignment, _ = self.request(
             "POST",
             "/api/teacher/assignments",

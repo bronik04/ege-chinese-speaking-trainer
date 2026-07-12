@@ -111,6 +111,39 @@ class WorkControllerMixin:
             result = student_assignments(database, user["id"])
         self.send_json({"assignments": result})
 
+    def assignment_asset_get(self, asset_id: int) -> None:
+        user = self.current_user()
+        if not user:
+            self.send_error_json(HTTPStatus.NOT_FOUND, "Изображение не найдено", "asset_not_found")
+            return
+        with connect() as database:
+            row = database.execute(
+                """SELECT assignment_material_assets.storage_key,assignment_material_assets.mime_type,
+                          assignments.teacher_id,
+                          EXISTS(SELECT 1 FROM group_members
+                                 WHERE group_members.group_id=assignments.group_id
+                                   AND group_members.user_id=?) AS is_member
+                   FROM assignment_material_assets
+                   JOIN assignments ON assignments.id=assignment_material_assets.assignment_id
+                   WHERE assignment_material_assets.id=?""",
+                (user["id"], asset_id),
+            ).fetchone()
+        if not row or (row["teacher_id"] != user["id"] and not row["is_member"]):
+            self.send_error_json(HTTPStatus.NOT_FOUND, "Изображение не найдено", "asset_not_found")
+            return
+        try:
+            data = storage_from_env(runtime.ASSIGNMENT_ASSET_DIR).read(row["storage_key"])
+        except (FileNotFoundError, OSError, ValueError):
+            self.send_error_json(HTTPStatus.NOT_FOUND, "Изображение не найдено", "asset_not_found")
+            return
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", row["mime_type"])
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "private, max-age=3600")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(data)
+
     def teacher_assignments(self) -> None:
         user = self.require_role("teacher")
         if not user:

@@ -11,6 +11,11 @@ async def student_assignments(request: Request):
     return await invoke(request, "student_assignments")
 
 
+@router.get("/assignment-assets/{asset_id}")
+async def assignment_asset(request: Request, asset_id: int):
+    return await invoke(request, "assignment_asset_get", asset_id)
+
+
 @router.get("/teacher/assignments")
 async def teacher_assignments(request: Request):
     return await invoke(request, "teacher_assignments")
