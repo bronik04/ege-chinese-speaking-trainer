@@ -21,6 +21,10 @@ let variant = null;
 const variantCache = new Map();
 let progressStorageKey = PROGRESS_GUEST_KEY;
 let progress = loadLocalProgress(progressStorageKey);
+// Прогон, который лежал в хранилище на момент загрузки страницы. Прерванным
+// считается только он: тренировка, начатая пользователем пока идёт авторизация,
+// и активный прогон, подтянутый с сервера, сюда не попадают.
+const interruptedRunId = progress.activeRun?.id ?? null;
 let account = null;
 let runner = null;
 
@@ -110,10 +114,10 @@ function finalizeActiveRun(status, recordingsCount = 0) {
 }
 
 function recoverInterruptedRun() {
-  if (!progress.activeRun) return;
+  if (!progress.activeRun || progress.activeRun.id !== interruptedRunId) return;
   progress.runs.unshift({ ...progress.activeRun, status: "interrupted", completedAt: new Date().toISOString(), recordingsCount: 0 });
   progress.activeRun = null;
-  saveProgressLocal(false);
+  saveProgressLocal();
 }
 
 function clearHistory() {

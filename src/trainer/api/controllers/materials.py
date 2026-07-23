@@ -309,7 +309,10 @@ class MaterialControllerMixin:
                    JOIN materials ON materials.id=material_assets.material_id WHERE material_assets.id=?""",
                 (asset_id,),
             ).fetchone()
-        if not row or not user or (row["status"] != "published" and row["owner_id"] != user["id"]):
+            allowed = bool(row) and bool(user) and (row["status"] == "published" or row["owner_id"] == user["id"])
+            if row and user and not allowed and row["status"] == "archived":
+                allowed = self.assignment_references_material_asset(database, user["id"], asset_id)
+        if not allowed:
             self.send_error_json(HTTPStatus.NOT_FOUND, "Изображение не найдено", "asset_not_found")
             return
         try:
@@ -323,6 +326,27 @@ class MaterialControllerMixin:
         self.send_header("Cache-Control", "private, max-age=3600")
         self.end_headers()
         self.wfile.write(data)
+
+    @staticmethod
+    def assignment_references_material_asset(database, user_id: int, asset_id: int) -> bool:
+        """Участвует ли пользователь в назначении, чей снимок ссылается на этот ассет.
+
+        Назначения, выданные до перехода на копии в assignment_material_assets,
+        хранят в снимке прямые ссылки /api/material-assets/N. Архивирование
+        материала не должно ломать уже выданные работы, но и открывать его
+        изображения всем подряд нельзя.
+        """
+        return bool(
+            database.execute(
+                """SELECT 1 FROM assignments
+                   LEFT JOIN group_members ON group_members.group_id = assignments.group_id
+                        AND group_members.user_id = ?
+                   WHERE assignments.material_snapshot_json LIKE ?
+                     AND (assignments.teacher_id = ? OR group_members.user_id IS NOT NULL)
+                   LIMIT 1""",
+                (user_id, f'%"/api/material-assets/{asset_id}"%', user_id),
+            ).fetchone()
+        )
 
     def require_material_editor(self) -> dict | None:
         user = self.current_user()

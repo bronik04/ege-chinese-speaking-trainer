@@ -179,7 +179,7 @@ async function loadMine() {
 }
 
 async function deleteMaterial() {
-  if (!currentId || !confirm("Архивировать материал? Он перестанет быть доступен другим пользователям.")) return;
+  if (!currentId || !confirm("Архивировать материал? Он исчезнет из вашего списка, а его идентификатор нельзя будет занять повторно. Отменить архивирование нельзя. Уже выданные назначения продолжат работать.")) return;
   try {
     await api(`/api/materials/${currentId}`, { method: "DELETE", body: "{}" });
     await loadMine();

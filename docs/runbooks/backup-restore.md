@@ -2,7 +2,7 @@
 
 ## Что копируется
 
-- SQLite: `trainer.sqlite3`, `audio/` и `material-assets/`.
+- SQLite: `trainer.sqlite3`, `audio/`, `material-assets/` и `assignment-assets/` (копии изображений в снимках назначений).
 - PostgreSQL: custom-format `trainer.pgdump`; аудио и assets резервируются отдельно согласно storage backend.
 - S3/R2: включите versioning или provider backup; `scripts/backup.py` не копирует bucket.
 
@@ -28,9 +28,9 @@ docker compose -f compose.yml -f compose.scale.yml exec app python scripts/backu
 
 1. Остановите app и worker.
 2. Сохраните текущий `var/` как rollback-копию.
-3. В пустом каталоге разместите `trainer.sqlite3` и распакуйте `audio.tar.gz` и `material-assets.tar.gz`.
+3. В пустом каталоге разместите `trainer.sqlite3` и распакуйте `audio.tar.gz`, `material-assets.tar.gz` и `assignment-assets.tar.gz`. Обязателен только файл БД: копия, снятая до появления очередного архива, восстанавливается без него.
 4. Проверьте `PRAGMA integrity_check`, права файлов и наличие аудио/assets.
-5. Запустите app, проверьте `/api/health`, вход, каталог и одну аудиозапись.
+5. Запустите app, проверьте `/api/health`, вход, каталог, одну аудиозапись и изображение задания в выданном назначении.
 
 Автоматизированная проверка того же потока:
 

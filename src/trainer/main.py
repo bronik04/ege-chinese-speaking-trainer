@@ -47,21 +47,22 @@ app.include_router(recordings.router)
 app.include_router(materials.router)
 
 
+BODY_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
 @app.middleware("http")
 async def reject_oversized_json(request, call_next):
     content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
-    if content_type == "application/json":
-        try:
-            content_length = int(request.headers.get("content-length", ""))
-        except ValueError:
-            content_length = -1
-        if content_length > MAX_BODY:
+    if request.method in BODY_METHODS and content_type == "application/json":
+        # Отсутствующий или нечисловой Content-Length не отвергаем: так приходят
+        # chunked-запросы, а GET с JSON-заголовком вообще не несёт тела.
+        # Фактический размер в любом случае считает потоково invoke().
+        raw_length = request.headers.get("content-length", "")
+        if raw_length.isdigit() and int(raw_length) > MAX_BODY:
             return JSONResponse(
                 error_payload("request_too_large", "Request body is too large"),
                 status_code=413,
             )
-        if content_length < 0:
-            return JSONResponse(error_payload("length_required", "Content-Length is required"), status_code=411)
     return await call_next(request)
 
 

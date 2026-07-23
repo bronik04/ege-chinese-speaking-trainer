@@ -105,6 +105,33 @@ class ApiFlowTest(unittest.TestCase):
         url = message["body"].strip().splitlines()[-1]
         return parse_qs(urlparse(url).query)[parameter][0]
 
+    def test_account_deletion_completes_when_storage_cleanup_fails(self):
+        # Удаление файлов идёт после коммита, поэтому отказ хранилища не должен
+        # ни отменять удаление аккаунта, ни возвращать ошибку пользователю.
+        email = "storage-failure@example.test"
+        status, _, headers = self.request(
+            "POST",
+            "/api/auth/register",
+            {"email": email, "password": "password123", "displayName": "Ученик", "role": "student"},
+        )
+        self.assertEqual(status, 201)
+        cookie = self.cookie_from(headers)
+
+        original = auth.delete_account_storage
+
+        def failing_cleanup(*_arguments):
+            raise OSError("storage down")
+
+        auth.delete_account_storage = failing_cleanup
+        try:
+            status, _, _ = self.request("DELETE", "/api/account", {"password": "password123"}, cookie)
+        finally:
+            auth.delete_account_storage = original
+
+        self.assertEqual(status, 200)
+        with runtime.connect() as database:
+            self.assertIsNone(database.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone())
+
     def test_account_verification_password_reset_and_audit(self):
         email = "security@example.test"
         account = {
@@ -328,6 +355,19 @@ class ApiFlowTest(unittest.TestCase):
         )
         self.assertEqual(status, 201)
         self.assertNotEqual(repeated["assignment"]["id"], assignment_id)
+
+        # Назначения, выданные до появления снимков материала, хранят NULL.
+        # Повтор такого задания должен отвечать понятной ошибкой, а не 500.
+        with runtime.connect() as database:
+            database.execute(
+                "UPDATE assignments SET material_snapshot_json = NULL WHERE id = ?",
+                (repeated["assignment"]["id"],),
+            )
+        status, legacy_resend, _ = self.request(
+            "POST", f"/api/teacher/assignments/{repeated['assignment']['id']}/resend", {}, teacher_cookie
+        )
+        self.assertEqual(status, 409)
+        self.assertEqual(legacy_resend["code"], "assignment_material_unavailable")
 
         status, submission_payload, _ = self.request(
             "POST",

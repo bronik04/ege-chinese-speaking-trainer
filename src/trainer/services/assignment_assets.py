@@ -34,10 +34,13 @@ def read_assignment_asset(root: Path, key: str) -> bytes:
 
 
 def delete_assignment_assets(root: Path, keys: list[str]) -> None:
-    storage = storage_from_env(root)
-    for key in keys:
-        with suppress(Exception):
-            storage.delete(key)
+    # Вызывается из except-веток, поэтому не должен подменять исходное исключение
+    # собственным — построение storage тоже под suppress.
+    with suppress(Exception):
+        storage = storage_from_env(root)
+        for key in keys:
+            with suppress(Exception):
+                storage.delete(key)
 
 
 def copy_assignment_assets(

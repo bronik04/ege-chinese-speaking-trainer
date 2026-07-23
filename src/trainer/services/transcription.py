@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import logging
 import os
 import time
+
+from trainer.infrastructure.observability import log_event
+
+logger = logging.getLogger("trainer.transcription")
 
 
 def enabled() -> bool:
@@ -74,6 +79,20 @@ def complete(database, job: dict, text: str, now: int | None = None) -> None:
             "transcribed_at = ? WHERE id = ?",
             (text.strip(), timestamp, job["recording_id"]),
         )
+        return
+    # Задание перехвачено другим воркером или возвращено в очередь стейл-свипом.
+    # Отказ от записи корректен, но готовая (и оплаченная) расшифровка при этом
+    # выбрасывается, поэтому событие должно быть видно в логах.
+    log_event(
+        logger,
+        logging.WARNING,
+        "transcription_lease_lost",
+        "Transcript discarded: job lease is no longer held",
+        jobId=job["id"],
+        recordingId=job["recording_id"],
+        leaseAttempt=lease_attempt,
+        characters=len(text.strip()),
+    )
 
 
 def fail(database, job: dict, error: Exception, max_attempts: int = 3, now: int | None = None) -> None:
@@ -93,3 +112,14 @@ def fail(database, job: dict, error: Exception, max_attempts: int = 3, now: int 
             "UPDATE recordings SET transcript_status = ?, transcript_error = ? WHERE id = ?",
             (status, message, job["recording_id"]),
         )
+        return
+    log_event(
+        logger,
+        logging.WARNING,
+        "transcription_lease_lost",
+        "Failure not recorded: job lease is no longer held",
+        jobId=job["id"],
+        recordingId=job["recording_id"],
+        leaseAttempt=attempts,
+        error=message,
+    )

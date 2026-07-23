@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import time
 from http import HTTPStatus
@@ -240,22 +241,35 @@ class AuthControllerMixin:
                    WHERE assignments.teacher_id=?""",
                 (user["id"],),
             ).fetchall()
-            try:
-                delete_account_storage(
-                    runtime.AUDIO_DIR,
-                    [item["file_name"] for item in files],
-                    runtime.MATERIAL_ASSET_DIR,
-                    [item["storage_key"] for item in material_assets],
-                    runtime.ASSIGNMENT_ASSET_DIR,
-                    [item["storage_key"] for item in assignment_assets],
-                )
-            except Exception:
-                self.send_error_json(
-                    HTTPStatus.SERVICE_UNAVAILABLE,
-                    "Не удалось удалить приватные файлы; повторите попытку",
-                    "storage_cleanup_failed",
-                )
-                return
+            audio_keys = [item["file_name"] for item in files]
+            material_keys = [item["storage_key"] for item in material_assets]
+            assignment_keys = [item["storage_key"] for item in assignment_assets]
             self.audit(database, "account_deleted", user_id=user["id"], email=user["email"])
             database.execute("DELETE FROM users WHERE id = ?", (user["id"],))
+        # Файлы удаляем только после коммита: иначе откат транзакции оставил бы
+        # живой аккаунт со строками, ссылающимися на уже уничтоженные файлы.
+        try:
+            delete_account_storage(
+                runtime.AUDIO_DIR,
+                audio_keys,
+                runtime.MATERIAL_ASSET_DIR,
+                material_keys,
+                runtime.ASSIGNMENT_ASSET_DIR,
+                assignment_keys,
+            )
+        except Exception:
+            # Аккаунт уже удалён, поэтому запрос считается успешным, но остаток
+            # файлов требует ручной уборки — пишем причину и объём в лог.
+            logging.getLogger("trainer.accounts").exception(
+                "Account storage cleanup failed",
+                extra={
+                    "event": "account_storage_cleanup_failed",
+                    "fields": {
+                        "userId": user["id"],
+                        "audioKeys": len(audio_keys),
+                        "materialKeys": len(material_keys),
+                        "assignmentKeys": len(assignment_keys),
+                    },
+                },
+            )
         self.send_json({"ok": True}, clear_cookie=True)

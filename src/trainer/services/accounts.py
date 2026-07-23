@@ -112,11 +112,24 @@ def delete_account_storage(
     assignment_root: Path,
     assignment_keys,
 ) -> None:
+    failure: Exception | None = None
     for root, keys in (
         (audio_root, audio_keys),
         (material_root, material_keys),
         (assignment_root, assignment_keys),
     ):
-        storage = storage_from_env(root)
+        try:
+            storage = storage_from_env(root)
+        except Exception as error:
+            failure = failure or error
+            continue
         for key in keys:
-            storage.delete(key)
+            try:
+                storage.delete(key)
+            except Exception as error:
+                # Один недоступный ключ не должен оставлять остальные файлы
+                # пользователя на диске: удаляем всё, что можем, и сообщаем
+                # о первом отказе вызывающему коду.
+                failure = failure or error
+    if failure is not None:
+        raise failure

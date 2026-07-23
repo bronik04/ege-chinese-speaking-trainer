@@ -18,4 +18,4 @@ RUN mkdir -p /app/var /app/backups && chown -R trainer:trainer /app
 USER trainer
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD curl -fsS http://127.0.0.1:8080/api/health || exit 1
-CMD ["uvicorn", "asgi:app", "--host", "0.0.0.0", "--port", "8080", "--proxy-headers", "--forwarded-allow-ips", "127.0.0.1"]
+CMD ["uvicorn", "asgi:app", "--host", "0.0.0.0", "--port", "8080", "--proxy-headers"]

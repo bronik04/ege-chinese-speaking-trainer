@@ -22,14 +22,20 @@ def _extract_archive(archive_path: Path, target: Path) -> None:
 
 def restore_sqlite_backup(backup: Path, target: Path) -> None:
     database_backup = backup / "trainer.sqlite3"
-    archives = (
-        backup / "audio.tar.gz",
-        backup / "material-assets.tar.gz",
-        backup / "assignment-assets.tar.gz",
+    # Архивы необязательны: копия, снятая до появления очередного каталога,
+    # и backup в режиме S3/R2 (где архивы не создаются вовсе) обязаны
+    # восстанавливаться, а не отвергаться целиком.
+    archives = tuple(
+        path
+        for path in (
+            backup / "audio.tar.gz",
+            backup / "material-assets.tar.gz",
+            backup / "assignment-assets.tar.gz",
+        )
+        if path.is_file()
     )
-    missing = [path.name for path in (database_backup, *archives) if not path.is_file()]
-    if missing:
-        raise RuntimeError(f"Incomplete SQLite backup: {', '.join(missing)}")
+    if not database_backup.is_file():
+        raise RuntimeError(f"Incomplete SQLite backup: {database_backup.name}")
     if target.exists() and any(target.iterdir()):
         raise RuntimeError(f"Restore target is not empty: {target}")
     target.mkdir(parents=True, exist_ok=True)

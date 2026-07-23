@@ -32,6 +32,40 @@ class BackupTest(unittest.TestCase):
             self.assertTrue((backup / "material-assets.tar.gz").is_file())
             self.assertTrue((backup / "assignment-assets.tar.gz").is_file())
 
+    def test_restore_accepts_backup_without_assignment_assets(self):
+        # Копии, снятые до появления каталога assignment-assets, обязаны
+        # восстанавливаться: иначе первый же деплой обнуляет всю retention-историю.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            data = root / "data"
+            output = root / "backups"
+            restored = root / "restored"
+            (data / "audio/1").mkdir(parents=True)
+            (data / "audio/1/sample.webm").write_bytes(b"audio")
+            (data / "material-assets/materials/1").mkdir(parents=True)
+            (data / "material-assets/materials/1/photo.webp").write_bytes(b"photo")
+            with closing(sqlite3.connect(data / "trainer.sqlite3")) as database:
+                with database:
+                    database.execute("CREATE TABLE sample(value TEXT)")
+                    database.execute("INSERT INTO sample VALUES ('legacy')")
+            output.mkdir()
+            backup = create_backup(data, output, 1)
+            (backup / "assignment-assets.tar.gz").unlink()
+
+            restore_sqlite_backup(backup, restored)
+
+            with closing(sqlite3.connect(restored / "trainer.sqlite3")) as database:
+                self.assertEqual(database.execute("SELECT value FROM sample").fetchone()[0], "legacy")
+            self.assertEqual((restored / "audio/1/sample.webm").read_bytes(), b"audio")
+
+    def test_restore_requires_the_database_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            empty_backup = root / "backup"
+            empty_backup.mkdir()
+            with self.assertRaisesRegex(RuntimeError, "trainer.sqlite3"):
+                restore_sqlite_backup(empty_backup, root / "restored")
+
     def test_restore_recovers_database_audio_and_material_assets(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
