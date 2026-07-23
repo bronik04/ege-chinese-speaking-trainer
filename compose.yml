@@ -3,6 +3,13 @@ services:
     build: .
     restart: unless-stopped
     env_file: .env
+    environment:
+      # Caddy — отдельный сервис, поэтому uvicorn видит адрес из подсети trainer,
+      # а не 127.0.0.1. Без этого X-Forwarded-For отбрасывается и все клиенты
+      # получают один IP: аудит теряет смысл, а rate limit вырождается в общий
+      # для всех запрос по email.
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-172.28.0.0/16}
+    networks: [trainer]
     volumes:
       - trainer_data:/app/var
       - ./backups:/app/backups
@@ -14,6 +21,7 @@ services:
     restart: unless-stopped
     command: ["python", "-m", "scripts.transcription_worker"]
     env_file: .env
+    networks: [trainer]
     depends_on:
       app:
         condition: service_healthy
@@ -25,11 +33,17 @@ services:
     depends_on: [app]
     environment:
       DOMAIN: ${DOMAIN}
+    networks: [trainer]
     ports: ["80:80", "443:443", "443:443/udp"]
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+networks:
+  trainer:
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
 volumes:
   trainer_data:
   caddy_data:

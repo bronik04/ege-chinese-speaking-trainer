@@ -69,6 +69,33 @@ class AccountStorageServiceTest(unittest.TestCase):
         materials.delete.assert_called_once_with("material.webp")
         assignments.delete.assert_called_once_with("assignment.webp")
 
+    @patch("trainer.services.accounts.storage_from_env")
+    def test_account_cleanup_propagates_storage_failure(self, factory):
+        factory.return_value.delete.side_effect = OSError("storage unavailable")
+        with self.assertRaisesRegex(OSError, "storage unavailable"):
+            delete_account_storage(Path("audio"), ["recording.webm"], Path("materials"), [], Path("assignments"), [])
+
+    @patch("trainer.services.accounts.storage_from_env")
+    def test_account_cleanup_removes_every_key_despite_one_failure(self, factory):
+        audio = Mock()
+        audio.delete.side_effect = [OSError("first key is unreachable"), None]
+        assignments = Mock()
+        factory.side_effect = [audio, Mock(), assignments]
+
+        with self.assertRaisesRegex(OSError, "first key is unreachable"):
+            delete_account_storage(
+                Path("audio"),
+                ["broken.webm", "second.webm"],
+                Path("materials"),
+                [],
+                Path("assignments"),
+                ["assignment.webp"],
+            )
+
+        # Один сбойный ключ не должен оставлять остальные приватные файлы на диске.
+        self.assertEqual([call.args[0] for call in audio.delete.call_args_list], ["broken.webm", "second.webm"])
+        assignments.delete.assert_called_once_with("assignment.webp")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -35,6 +35,31 @@ test("mergeProgress deduplicates runs and keeps the newest settings", () => {
   assert.equal(merged.settings.fastMode, true);
 });
 
+test("mergeProgress lets the newer side clear activeRun", () => {
+  const finished = {
+    version: 1,
+    updatedAt: "2026-07-04T12:00:00Z",
+    settings: { fastMode: false },
+    runs: [],
+    activeRun: null,
+  };
+  const staleRemote = {
+    version: 1,
+    updatedAt: "2026-07-04T11:00:00Z",
+    settings: { fastMode: false },
+    runs: [],
+    activeRun: { id: "stale-run", startedAt: "2026-07-04T10:00:00Z" },
+  };
+  assert.equal(mergeProgress(finished, staleRemote).activeRun, null);
+
+  const staleLocal = { ...staleRemote, updatedAt: "2026-07-04T10:00:00Z" };
+  const clearedRemote = { ...finished, updatedAt: "2026-07-04T13:00:00Z" };
+  assert.equal(mergeProgress(staleLocal, clearedRemote).activeRun, null);
+
+  const liveLocal = { ...staleRemote, updatedAt: "2026-07-04T14:00:00Z" };
+  assert.equal(mergeProgress(liveLocal, clearedRemote).activeRun.id, "stale-run");
+});
+
 test("account markup escapes teacher-controlled text", () => {
   const assignments = studentAssignmentsMarkup([{
     id: 1,

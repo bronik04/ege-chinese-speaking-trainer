@@ -62,7 +62,11 @@ class FastApiSmokeTest(unittest.TestCase):
     def test_mutation_uses_existing_api_contract(self):
         response = self.client.post(
             "/api/auth/register",
-            headers={"Origin": "http://testserver", "Sec-Fetch-Site": "same-origin"},
+            headers={
+                "Origin": "http://testserver",
+                "Sec-Fetch-Site": "same-origin",
+                "Content-Type": "application/json",
+            },
             json={
                 "email": "asgi@example.test",
                 "password": "password123",
@@ -89,6 +93,37 @@ class FastApiSmokeTest(unittest.TestCase):
         self.assertEqual(payload["code"], "request_validation_failed")
         self.assertEqual(payload["message"], "Некорректные данные запроса")
         self.assertEqual({item["location"] for item in payload["fields"]}, {"displayName", "unexpected"})
+
+    def test_rejects_oversized_json_before_validation(self):
+        response = self.client.post(
+            "/api/auth/register",
+            headers={
+                "Origin": "http://testserver",
+                "Sec-Fetch-Site": "same-origin",
+                "Content-Type": "application/json",
+            },
+            content=b'{"displayName":"' + (b"x" * 1_000_000) + b'"}',
+        )
+        self.assertEqual(response.status_code, 413)
+        self.assertEqual(response.json()["code"], "request_too_large")
+
+    def test_json_content_type_without_body_is_not_rejected(self):
+        # Клиенты, проставляющие JSON content-type по умолчанию, не должны терять
+        # bodyless-запросы, а chunked-запросы не обязаны нести Content-Length.
+        response = self.client.get("/api/health", headers={"Content-Type": "application/json"})
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["ok"])
+
+        streamed = self.client.post(
+            "/api/auth/login",
+            headers={
+                "Origin": "http://testserver",
+                "Sec-Fetch-Site": "same-origin",
+                "Content-Type": "application/json",
+            },
+            content=iter([b'{"email":"chunked@example.test",', b'"password":"password123"}']),
+        )
+        self.assertNotEqual(streamed.status_code, 411)
 
     def test_error_response_and_header_share_request_id(self):
         response = self.client.post(

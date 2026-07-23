@@ -179,12 +179,12 @@ async function loadMine() {
 }
 
 async function deleteMaterial() {
-  if (!currentId || !confirm("Удалить материал и все его изображения?")) return;
+  if (!currentId || !confirm("Архивировать материал? Он исчезнет из вашего списка, а его идентификатор нельзя будет занять повторно. Отменить архивирование нельзя. Уже выданные назначения продолжат работать.")) return;
   try {
     await api(`/api/materials/${currentId}`, { method: "DELETE", body: "{}" });
     await loadMine();
     newMaterial();
-    $("editorMessage").textContent = "Материал удалён";
+    $("editorMessage").textContent = "Материал архивирован";
   } catch (error) { $("editorMessage").textContent = error.message; }
 }
 

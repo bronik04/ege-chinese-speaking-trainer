@@ -52,7 +52,7 @@ class JoinGroupRequest(ApiSchema):
 class AssignmentRequest(ApiSchema):
     groupId: int = Field(ge=1)
     title: str = Field(min_length=2, max_length=100)
-    variantId: str = Field(pattern=r"^[a-z0-9-]{3,40}$")
+    variantId: str = Field(pattern=r"^[a-z0-9-]{3,50}$")
     tasks: list[Literal[1, 2, 3]] = Field(min_length=1, max_length=3)
     dueAt: int | None = None
 

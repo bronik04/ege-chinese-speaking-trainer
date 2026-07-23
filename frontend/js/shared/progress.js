@@ -31,7 +31,10 @@ export function mergeProgress(local, remote) {
     updatedAt: new Date().toISOString(),
     settings: localIsNewer ? local.settings : remote.settings,
     runs: [...runs.values()].sort((a, b) => new Date(b.completedAt || b.startedAt) - new Date(a.completedAt || a.startedAt)).slice(0, 100),
-    activeRun: local.activeRun || null
+    // Без запасного варианта: иначе очищенный (null) активный прогон нельзя
+    // отличить от отсутствующего, и завершённая тренировка воскресала бы
+    // с проигравшей стороны.
+    activeRun: (localIsNewer ? local.activeRun : remote.activeRun) || null
   };
 }
 

@@ -15,7 +15,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from trainer.api.errors import default_error_code, error_payload
 from trainer.api.routes import accounts, groups, materials, recordings, work
-from trainer.api.runtime import ROOT, connect, init_database
+from trainer.api.runtime import MAX_BODY, ROOT, connect, init_database
 from trainer.infrastructure.database.core import close_connections, engine_name
 from trainer.infrastructure.observability import (
     configure_logging,
@@ -45,6 +45,25 @@ app.include_router(groups.router)
 app.include_router(work.router)
 app.include_router(recordings.router)
 app.include_router(materials.router)
+
+
+BODY_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+@app.middleware("http")
+async def reject_oversized_json(request, call_next):
+    content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if request.method in BODY_METHODS and content_type == "application/json":
+        # Отсутствующий или нечисловой Content-Length не отвергаем: так приходят
+        # chunked-запросы, а GET с JSON-заголовком вообще не несёт тела.
+        # Фактический размер в любом случае считает потоково invoke().
+        raw_length = request.headers.get("content-length", "")
+        if raw_length.isdigit() and int(raw_length) > MAX_BODY:
+            return JSONResponse(
+                error_payload("request_too_large", "Request body is too large"),
+                status_code=413,
+            )
+    return await call_next(request)
 
 
 @app.middleware("http")

@@ -13,7 +13,11 @@ from trainer.infrastructure.database.queries.assignments import student_assignme
 from trainer.infrastructure.database.queries.submissions import submission_history, teacher_submissions
 from trainer.infrastructure.database.submissions import create_submission_with_retry
 from trainer.infrastructure.exports import submissions_csv, submissions_pdf
-from trainer.services.assignment_assets import copy_assignment_assets_from_env, read_assignment_asset
+from trainer.services.assignment_assets import (
+    copy_assignment_assets_from_env,
+    delete_assignment_assets,
+    read_assignment_asset,
+)
 from trainer.services.materials import assignment_material
 
 
@@ -34,7 +38,7 @@ class WorkControllerMixin:
         variant_id = str(payload.get("variantId", "")).strip()
         raw_tasks = payload.get("tasks", [])
         due_at = payload.get("dueAt")
-        if not 2 <= len(title) <= 100 or not re.fullmatch(r"[a-z0-9-]{3,40}", variant_id):
+        if not 2 <= len(title) <= 100 or not re.fullmatch(r"[a-z0-9-]{3,50}", variant_id):
             self.send_error_json(HTTPStatus.BAD_REQUEST, "Проверьте название и вариант")
             return
         if not isinstance(raw_tasks, list) or not raw_tasks:
@@ -49,57 +53,64 @@ class WorkControllerMixin:
         if any(task not in {1, 2, 3} for task in tasks):
             self.send_error_json(HTTPStatus.BAD_REQUEST, "Допустимы задания 1–3")
             return
-        with connect() as database:
-            group = database.execute(
-                "SELECT id FROM study_groups WHERE id = ? AND teacher_id = ?", (group_id, user["id"])
-            ).fetchone()
-            if not group:
-                self.send_error_json(HTTPStatus.NOT_FOUND, "Группа не найдена", "group_not_found")
-                return
-            material = assignment_material(ROOT, database, variant_id)
-            if not material or any(str(task) not in material.get("tasks", {}) for task in tasks):
-                self.send_error_json(
-                    HTTPStatus.BAD_REQUEST,
-                    "Материал не найден или не содержит выбранные задания",
-                    "invalid_assignment_material",
-                )
-                return
-            cursor = database.execute(
-                """
+        created_asset_keys: list[str] = []
+        try:
+            with connect() as database:
+                group = database.execute(
+                    "SELECT id FROM study_groups WHERE id = ? AND teacher_id = ?", (group_id, user["id"])
+                ).fetchone()
+                if not group:
+                    self.send_error_json(HTTPStatus.NOT_FOUND, "Группа не найдена", "group_not_found")
+                    return
+                material = assignment_material(ROOT, database, variant_id)
+                if not material or any(str(task) not in material.get("tasks", {}) for task in tasks):
+                    self.send_error_json(
+                        HTTPStatus.BAD_REQUEST,
+                        "Материал не найден или не содержит выбранные задания",
+                        "invalid_assignment_material",
+                    )
+                    return
+                cursor = database.execute(
+                    """
                 INSERT INTO assignments(group_id, teacher_id, title, variant_id, tasks_json, due_at, created_at,
                                         updated_at, material_snapshot_json)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (
-                    group_id,
-                    user["id"],
-                    title,
-                    variant_id,
-                    json.dumps(tasks),
-                    due_at,
-                    int(time.time()),
-                    int(time.time()),
-                    json.dumps(material, ensure_ascii=False, separators=(",", ":")),
-                ),
-            )
-            snapshot = copy_assignment_assets_from_env(
-                database,
-                cursor.lastrowid,
-                material,
-                runtime.MATERIAL_ASSET_DIR,
-                runtime.ASSIGNMENT_ASSET_DIR,
-            )
-            database.execute(
-                "UPDATE assignments SET material_snapshot_json=? WHERE id=?",
-                (json.dumps(snapshot, ensure_ascii=False, separators=(",", ":")), cursor.lastrowid),
-            )
-            self.audit(
-                database,
-                "assignment_created",
-                user_id=user["id"],
-                email=user["email"],
-                details={"assignmentId": cursor.lastrowid, "groupId": group_id, "variantId": variant_id},
-            )
+                    (
+                        group_id,
+                        user["id"],
+                        title,
+                        variant_id,
+                        json.dumps(tasks),
+                        due_at,
+                        int(time.time()),
+                        int(time.time()),
+                        json.dumps(material, ensure_ascii=False, separators=(",", ":")),
+                    ),
+                )
+                snapshot = copy_assignment_assets_from_env(
+                    database,
+                    cursor.lastrowid,
+                    material,
+                    runtime.MATERIAL_ASSET_DIR,
+                    runtime.ASSIGNMENT_ASSET_DIR,
+                    created_asset_keys,
+                )
+                database.execute(
+                    "UPDATE assignments SET material_snapshot_json=? WHERE id=?",
+                    (json.dumps(snapshot, ensure_ascii=False, separators=(",", ":")), cursor.lastrowid),
+                )
+                self.audit(
+                    database,
+                    "assignment_created",
+                    user_id=user["id"],
+                    email=user["email"],
+                    details={"assignmentId": cursor.lastrowid, "groupId": group_id, "variantId": variant_id},
+                )
+        except Exception:
+            if created_asset_keys:
+                delete_assignment_assets(runtime.ASSIGNMENT_ASSET_DIR, created_asset_keys)
+            raise
         self.send_json({"assignment": {"id": cursor.lastrowid, "title": title}}, HTTPStatus.CREATED)
 
     def student_assignments(self) -> None:
@@ -182,43 +193,61 @@ class WorkControllerMixin:
         user = self.require_role("teacher")
         if not user:
             return
-        with connect() as database:
-            source = database.execute(
-                "SELECT * FROM assignments WHERE id = ? AND teacher_id = ?", (assignment_id, user["id"])
-            ).fetchone()
-            if not source:
-                self.send_error_json(HTTPStatus.NOT_FOUND, "Задание не найдено", "assignment_not_found")
-                return
-            now = int(time.time())
-            cursor = database.execute(
-                """INSERT INTO assignments(group_id, teacher_id, title, variant_id, tasks_json, due_at, created_at,
-                                              updated_at, source_assignment_id, material_snapshot_json)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    source["group_id"],
-                    user["id"],
-                    f"{source['title']} · повтор",
-                    source["variant_id"],
-                    source["tasks_json"],
-                    source["due_at"],
-                    now,
-                    now,
-                    assignment_id,
-                    source["material_snapshot_json"],
-                ),
-            )
-            source_snapshot = json.loads(source["material_snapshot_json"])
-            snapshot = copy_assignment_assets_from_env(
-                database,
-                cursor.lastrowid,
-                source_snapshot,
-                runtime.MATERIAL_ASSET_DIR,
-                runtime.ASSIGNMENT_ASSET_DIR,
-            )
-            database.execute(
-                "UPDATE assignments SET material_snapshot_json=? WHERE id=?",
-                (json.dumps(snapshot, ensure_ascii=False, separators=(",", ":")), cursor.lastrowid),
-            )
+        created_asset_keys: list[str] = []
+        try:
+            with connect() as database:
+                source = database.execute(
+                    "SELECT * FROM assignments WHERE id = ? AND teacher_id = ?", (assignment_id, user["id"])
+                ).fetchone()
+                if not source:
+                    self.send_error_json(HTTPStatus.NOT_FOUND, "Задание не найдено", "assignment_not_found")
+                    return
+                if not source["material_snapshot_json"]:
+                    # Назначения, выданные до появления снимков, хранят NULL —
+                    # копировать нечего, и json.loads(None) уронил бы запрос в 500.
+                    self.send_error_json(
+                        HTTPStatus.CONFLICT,
+                        "У задания нет сохранённого материала; создайте новое назначение",
+                        "assignment_material_unavailable",
+                    )
+                    return
+                now = int(time.time())
+                cursor = database.execute(
+                    """INSERT INTO assignments(group_id, teacher_id, title, variant_id, tasks_json, due_at, created_at,
+                                                  updated_at, source_assignment_id, material_snapshot_json)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        source["group_id"],
+                        user["id"],
+                        f"{source['title']} · повтор",
+                        source["variant_id"],
+                        source["tasks_json"],
+                        source["due_at"],
+                        now,
+                        now,
+                        assignment_id,
+                        source["material_snapshot_json"],
+                    ),
+                )
+                source_snapshot = json.loads(source["material_snapshot_json"])
+                snapshot = copy_assignment_assets_from_env(
+                    database,
+                    cursor.lastrowid,
+                    source_snapshot,
+                    runtime.MATERIAL_ASSET_DIR,
+                    runtime.ASSIGNMENT_ASSET_DIR,
+                    created_asset_keys,
+                )
+                database.execute(
+                    "UPDATE assignments SET material_snapshot_json=? WHERE id=?",
+                    (json.dumps(snapshot, ensure_ascii=False, separators=(",", ":")), cursor.lastrowid),
+                )
+        except Exception:
+            # Транзакция откатилась, поэтому скопированные файлы уже никем
+            # не адресуются — убираем их, чтобы не копить осиротевшие объекты.
+            if created_asset_keys:
+                delete_assignment_assets(runtime.ASSIGNMENT_ASSET_DIR, created_asset_keys)
+            raise
         self.send_json({"assignment": {"id": cursor.lastrowid}}, HTTPStatus.CREATED)
 
     def submission_create(self, assignment_id: int) -> None:

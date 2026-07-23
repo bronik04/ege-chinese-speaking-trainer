@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import logging
 import os
 import time
+
+from trainer.infrastructure.observability import log_event
+
+logger = logging.getLogger("trainer.transcription")
 
 
 def enabled() -> bool:
@@ -60,15 +65,33 @@ def claim(database, now: int | None = None):
     return dict(job) if changed else None
 
 
-def complete(database, job_id: int, recording_id: int, text: str, now: int | None = None) -> None:
+def complete(database, job: dict, text: str, now: int | None = None) -> None:
     timestamp = now or int(time.time())
-    database.execute(
-        "UPDATE recordings SET transcript_status = 'completed', transcript_text = ?, transcript_error = NULL, transcribed_at = ? WHERE id = ?",
-        (text.strip(), timestamp, recording_id),
-    )
-    database.execute(
-        "UPDATE transcription_jobs SET status = 'completed', last_error = NULL, updated_at = ? WHERE id = ?",
-        (timestamp, job_id),
+    lease_attempt = int(job["attempts"]) + 1
+    changed = database.execute(
+        "UPDATE transcription_jobs SET status = 'completed', last_error = NULL, updated_at = ? "
+        "WHERE id = ? AND status = 'processing' AND attempts = ?",
+        (timestamp, job["id"], lease_attempt),
+    ).rowcount
+    if changed:
+        database.execute(
+            "UPDATE recordings SET transcript_status = 'completed', transcript_text = ?, transcript_error = NULL, "
+            "transcribed_at = ? WHERE id = ?",
+            (text.strip(), timestamp, job["recording_id"]),
+        )
+        return
+    # Задание перехвачено другим воркером или возвращено в очередь стейл-свипом.
+    # Отказ от записи корректен, но готовая (и оплаченная) расшифровка при этом
+    # выбрасывается, поэтому событие должно быть видно в логах.
+    log_event(
+        logger,
+        logging.WARNING,
+        "transcription_lease_lost",
+        "Transcript discarded: job lease is no longer held",
+        jobId=job["id"],
+        recordingId=job["recording_id"],
+        leaseAttempt=lease_attempt,
+        characters=len(text.strip()),
     )
 
 
@@ -79,11 +102,24 @@ def fail(database, job: dict, error: Exception, max_attempts: int = 3, now: int 
     status = "failed" if final else "pending"
     retry_at = timestamp if final else timestamp + min(300, 15 * (2 ** max(0, attempts - 1)))
     message = str(error)[:500]
-    database.execute(
-        "UPDATE transcription_jobs SET status = ?, available_at = ?, locked_at = NULL, last_error = ?, updated_at = ? WHERE id = ?",
-        (status, retry_at, message, timestamp, job["id"]),
-    )
-    database.execute(
-        "UPDATE recordings SET transcript_status = ?, transcript_error = ? WHERE id = ?",
-        (status, message, job["recording_id"]),
+    changed = database.execute(
+        "UPDATE transcription_jobs SET status = ?, available_at = ?, locked_at = NULL, last_error = ?, updated_at = ? "
+        "WHERE id = ? AND status = 'processing' AND attempts = ?",
+        (status, retry_at, message, timestamp, job["id"], attempts),
+    ).rowcount
+    if changed:
+        database.execute(
+            "UPDATE recordings SET transcript_status = ?, transcript_error = ? WHERE id = ?",
+            (status, message, job["recording_id"]),
+        )
+        return
+    log_event(
+        logger,
+        logging.WARNING,
+        "transcription_lease_lost",
+        "Failure not recorded: job lease is no longer held",
+        jobId=job["id"],
+        recordingId=job["recording_id"],
+        leaseAttempt=attempts,
+        error=message,
     )

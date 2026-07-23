@@ -97,7 +97,7 @@ class TranscriptionQueueTest(unittest.TestCase):
         with connect(self.path) as database:
             job = claim(database, now=10)
             self.assertEqual(job["recording_id"], self.recording)
-            complete(database, job["id"], self.recording, "你好", now=11)
+            complete(database, job, "你好", now=11)
         with connect(self.path) as database:
             row = database.execute(
                 "SELECT transcript_status, transcript_text FROM recordings WHERE id = ?", (self.recording,)
