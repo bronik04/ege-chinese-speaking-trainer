@@ -1,7 +1,9 @@
 import { escapeHtml } from "../shared/progress.js";
 
 export function variantKind(id) {
-  return id.startsWith("open-") ? "Официальный вариант" : "Демонстрационный вариант";
+  if (id.startsWith("open-")) return "Официальный вариант";
+  if (id.startsWith("bank-")) return "Вариант из банка ФИПИ";
+  return "Демонстрационный вариант";
 }
 
 export function filterVariants(variants, year = "all", query = "") {

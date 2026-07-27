@@ -152,6 +152,8 @@ test("variant catalog filters and escapes exam metadata", () => {
   assert.equal(filterVariants(variants, "2026").length, 2);
   assert.equal(filterVariants(variants, "all", "открытый").length, 1);
   assert.equal(variantKind("open-2026"), "Официальный вариант");
+  assert.equal(variantKind("bank-01"), "Вариант из банка ФИПИ");
+  assert.equal(variantKind("demo-2026"), "Демонстрационный вариант");
   const html = catalogMarkup([variants[0]]);
   assert.doesNotMatch(html, /<script>|<Demo>/);
   assert.match(html, /&lt;script&gt;|&lt;Demo&gt;/);
