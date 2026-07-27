@@ -122,16 +122,23 @@ def _distinct_photos(block: Block, photo_key: Callable[[str], str]) -> set[str] 
     return keys if len(keys) == len(block.images) else None
 
 
+def _photo_signature(block: Block, photo_key: Callable[[str], str]) -> tuple[str, ...]:
+    return tuple(sorted(photo_key(image) for image in block.images))
+
+
 def _unique_announcements(
     blocks: Sequence[Block],
     photo_key: Callable[[str], str],
     used_banners: frozenset[str],
     used_questions: frozenset[str],
+    used_photo_sets: frozenset[tuple[str, ...]],
 ) -> list[Block]:
     selected: list[Block] = []
     seen: set[tuple[str, str]] = set()
     for block in blocks:
         if block.number != 30 or _distinct_photos(block, photo_key) is None:
+            continue
+        if _photo_signature(block, photo_key) in used_photo_sets:
             continue
         parsed = parse_announcement(block.text)
         if parsed is None:
@@ -144,7 +151,11 @@ def _unique_announcements(
     return selected
 
 
-def _unique_albums(blocks: Sequence[Block], photo_key: Callable[[str], str]) -> list[Block]:
+def _unique_albums(
+    blocks: Sequence[Block],
+    photo_key: Callable[[str], str],
+    used_photo_sets: frozenset[tuple[str, ...]],
+) -> list[Block]:
     selected: list[Block] = []
     seen: set[tuple[str, ...]] = set()
     for block in blocks:
@@ -152,7 +163,7 @@ def _unique_albums(blocks: Sequence[Block], photo_key: Callable[[str], str]) -> 
         if keys is None or len(block.images) != 3:
             continue
         signature = tuple(sorted(keys))
-        if signature in seen:
+        if signature in seen or signature in used_photo_sets:
             continue
         seen.add(signature)
         selected.append(block)
@@ -163,11 +174,14 @@ def _unique_projects(
     blocks: Sequence[Block],
     photo_key: Callable[[str], str],
     used_themes: frozenset[str],
+    used_photo_sets: frozenset[tuple[str, ...]],
 ) -> list[Block]:
     selected: list[Block] = []
     seen: set[str] = set()
     for block in blocks:
         if block.number != 32 or _distinct_photos(block, photo_key) is None:
+            continue
+        if _photo_signature(block, photo_key) in used_photo_sets:
             continue
         parsed = parse_project(block.text)
         if parsed is None:
@@ -195,15 +209,20 @@ def select_sources(
     used_banners: frozenset[str] = frozenset(),
     used_questions: frozenset[str] = frozenset(),
     used_themes: frozenset[str] = frozenset(),
+    used_photo_sets: frozenset[tuple[str, ...]] = frozenset(),
 ) -> list[VariantSource]:
     """Собирает комплекты 30+31+32 без повторов заданий и без повторов фотографий внутри варианта.
+
+    `used_photo_sets` — наборы фотографий заданий, уже опубликованных в каталоге. Текстовых признаков
+    мало: банк содержит те же задания ФИПИ с переформулированной темой («Способы совершать покупки»
+    вместо «Лучший способ совершения покупок»). Совпадение набора фотографий опознаёт их надёжно.
 
     Задание 30, которому не нашлось непересекающейся пары, пропускается, а не обрывает отбор:
     иначе одно неудачное сочетание отбросило бы весь оставшийся хвост банка.
     """
-    announcements = _unique_announcements(blocks, photo_key, used_banners, used_questions)
-    albums = _unique_albums(blocks, photo_key)
-    projects = _unique_projects(blocks, photo_key, used_themes)
+    announcements = _unique_announcements(blocks, photo_key, used_banners, used_questions, used_photo_sets)
+    albums = _unique_albums(blocks, photo_key, used_photo_sets)
+    projects = _unique_projects(blocks, photo_key, used_themes, used_photo_sets)
     sources: list[VariantSource] = []
     for announcement in announcements:
         taken = {photo_key(image) for image in announcement.images}

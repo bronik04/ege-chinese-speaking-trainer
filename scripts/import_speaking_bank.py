@@ -108,12 +108,29 @@ def _manifest_entry(number: int, source: VariantSource) -> dict:
     }
 
 
+def catalog_photo_sets(content_root: Path, canonical: dict[Path, Path]) -> frozenset[tuple[str, ...]]:
+    """Наборы фотографий заданий, уже опубликованных в каталоге, в канонических ключах."""
+    signatures: set[tuple[str, ...]] = set()
+    for document in _catalog_documents(content_root):
+        tasks = document["tasks"]
+        for images in ([tasks["1"]["image"]], tasks["2"]["images"], tasks["3"]["images"]):
+            paths = [content_root / "public" / image for image in images]
+            signatures.add(tuple(sorted(str(canonical[path]) for path in paths)))
+    return frozenset(signatures)
+
+
 def build_manifest(bank: Path, content_root: Path) -> dict:
     """Отбирает комплекты и описывает их в манифесте, не трогая содержимое репозитория."""
     blocks = parse_blocks((bank / BANK_FILE).read_text(encoding="utf-8"))
     photos = sorted({bank / image for block in blocks for image in block.images})
-    canonical = canonical_index(photos)
-    sources = select_sources(blocks, photo_key=lambda image: canonical[bank / image].name, **used_keys(content_root))
+    published = sorted((content_root / "public/assets/variants").glob("*/*.webp"))
+    canonical = canonical_index([*photos, *published])
+    sources = select_sources(
+        blocks,
+        photo_key=lambda image: str(canonical[bank / image]),
+        used_photo_sets=catalog_photo_sets(content_root, canonical),
+        **used_keys(content_root),
+    )
     first = next_variant_number(content_root)
     variants = [_manifest_entry(first + offset, source) for offset, source in enumerate(sources)]
     captions = [

@@ -237,6 +237,36 @@ class SelectSourcesTest(unittest.TestCase):
 
         self.assertEqual(sources[0].album.images, ("b4.jpg", "b5.jpg", "b6.jpg"))
 
+    def test_skips_task_whose_photo_set_is_already_published(self):
+        # Тема переформулирована, но фотографии те же — это то же задание ФИПИ.
+        sources = select_sources(
+            self.blocks,
+            photo_key=self.photo_key,
+            used_photo_sets=frozenset({("c1.jpg", "c2.jpg")}),
+        )
+
+        self.assertEqual(sources[0].project.images, ("c3.jpg", "c4.jpg"))
+
+    def test_photo_set_check_covers_announcements_and_albums(self):
+        sources = select_sources(
+            self.blocks,
+            photo_key=self.photo_key,
+            used_photo_sets=frozenset({("a1.jpg",), ("b1.jpg", "b2.jpg", "b3.jpg")}),
+        )
+
+        self.assertEqual(sources[0].announcement.images, ("a2.jpg",))
+        self.assertEqual(sources[0].album.images, ("b4.jpg", "b5.jpg", "b6.jpg"))
+
+    def test_photo_set_check_does_not_reserve_the_text_key(self):
+        # Блок сняли из-за фотографий, а не из-за текста: следующий блок с той же темой годится.
+        sources = select_sources(
+            self.blocks,
+            photo_key=self.photo_key,
+            used_photo_sets=frozenset({("c1.jpg", "c2.jpg")}),
+        )
+
+        self.assertEqual(len(sources), 2)
+
     def test_normalize_ignores_case_width_punctuation_and_yo(self):
         self.assertEqual(normalize("Времена  года!"), normalize("времена года"))
         self.assertEqual(normalize("欢迎！"), normalize("欢迎!"))

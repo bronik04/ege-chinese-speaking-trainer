@@ -124,6 +124,10 @@ def make_content(root: Path, variants: list[dict]) -> Path:
     content.mkdir(parents=True)
     index = []
     for variant in variants:
+        assets = root / "public/assets/variants" / variant["id"]
+        assets.mkdir(parents=True)
+        for number in range(1, 7):
+            write_blocks(assets / f"candidate-{number:02d}.webp")
         (content / f"{variant['id']}.json").write_text(json.dumps(variant, ensure_ascii=False), encoding="utf-8")
         index.append(
             {
@@ -152,8 +156,13 @@ def variant_stub(identifier: str, banner: str, theme: str, questions: list[str] 
             "1": {
                 "banner": banner,
                 "questions": questions or [f"{identifier} вопрос {number}" for number in range(1, 6)],
+                "image": f"assets/variants/{identifier}/candidate-01.webp",
             },
-            "3": {"title": f"Проект «{theme}»"},
+            "2": {"images": [f"assets/variants/{identifier}/candidate-{number:02d}.webp" for number in (2, 3, 4)]},
+            "3": {
+                "title": f"Проект «{theme}»",
+                "images": [f"assets/variants/{identifier}/candidate-{number:02d}.webp" for number in (5, 6)],
+            },
         },
     }
 
