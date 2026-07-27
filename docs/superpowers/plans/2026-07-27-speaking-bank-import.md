@@ -923,7 +923,11 @@ def make_content(root: Path, variants: list[dict]) -> Path:
     return root
 
 
-def variant_stub(identifier: str, banner: str, theme: str) -> dict:
+BANK_QUESTIONS = ["адрес клуба", "часы работы", "стоимость", "расписание", "тренеры"]
+
+
+def variant_stub(identifier: str, banner: str, theme: str, questions: list[str] | None = None) -> dict:
+    """Опубликованный вариант каталога. По умолчанию вопросы свои — чтобы не перекрывать блок банка."""
     return {
         "id": identifier,
         "year": 2026,
@@ -931,7 +935,10 @@ def variant_stub(identifier: str, banner: str, theme: str) -> dict:
         "source": "ФИПИ",
         "totalMinutes": 14,
         "tasks": {
-            "1": {"banner": banner, "questions": ["адрес клуба", "часы работы", "стоимость", "расписание", "тренеры"]},
+            "1": {
+                "banner": banner,
+                "questions": questions or [f"{identifier} вопрос {number}" for number in range(1, 6)],
+            },
             "3": {"title": f"Проект «{theme}»"},
         },
     }
@@ -971,6 +978,16 @@ class ManifestTest(unittest.TestCase):
             root = Path(directory)
             bank = make_bank(root)
             make_content(root, [variant_stub("demo-2026", "欢迎加入足球俱乐部！", "Досуг")])
+
+            manifest = build_manifest(bank, root)
+
+            self.assertEqual(manifest["variants"], [])
+
+    def test_skips_block_whose_questions_repeat_under_another_banner(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bank = make_bank(root)
+            make_content(root, [variant_stub("demo-2026", "别的广告！", "Погода", questions=BANK_QUESTIONS)])
 
             manifest = build_manifest(bank, root)
 
@@ -1126,7 +1143,7 @@ def contact_sheets(bank: Path, images: Sequence[str], target: Path) -> list[Path
 - [ ] **Шаг 4: убедиться, что тест проходит**
 
 Команда: `.venv/bin/python -m unittest tests.unit.test_speaking_bank_import -v`
-Ожидается: `OK`, 10 тестов.
+Ожидается: `OK`, 11 тестов.
 
 - [ ] **Шаг 5: коммит**
 
@@ -1420,7 +1437,7 @@ if __name__ == "__main__":
 - [ ] **Шаг 4: убедиться, что тест проходит**
 
 Команда: `.venv/bin/python -m unittest tests.unit.test_speaking_bank_import -v`
-Ожидается: `OK`, 17 тестов.
+Ожидается: `OK`, 18 тестов.
 
 - [ ] **Шаг 5: проверить стиль и весь unit-слой**
 
