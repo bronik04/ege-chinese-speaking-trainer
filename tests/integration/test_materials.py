@@ -91,8 +91,11 @@ class MaterialApiTest(unittest.TestCase):
         blocked = self.client.get("/api/materials").json()
         self.assertFalse(blocked["canCreate"])
         self.verify_email()
+        official = json.loads(
+            (Path(__file__).resolve().parents[2] / "content/variants/index.json").read_text(encoding="utf-8")
+        )
         listing = self.client.get("/api/materials").json()
-        self.assertEqual(len(listing["materials"]), 7)
+        self.assertEqual({item["id"] for item in listing["materials"]}, {item["id"] for item in official})
         self.assertTrue(listing["canCreate"])
         draft = {
             "slug": "author-photo-task",

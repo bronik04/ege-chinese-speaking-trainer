@@ -10,9 +10,15 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class VariantsTest(unittest.TestCase):
+    def test_index_covers_every_variant_file(self):
+        index = json.loads((ROOT / "content/variants/index.json").read_text())
+        files = {path.name for path in (ROOT / "content/variants").glob("*.json") if path.name != "index.json"}
+
+        self.assertTrue(index)
+        self.assertEqual({Path(item["file"]).name for item in index}, files)
+
     def test_all_variants_follow_current_speaking_format(self):
         index = json.loads((ROOT / "content/variants/index.json").read_text())
-        self.assertEqual(len(index), 7)
         for item in index:
             with self.subTest(variant=item["id"]):
                 document = json.loads((ROOT / item["file"]).read_text())
@@ -46,10 +52,15 @@ class VariantsTest(unittest.TestCase):
                     self.assertEqual(path.read_bytes()[:4], b"RIFF")
 
     def test_variant_images_are_optimized(self):
+        index = json.loads((ROOT / "content/variants/index.json").read_text())
         images = list((ROOT / "public/assets/variants").glob("*/*.webp"))
-        self.assertEqual(len(images), 42)
+        sizes = [image.stat().st_size for image in images]
+
+        self.assertEqual(len(images), 6 * len(index))
         self.assertFalse(list((ROOT / "public/assets/variants").glob("*/*.jpg")))
-        self.assertLess(sum(image.stat().st_size for image in images), 3_000_000)
+        # Бюджет на снимок, а не на весь каталог: иначе порог пришлось бы двигать при каждом пополнении.
+        self.assertLess(max(sizes), 256_000)
+        self.assertLess(sum(sizes) / len(sizes), 72_000)
 
     def test_json_schema_rejects_unknown_variant_fields(self):
         with tempfile.TemporaryDirectory() as directory:
