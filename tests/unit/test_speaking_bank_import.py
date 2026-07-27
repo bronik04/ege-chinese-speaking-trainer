@@ -12,8 +12,11 @@ from scripts.import_speaking_bank import (
     canonical_index,
     contact_sheets,
     fingerprint,
+    main,
     next_variant_number,
     used_keys,
+    variant_document,
+    write_variants,
 )
 from scripts.speaking_bank import normalize
 
@@ -239,6 +242,165 @@ class ContactSheetTest(unittest.TestCase):
 
             self.assertEqual(len(sheets), 2)
             self.assertTrue(all(sheet.is_file() for sheet in sheets))
+
+
+class VariantDocumentTest(unittest.TestCase):
+    def setUp(self):
+        self.entry = {
+            "id": "bank-01",
+            "number": 1,
+            "announcement": {
+                "images": ["media/photos/a1.png"],
+                "situation": "Вы увидели объявление о клубе и решили получить дополнительную информацию.",
+                "banner": "欢迎加入足球俱乐部！",
+                "questions": ["адрес клуба", "часы работы", "стоимость", "расписание", "тренеры"],
+            },
+            "album": {"images": ["media/photos/b1.png", "media/photos/b2.png", "media/photos/b3.png"]},
+            "project": {
+                "images": ["media/photos/c1.png", "media/photos/c2.png"],
+                "theme": "Досуг",
+                "lead": "Вы выполняете проект. Говорите не более 3 минут (12–15 фраз).",
+                "prompts": ["объяснить выбор", "указать достоинства", "указать недостатки", "выразить мнение"],
+            },
+        }
+        self.captions = {
+            "media/photos/a1.png": "Ребята играют в футбол на школьном поле",
+            "media/photos/c1.png": "Чтение дома",
+            "media/photos/c2.png": "Прогулка в парке",
+        }
+
+    def test_fills_fixed_metadata(self):
+        document = variant_document(self.entry, self.captions)
+
+        self.assertEqual(document["id"], "bank-01")
+        self.assertEqual(document["year"], 2026)
+        self.assertEqual(document["label"], "Банк ФИПИ · вариант 01")
+        self.assertEqual(document["source"], "ФИПИ · открытый банк заданий")
+        self.assertEqual(document["totalMinutes"], 14)
+
+    def test_task_one_uses_bank_text_and_written_caption(self):
+        task = variant_document(self.entry, self.captions)["tasks"]["1"]
+
+        self.assertEqual(task["prepSeconds"], 90)
+        self.assertEqual(task["answerSeconds"], 20)
+        self.assertEqual(task["title"], "Пять вопросов к объявлению")
+        self.assertEqual(task["banner"], "欢迎加入足球俱乐部！")
+        self.assertEqual(task["image"], "assets/variants/bank-01/candidate-01.webp")
+        self.assertEqual(task["imageAlt"], "Ребята играют в футбол на школьном поле")
+
+    def test_task_two_takes_canonical_wording_and_three_images(self):
+        task = variant_document(self.entry, self.captions)["tasks"]["2"]
+
+        self.assertEqual(task["starter"], "我选择第 {n} 号照片……")
+        self.assertEqual(
+            task["images"],
+            [
+                "assets/variants/bank-01/candidate-02.webp",
+                "assets/variants/bank-01/candidate-03.webp",
+                "assets/variants/bank-01/candidate-04.webp",
+            ],
+        )
+
+    def test_task_three_keeps_thematic_wording_and_labels(self):
+        task = variant_document(self.entry, self.captions)["tasks"]["3"]
+
+        self.assertEqual(task["title"], "Проект «Досуг»")
+        self.assertEqual(
+            task["prompts"],
+            ["объяснить выбор", "указать достоинства", "указать недостатки", "выразить мнение"],
+        )
+        self.assertEqual(task["imageLabels"], ["Чтение дома", "Прогулка в парке"])
+        self.assertEqual(
+            task["images"],
+            ["assets/variants/bank-01/candidate-05.webp", "assets/variants/bank-01/candidate-06.webp"],
+        )
+
+
+class WriteVariantsTest(unittest.TestCase):
+    def test_writes_json_webp_and_index_entry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bank = make_bank(root)
+            make_content(root, [])
+            manifest = build_manifest(bank, root)
+            captions = {image: f"подпись {image}" for image in manifest["captions"]}
+
+            written = write_variants(bank, root, manifest, captions)
+
+            self.assertEqual(written, ["bank-01"])
+            document = json.loads((root / "content/variants/bank-01.json").read_text(encoding="utf-8"))
+            self.assertEqual(document["tasks"]["1"]["image"], "assets/variants/bank-01/candidate-01.webp")
+            for number in range(1, 7):
+                self.assertTrue((root / f"public/assets/variants/bank-01/candidate-{number:02d}.webp").is_file())
+            index = json.loads((root / "content/variants/index.json").read_text(encoding="utf-8"))
+            self.assertEqual(
+                index[-1],
+                {
+                    "id": "bank-01",
+                    "year": 2026,
+                    "label": "Банк ФИПИ · вариант 01",
+                    "file": "content/variants/bank-01.json",
+                },
+            )
+
+    def test_converted_photos_are_webp(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bank = make_bank(root)
+            make_content(root, [])
+            manifest = build_manifest(bank, root)
+
+            write_variants(bank, root, manifest, {image: "подпись" for image in manifest["captions"]})
+
+            with Image.open(root / "public/assets/variants/bank-01/candidate-01.webp") as image:
+                self.assertEqual(image.format, "WEBP")
+
+
+class CommandLineTest(unittest.TestCase):
+    def test_plan_then_build_writes_the_catalog(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bank = make_bank(root)
+            make_content(root, [])
+            manifest_path = root / "manifest.json"
+            captions_path = root / "captions.json"
+
+            code = main(
+                [
+                    "plan",
+                    "--bank",
+                    str(bank),
+                    "--root",
+                    str(root),
+                    "--manifest",
+                    str(manifest_path),
+                    "--sheets",
+                    str(root / "sheets"),
+                ]
+            )
+            self.assertEqual(code, 0)
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            captions_path.write_text(
+                json.dumps({image: "подпись" for image in manifest["captions"]}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+            code = main(
+                [
+                    "build",
+                    "--bank",
+                    str(bank),
+                    "--root",
+                    str(root),
+                    "--manifest",
+                    str(manifest_path),
+                    "--captions",
+                    str(captions_path),
+                ]
+            )
+
+            self.assertEqual(code, 0)
+            self.assertTrue((root / "content/variants/bank-01.json").is_file())
 
 
 if __name__ == "__main__":
