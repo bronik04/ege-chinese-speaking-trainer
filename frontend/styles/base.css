@@ -112,7 +112,7 @@ h1 em { color: var(--crimson); font-weight: inherit; }
 .variant-picker b { display: block; margin-top: 4px; color: var(--crimson); }
 .variant-picker select { width: 100%; border: 0; border-bottom: 1px solid var(--crimson); border-radius: 0; background: transparent; padding: 9px 28px 9px 4px; font-weight: 700; }
 .mode-card { padding: 30px; display: grid; grid-template-columns: auto 1fr auto; gap: 22px; align-items: center; }
-.exam-card { color: var(--cream); background: linear-gradient(135deg, var(--crimson-deep), var(--crimson)); border-bottom: 3px solid var(--gold); }
+.exam-card { color: var(--cream); background: var(--crimson-deep); border-bottom: 1px solid var(--gold); }
 .mode-card h2, .practice-heading h2, .recordings-panel h2, .checklist-panel h2 { margin: 0; font: 500 31px/1.1 var(--font-display); }
 .mode-card p:not(.eyebrow) { margin: 8px 0 0; color: var(--gold-pale); font-size: 13px; max-width: 400px; }
 .exam-card .eyebrow { color: var(--gold-pale); }
@@ -290,7 +290,7 @@ h1 em { color: var(--crimson); font-weight: inherit; }
 .student-group span, .student-groups-empty { color: var(--ink-soft); font-size: 12px; }
 .teacher-dialog { width: min(980px, 100%); }
 .teacher-dialog > h2 { font-size: clamp(34px, 5vw, 50px); }
-.teacher-materials-entry { margin: 22px 0 26px; padding: 20px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 24px; color: var(--cream); background: linear-gradient(135deg, var(--crimson-deep), var(--crimson)); border-bottom: 3px solid var(--gold); }
+.teacher-materials-entry { margin: 22px 0 26px; padding: 20px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 24px; color: var(--cream); background: var(--crimson-deep); border-bottom: 1px solid var(--gold); }
 .teacher-materials-entry .eyebrow { color: var(--gold-pale); }
 .teacher-materials-entry h3 { margin: 0; color: var(--gold-pale); font: 600 30px/1 var(--font-display); }
 .teacher-materials-entry p:last-child { margin: 7px 0 0; color: var(--cream-deep); font-size: 12px; }
@@ -355,7 +355,7 @@ h1 em { color: var(--crimson); font-weight: inherit; }
 .review-task label span small { color: var(--ink-soft); }
 .review-comment { margin: 14px 0; }
 body.modal-open { overflow: hidden; }
-.site-footer { position: relative; z-index: 1; margin-top: 45px; color: var(--cream); background: var(--crimson-deep); border-top: 3px solid var(--gold); }
+.site-footer { position: relative; z-index: 1; margin-top: 45px; color: var(--cream); background: var(--crimson-deep); border-top: 1px solid var(--gold); }
 .site-footer-inner { width: min(1440px, calc(100% - 48px)); margin-inline: auto; padding: 30px 4vw; display: grid; grid-template-columns: 1.2fr .8fr .7fr; gap: 35px; align-items: center; }
 .footer-brand { display: flex; align-items: center; gap: 14px; }
 .footer-brand img { box-shadow: 0 0 0 6px rgba(232, 211, 138, .08); }

@@ -10,7 +10,7 @@
 .my-material:hover, .my-material.active { border-color: var(--crimson); background: var(--cream); }
 .my-material b, .my-material small { display: block; }
 .my-material small { margin-top: 3px; color: var(--ink-soft); }
-.editor-heading { min-height: 150px; display: flex; justify-content: space-between; align-items: center; gap: 18px; padding: 28px; color: var(--cream); background: linear-gradient(135deg, var(--crimson-deep), var(--crimson)); border-bottom: 3px solid var(--gold); }
+.editor-heading { min-height: 150px; display: flex; justify-content: space-between; align-items: center; gap: 18px; padding: 28px; color: var(--cream); background: var(--crimson-deep); border-bottom: 1px solid var(--gold); }
 .editor-heading h1 { margin: 0; font-size: clamp(40px, 5vw, 62px); }
 .editor-heading .eyebrow, .draft-badge { color: var(--gold-pale); }
 .draft-badge { padding: 7px 10px; border: 1px solid rgba(232,211,138,.45); font: 800 10px/1 var(--font-utility); text-transform: uppercase; letter-spacing: .09em; }

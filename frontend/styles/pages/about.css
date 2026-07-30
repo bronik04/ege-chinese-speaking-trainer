@@ -23,7 +23,7 @@
 .achievement-grid p { margin: 0; color: var(--ink-soft); font-size: 13px; }
 .achievement-grid .achievement-placeholder { background: var(--cream); }
 .achievement-placeholder h3, .achievement-placeholder p { opacity: .72; }
-.about-method { margin-top: 70px; padding: 40px; display: grid; grid-template-columns: .9fr 1.1fr; gap: clamp(35px, 7vw, 100px); color: var(--cream); background: linear-gradient(135deg, var(--crimson-deep), var(--crimson)); border-bottom: 4px solid var(--gold); }
+.about-method { margin-top: 70px; padding: 40px; display: grid; grid-template-columns: .9fr 1.1fr; gap: clamp(35px, 7vw, 100px); color: var(--cream); background: var(--crimson-deep); border-bottom: 1px solid var(--gold); }
 .about-method .eyebrow, .about-method h2, .about-method h2 em { color: var(--gold-pale); }
 .method-list { display: grid; gap: 15px; }
 .method-list p { margin: 0; padding-bottom: 15px; color: var(--cream-deep); border-bottom: 1px solid rgba(232, 211, 138, .28); }
