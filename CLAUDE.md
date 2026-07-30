@@ -4,7 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Документация проекта и интерфейс — на русском языке. Обязательные правила для агентов находятся в
 [AGENTS.md](AGENTS.md), эксплуатация — в [DEVELOPMENT.md](DEVELOPMENT.md), архитектура —
-в [docs/architecture.md](docs/architecture.md), security-чувствительные области — в [SECURITY.md](SECURITY.md).
+в [docs/architecture.md](docs/architecture.md), security-чувствительные области — в [SECURITY.md](SECURITY.md),
+выбор модели/effort и релевантные плагины — в [docs/agent-guidelines.md](docs/agent-guidelines.md).
 
 ## Команды
 
