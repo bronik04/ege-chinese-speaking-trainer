@@ -35,7 +35,6 @@ class FastApiSmokeTest(unittest.TestCase):
     def test_health_static_and_private_data_boundary(self):
         health = self.client.get("/api/health").json()
         self.assertTrue(health["ok"])
-        self.assertEqual(health["database"], "sqlite")
         self.assertEqual(set(health["errors"]), {"responses4xx", "responses5xx", "lastFailureAt"})
         self.assertEqual(self.client.get("/").status_code, 200)
         self.assertEqual(self.client.get("/variants.html").status_code, 200)
@@ -57,7 +56,6 @@ class FastApiSmokeTest(unittest.TestCase):
             response = self.client.get("/api/health")
         self.assertEqual(response.status_code, 503)
         self.assertFalse(response.json()["ok"])
-        self.assertEqual(response.json()["database"], "sqlite")
 
     def test_mutation_uses_existing_api_contract(self):
         response = self.client.post(

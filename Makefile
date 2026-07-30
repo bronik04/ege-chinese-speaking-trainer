@@ -57,8 +57,7 @@ docker-check:
 	created_env=0; \
 	if [ ! -f .env ]; then cp .env.example .env; created_env=1; fi; \
 	trap 'if [ "$$created_env" = 1 ]; then rm -f .env; fi' EXIT; \
-	docker compose -f compose.yml config --quiet; \
-	docker compose -f compose.yml -f compose.scale.yml config --quiet
+	docker compose -f compose.yml config --quiet
 
 docker-build:
 	docker build -t chinese-speaking-trainer:test .

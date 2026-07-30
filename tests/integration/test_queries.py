@@ -33,6 +33,15 @@ class DatabaseTest(unittest.TestCase):
             with self.assertRaises(sqlite3.ProgrammingError):
                 connection.execute("SELECT 1")
 
+    def test_connection_uses_write_ahead_log(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            database_path = root / "trainer.db"
+            initialize(root, root / "audio", database_path)
+            with connect(database_path) as database:
+                mode = database.execute("PRAGMA journal_mode").fetchone()[0]
+            self.assertEqual(mode.lower(), "wal")
+
 
 class ProgressParsingTest(unittest.TestCase):
     def test_safe_progress_rejects_invalid_documents(self):

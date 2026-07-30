@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import sqlite3
 import tempfile
 import unittest
@@ -108,69 +107,6 @@ class SqliteMigrationTest(unittest.TestCase):
             before = sqlite_schema(path)
             upgrade_sqlite_database(path)
             self.assertEqual(sqlite_schema(path), before)
-
-
-@unittest.skipUnless(os.environ.get("TEST_DATABASE_URL"), "TEST_DATABASE_URL is required")
-class PostgresMigrationTest(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        import psycopg
-
-        cls.url = os.environ["TEST_DATABASE_URL"]
-        with psycopg.connect(cls.url, autocommit=True) as database:
-            database.execute("DROP SCHEMA public CASCADE")
-            database.execute("CREATE SCHEMA public")
-
-    def test_postgres_upgrade_is_idempotent_and_reaches_head(self):
-        from trainer.infrastructure.database.migrations import current_revision, head_revision, upgrade_database
-
-        upgrade_database(self.url)
-        upgrade_database(self.url)
-        self.assertEqual(current_revision(self.url), head_revision())
-
-    def test_postgres_and_sqlite_have_matching_tables_columns_and_indexes(self):
-        import psycopg
-
-        from trainer.infrastructure.database.migrations import upgrade_database
-
-        upgrade_database(self.url)
-        with tempfile.TemporaryDirectory() as directory:
-            sqlite_path = Path(directory) / "trainer.sqlite3"
-            upgrade_sqlite_database(sqlite_path)
-            with closing(sqlite3.connect(sqlite_path)) as database:
-                sqlite_columns = {
-                    (table, row[1])
-                    for table in EXPECTED_TABLES
-                    for row in database.execute(f"PRAGMA table_info({table})")
-                }
-                sqlite_indexes = sqlite_schema(sqlite_path)[1]
-
-        with psycopg.connect(self.url) as database:
-            postgres_tables = {
-                row[0]
-                for row in database.execute(
-                    "SELECT table_name FROM information_schema.tables WHERE table_schema='public'"
-                )
-                if row[0] not in {"alembic_version", "schema_migrations"}
-            }
-            postgres_columns = set(
-                database.execute(
-                    "SELECT table_name,column_name FROM information_schema.columns "
-                    "WHERE table_schema='public' AND table_name NOT IN ('alembic_version','schema_migrations')"
-                ).fetchall()
-            )
-            postgres_indexes = {
-                row[0]
-                for row in database.execute(
-                    "SELECT indexname FROM pg_indexes WHERE schemaname='public' "
-                    "AND tablename NOT IN ('alembic_version','schema_migrations') AND indexname NOT LIKE '%_pkey'"
-                )
-                if not row[0].endswith("_key")
-            }
-
-        self.assertEqual(postgres_tables, EXPECTED_TABLES)
-        self.assertEqual(postgres_columns, sqlite_columns)
-        self.assertEqual(postgres_indexes, sqlite_indexes)
 
 
 if __name__ == "__main__":

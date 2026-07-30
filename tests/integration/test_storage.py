@@ -5,7 +5,6 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from trainer.infrastructure.database.core import connect, initialize
-from trainer.infrastructure.database.postgres import IDENTITY_TABLES, POSTGRES_SCHEMA, Connection
 from trainer.infrastructure.storage import LocalAudioStorage, S3AudioStorage, storage_from_env
 from trainer.services.transcription import claim, complete, enqueue, fail
 
@@ -143,22 +142,6 @@ class TranscriptionQueueTest(unittest.TestCase):
                 "SELECT status FROM transcription_jobs WHERE recording_id = ?", (self.recording,)
             ).fetchone()["status"]
         self.assertEqual(status, "failed")
-
-
-class PostgresCompatibilityTest(unittest.TestCase):
-    def test_assignment_assets_return_generated_identifiers(self):
-        self.assertIn("assignment_material_assets", IDENTITY_TABLES)
-
-    def test_placeholder_and_ignore_translation(self):
-        self.assertEqual(Connection._translate("SELECT * FROM users WHERE id = ?"), "SELECT * FROM users WHERE id = %s")
-        translated = Connection._translate("INSERT OR IGNORE INTO group_members VALUES (?, ?, ?)")
-        self.assertIn("ON CONFLICT DO NOTHING", translated)
-        self.assertIn("%s", translated)
-
-    def test_schema_contains_scaling_tables(self):
-        self.assertIn("CREATE TABLE IF NOT EXISTS transcription_jobs", POSTGRES_SCHEMA)
-        self.assertIn("CREATE TABLE IF NOT EXISTS recordings", POSTGRES_SCHEMA)
-        self.assertIn("CREATE TABLE IF NOT EXISTS materials", POSTGRES_SCHEMA)
 
 
 if __name__ == "__main__":

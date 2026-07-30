@@ -16,7 +16,6 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from trainer.api.errors import default_error_code, error_payload
 from trainer.api.routes import accounts, groups, materials, recordings, work
 from trainer.api.runtime import MAX_BODY, ROOT, connect, init_database
-from trainer.infrastructure.database.core import close_connections, engine_name
 from trainer.infrastructure.observability import (
     configure_logging,
     current_request_id,
@@ -33,10 +32,7 @@ logger = logging.getLogger("trainer.http")
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_database()
-    try:
-        yield
-    finally:
-        close_connections()
+    yield
 
 
 app = FastAPI(title="Тренажёр устной части ЕГЭ по китайскому", docs_url=None, redoc_url=None, lifespan=lifespan)
@@ -126,10 +122,8 @@ async def health():
     try:
         await run_in_threadpool(_check_database)
     except Exception:
-        return JSONResponse(
-            {"ok": False, "database": engine_name(), "errors": error_monitor.snapshot()}, status_code=503
-        )
-    return {"ok": True, "database": engine_name(), "errors": error_monitor.snapshot()}
+        return JSONResponse({"ok": False, "errors": error_monitor.snapshot()}, status_code=503)
+    return {"ok": True, "errors": error_monitor.snapshot()}
 
 
 def _check_database() -> None:

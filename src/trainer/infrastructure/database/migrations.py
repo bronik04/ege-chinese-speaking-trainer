@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import sqlite3
 from contextlib import closing
 from pathlib import Path
@@ -9,56 +8,23 @@ from alembic import command
 from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.script import ScriptDirectory
-from sqlalchemy import create_engine, text
-from sqlalchemy.exc import OperationalError
+from sqlalchemy import create_engine
 
 from trainer.config import PROJECT_ROOT
 from trainer.infrastructure.database.sqlite_migrations import MIGRATIONS, apply_migrations
 
 BASELINE_REVISION = "20260711_03"
 BASELINE_VERSIONS = (1, 2, 3, 4, 5, 6, 7)
-# Ключ advisory-блокировки, сериализующей миграции между экземплярами приложения.
-# Любой другой процесс, мигрирующий эту базу, должен брать тот же ключ.
-MIGRATION_LOCK_KEY = 2026071204
-# Ждём блокировку ограниченное время: иначе зависшая миграция предыдущего
-# развёртывания молча блокирует старт всех новых контейнеров, а HEALTHCHECK
-# и restart: unless-stopped уводят их в цикл перезапусков без диагностики.
-MIGRATION_LOCK_TIMEOUT_MS = int(os.environ.get("TRAINER_MIGRATION_LOCK_TIMEOUT_MS", "30000"))
-
-
-def normalize_database_url(database_url: str) -> str:
-    if database_url.startswith("postgresql://"):
-        return database_url.replace("postgresql://", "postgresql+psycopg://", 1)
-    return database_url
 
 
 def _config(database_url: str) -> Config:
     config = Config(str(PROJECT_ROOT / "alembic.ini"))
-    config.set_main_option("sqlalchemy.url", normalize_database_url(database_url).replace("%", "%%"))
+    config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
     return config
 
 
 def upgrade_database(database_url: str) -> None:
-    normalized = normalize_database_url(database_url)
-    if not normalized.startswith("postgresql+"):
-        command.upgrade(_config(database_url), "head")
-        return
-    engine = create_engine(normalized)
-    try:
-        with engine.begin() as connection:
-            connection.execute(text(f"SET LOCAL lock_timeout = '{MIGRATION_LOCK_TIMEOUT_MS}ms'"))
-            try:
-                connection.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": MIGRATION_LOCK_KEY})
-            except OperationalError as error:
-                raise RuntimeError(
-                    "Не удалось получить блокировку миграций за "
-                    f"{MIGRATION_LOCK_TIMEOUT_MS} мс: другой процесс всё ещё мигрирует эту базу"
-                ) from error
-            config = _config(database_url)
-            config.attributes["connection"] = connection
-            command.upgrade(config, "head")
-    finally:
-        engine.dispose()
+    command.upgrade(_config(database_url), "head")
 
 
 def head_revision() -> str:
@@ -66,7 +32,7 @@ def head_revision() -> str:
 
 
 def current_revision(database_url: str) -> str | None:
-    engine = create_engine(normalize_database_url(database_url))
+    engine = create_engine(database_url)
     try:
         with engine.connect() as connection:
             return MigrationContext.configure(connection).get_current_revision()
