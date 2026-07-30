@@ -3,22 +3,23 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Тренажёр устной части ЕГЭ по китайскому языку: три задания с официальными таймингами, запись ответа и разбор результата.">
   <meta name="theme-color" content="#5C0E0E">
   <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
   <title>口试 · Тренажёр устной части ЕГЭ по китайскому</title>
+  <link rel="preload" href="/assets/fonts/cormorant-garamond-cyrillic-400-600-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/assets/fonts/pt-serif-cyrillic-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/styles/fonts.css">
   <link rel="stylesheet" href="/styles/base.css">
 </head>
 <body>
-  <div class="page-motif" aria-hidden="true">语</div>
+  <div class="page-motif" aria-hidden="true" lang="zh">语</div>
   <header class="site-header">
     <div class="header-primary">
-      <a class="brand" href="#" aria-label="На главную"><img class="brand-logo" src="/assets/logo.svg" alt="" width="48" height="48"><span><b>口试</b><small>устная часть · китайский язык</small></span></a>
+      <a class="brand" href="#" aria-label="На главную"><img class="brand-logo" src="/assets/logo.svg" alt="" width="48" height="48"><span><b lang="zh">口试</b><small>устная часть · китайский язык</small></span></a>
     </div>
     <div class="header-actions">
-      <a class="header-link" id="referenceLink" href="reference.html">Справочник</a>
-      <a class="header-link" href="about.html">Обо мне</a>
-      <a class="header-link" href="variants.html">Все варианты</a>
-      <button class="sound-toggle" id="soundToggle" type="button" aria-pressed="true" aria-label="Выключить звук"><svg class="sound-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z"></path><path class="sound-waves" d="M16 8c1.4 1.1 1.4 6.9 0 8M19 5c3.2 2.8 3.2 11.2 0 14"></path></svg><span class="sound-track" aria-hidden="true"><span></span></span></button>
+      <nav class="site-nav" aria-label="Разделы сайта"><a class="header-link" id="referenceLink" href="reference.html">Справочник</a><a class="header-link" href="variants.html">Все варианты</a><a class="header-link" href="about.html">Обо мне</a></nav><button class="sound-toggle" id="soundToggle" type="button" aria-pressed="true" aria-label="Выключить звук"><svg class="sound-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z"></path><path class="sound-waves" d="M16 8c1.4 1.1 1.4 6.9 0 8M19 5c3.2 2.8 3.2 11.2 0 14"></path></svg><span class="sound-track" aria-hidden="true"><span></span></span></button>
       <button class="account-btn" id="authButton" type="button"><span class="account-dot"></span><span id="authButtonText">Войти</span></button>
     </div>
   </header>
@@ -31,8 +32,8 @@
         <p class="hero-text">Тренируйте устную речь в формате ЕГЭ: от подготовки и записи ответа до разбора результата и работы с преподавателем.</p>
         <div class="facts" aria-label="Формат экзамена">
           <span><b>3</b> задания</span>
-          <span><b id="totalMinutes">14</b> минут</span>
-          <span><b id="variantCount">7</b> вариантов</span>
+          <span><b id="totalMinutes">14</b> <span id="totalMinutesLabel">минут</span></span>
+          <span><b id="variantCount">7</b> <span id="variantCountLabel">вариантов</span></span>
         </div>
       </div>
 
@@ -42,7 +43,7 @@
           <select id="variantSelect" aria-label="Выбор варианта"></select>
         </label>
         <div class="mode-card exam-card">
-          <span class="mode-number">完整</span>
+          <span class="mode-number" lang="zh">完整</span>
           <div>
             <p class="eyebrow">Полная симуляция</p>
             <h2>Экзамен</h2>
@@ -83,7 +84,7 @@
         <article class="task-paper locked" id="taskPaper">
           <div class="paper-topline"><span id="taskBadge">Задание 1</span><span id="phaseCaption">Подготовка</span></div>
           <div class="task-reveal" id="taskContent"></div>
-          <div class="task-lock" id="taskLock"><span>封</span><b>Материал закрыт</b><small>Задание откроется вместе с таймером подготовки</small></div>
+          <div class="task-lock" id="taskLock"><span lang="zh">封</span><b>Материал закрыт</b><small>Задание откроется вместе с таймером подготовки</small></div>
         </article>
 
         <aside class="timer-panel">
@@ -102,7 +103,7 @@
     <section id="resultScreen" class="screen result-screen hidden">
       <div class="result-heading">
         <p class="eyebrow">Тренировка завершена</p>
-        <h1>答案都在这里。</h1>
+        <h1 lang="zh">答案都在这里。</h1>
         <p id="submissionStatus">Прослушайте записи и отметьте, что получилось.</p>
       </div>
       <div class="result-layout">
@@ -124,11 +125,11 @@
 
   <footer class="site-footer">
     <div class="site-footer-inner">
-      <div class="footer-brand"><img src="/assets/logo.svg" alt="" width="48" height="48"><div><b>口试</b><span>Подготовка к устной части ЕГЭ по китайскому языку</span></div></div>
+      <div class="footer-brand"><img src="/assets/logo.svg" alt="" width="48" height="48"><div><b lang="zh">口试</b><span>Подготовка к устной части ЕГЭ по китайскому языку</span></div></div>
       <div class="footer-about"><p class="eyebrow">Разработка и методика</p><b>Николай Бровкин</b><span>Преподаватель китайского языка</span></div>
       <div class="footer-links"><a href="mailto:bronik04@gmail.com">bronik04@gmail.com</a><a href="https://github.com/bronik04" target="_blank" rel="noreferrer">GitHub · bronik04</a></div>
     </div>
-    <p class="footer-bottom">© <span data-current-year></span> 口试 · Учебный проект</p>
+    <p class="footer-bottom">© <span data-current-year></span> <span lang="zh">口试</span> · Учебный проект</p>
   </footer>
 
   <div class="modal-backdrop hidden" id="authModal">
@@ -174,7 +175,7 @@
           <button class="secondary-btn" id="sendVerificationBtn" type="button">Отправить письмо</button>
         </div>
         <div id="studentAccountTools">
-          <div class="account-stat"><b id="accountRuns">0</b><span>завершённых тренировок</span></div>
+          <div class="account-stat"><b id="accountRuns">0</b><span id="accountRunsLabel">завершённых тренировок</span></div>
           <section class="account-progress-card"><div><p class="mini-heading">Ваш прогресс</p><b id="progressSummary">Тренировок пока нет</b><small id="progressSyncStatus">Сохраняется в этом браузере</small></div><button class="text-btn" id="openProgressBtn" type="button">История →</button></section>
           <form class="join-group-form" id="joinGroupForm">
             <label>Код группы<input id="joinGroupCode" type="text" minlength="6" maxlength="6" placeholder="ABC123" required></label>

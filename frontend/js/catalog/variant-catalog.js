@@ -1,4 +1,5 @@
 import { escapeHtml } from "../shared/progress.js";
+import { pluralize } from "../shared/plural.js";
 
 export function variantKind(id) {
   if (id.startsWith("open-")) return "Официальный вариант";
@@ -43,7 +44,7 @@ export function catalogMarkup(variants) {
       <div class="variant-card-media"><img src="${image}" alt="" loading="lazy"><span class="variant-year">${escapeHtml(variant.year)}</span></div>
       <div class="variant-card-copy"><p class="variant-kind">${kindLabel}</p><h3>${escapeHtml(variant.label)}</h3>
       <p class="variant-source">${escapeHtml(variant.source)}</p><ol class="variant-tasks">${tasks}</ol>
-      <footer class="variant-card-footer"><span class="variant-duration">≈ ${escapeHtml(variant.totalMinutes)} минут</span><a class="variant-open" href="${href}">Открыть →</a></footer></div>
+      <footer class="variant-card-footer"><span class="variant-duration">≈ ${escapeHtml(pluralize(variant.totalMinutes, "минута", "минуты", "минут"))}</span><a class="variant-open" href="${href}">Открыть →</a></footer></div>
     </article>`;
   }).join("");
 }

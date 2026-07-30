@@ -61,14 +61,40 @@ export function createAccountAuthController(ctx) {
     $("authMessage").textContent = "";
   }
 
+  // Страница под открытым диалогом становится inert: клавиатура и экранный диктор
+  // не уходят за его пределы. Фокус возвращается на элемент, который диалог открыл.
+  const pageRegions = () => [document.querySelector(".site-header"), document.querySelector(".app-shell"), document.querySelector(".site-footer")].filter(Boolean);
+  let focusBeforeModal = null;
+
+  function anyModalOpen() {
+    return [$("authModal"), $("progressModal"), $("teacherModal")].some(modal => !modal.classList.contains("hidden"));
+  }
+
   function openModal(modal) {
+    if (!anyModalOpen()) focusBeforeModal = document.activeElement;
     modal.classList.remove("hidden");
     document.body.classList.add("modal-open");
+    pageRegions().forEach(region => { region.inert = true; });
+    const dialog = modal.querySelector("[role='dialog']");
+    const focusable = [...dialog.querySelectorAll("input:not([type='hidden']), select, textarea, button, a[href]")]
+      .filter(element => element.offsetParent !== null);
+    // Первое поле полезнее крестика: диалог сразу готов к вводу.
+    (focusable.find(element => element.matches("input, select, textarea")) || focusable[0])?.focus();
   }
 
   function closeModal(modal) {
+    // Escape закрывает все три диалога подряд, поэтому повторный вызов на уже
+    // закрытом диалоге не должен второй раз трогать фокус.
+    if (modal.classList.contains("hidden")) return;
     modal.classList.add("hidden");
-    if ($("authModal").classList.contains("hidden") && $("progressModal").classList.contains("hidden") && $("teacherModal").classList.contains("hidden")) document.body.classList.remove("modal-open");
+    if (anyModalOpen()) return;
+    document.body.classList.remove("modal-open");
+    pageRegions().forEach(region => { region.inert = false; });
+    // Диалог мог открыться и без кнопки — например по ?account=1. Тогда фокус
+    // возвращать некуда, но и оставлять его в скрытом диалоге нельзя.
+    if (focusBeforeModal && focusBeforeModal !== document.body) focusBeforeModal.focus();
+    else document.activeElement?.blur?.();
+    focusBeforeModal = null;
   }
 
   async function submitAuth(event) {

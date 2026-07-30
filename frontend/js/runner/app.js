@@ -4,6 +4,7 @@ import {
   escapeHtml, formatHistoryDate, loadLocalProgress,
 } from "../shared/progress.js";
 import { shortTime } from "./task-view.js";
+import { plural, pluralize } from "../shared/plural.js";
 import { createAccountController } from "../account/account-controller.js";
 import { enhanceProjectSelects } from "../shared/project-select.js";
 import "../shared/site-shell.js";
@@ -71,11 +72,14 @@ function renderProgress() {
   const completed = progress.runs.filter(run => run.status === "completed");
   const tasks = completed.reduce((sum, run) => sum + (run.completedTasks?.length || 0), 0);
   const latest = progress.runs[0];
-  $("progressSummary").textContent = completed.length ? `${completed.length} тренировок · ${tasks} заданий` : "Тренировок пока нет";
+  $("progressSummary").textContent = completed.length
+    ? `${pluralize(completed.length, "тренировка", "тренировки", "тренировок")} · ${pluralize(tasks, "задание", "задания", "заданий")}`
+    : "Тренировок пока нет";
   $("progressSyncStatus").textContent = account?.user
     ? `Синхронизировано · ${account.user.email}`
     : latest ? `Последняя: ${formatHistoryDate(latest.completedAt || latest.startedAt)}` : "Сохраняется в этом браузере";
   $("accountRuns").textContent = completed.length;
+  $("accountRunsLabel").textContent = plural(completed.length, "завершённая тренировка", "завершённые тренировки", "завершённых тренировок");
   renderHistory();
 }
 
@@ -143,6 +147,7 @@ async function initVariants() {
     const payload = await response.json();
     variantIndex = payload.materials;
     $("variantCount").textContent = variantIndex.length;
+    $("variantCountLabel").textContent = plural(variantIndex.length, "вариант", "варианта", "вариантов");
     $("variantSelect").innerHTML = variantIndex.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.label)}${item.kind === "task" ? ` · задание ${item.taskNumber}` : ""}</option>`).join("");
     const requestedVariant = new URLSearchParams(window.location.search).get("variant");
     const preferredVariant = variantIndex.some(item => item.id === requestedVariant)
@@ -187,6 +192,7 @@ async function loadVariant(id, snapshot = null) {
 function updateVariantUI() {
   $("variantSource").textContent = variant.source;
   $("totalMinutes").textContent = variant.totalMinutes;
+  $("totalMinutesLabel").textContent = plural(variant.totalMinutes, "минута", "минуты", "минут");
   if (taskData(1)) $("task1Timing").textContent = `${shortTime(taskData(1).prepSeconds)} + 5 × ${shortTime(taskData(1).answerSeconds)}`;
   if (taskData(2)) $("task2Timing").textContent = `${shortTime(taskData(2).prepSeconds)} + до ${shortTime(taskData(2).answerSeconds)}`;
   if (taskData(3)) {

@@ -1,4 +1,5 @@
 import { catalogMarkup, filterVariants, yearFiltersMarkup } from "./variant-catalog.js";
+import { plural, pluralize } from "../shared/plural.js";
 import "../shared/site-shell.js";
 
 const $ = (id) => document.getElementById(id);
@@ -9,8 +10,8 @@ function render() {
   const filtered = filterVariants(variants, activeYear, $("variantSearch").value);
   $("variantCatalog").innerHTML = catalogMarkup(filtered);
   $("catalogStatus").textContent = filtered.length === variants.length
-    ? `Доступно вариантов: ${filtered.length}`
-    : `Найдено вариантов: ${filtered.length} из ${variants.length}`;
+    ? `Доступно ${pluralize(filtered.length, "вариант", "варианта", "вариантов")}`
+    : `Найдено ${filtered.length} из ${pluralize(variants.length, "варианта", "вариантов", "вариантов")}`;
   const years = [...new Set(variants.map(item => item.year))].sort((a, b) => b - a);
   $("yearFilters").innerHTML = yearFiltersMarkup(years, activeYear);
 }
@@ -28,7 +29,9 @@ async function loadVariants() {
     }));
     const years = new Set(variants.map(item => item.year));
     $("catalogCount").textContent = variants.length;
+    $("catalogCountLabel").textContent = plural(variants.length, "вариант", "варианта", "вариантов");
     $("catalogYears").textContent = years.size;
+    $("catalogYearsLabel").textContent = plural(years.size, "учебный год", "учебных года", "учебных лет");
     render();
   } catch (error) {
     $("catalogStatus").textContent = "Не удалось загрузить каталог. Проверьте подключение к серверу.";

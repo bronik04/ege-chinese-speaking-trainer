@@ -1,4 +1,5 @@
 import { escapeHtml } from "../shared/progress.js";
+import { pluralize } from "../shared/plural.js";
 import "../shared/site-shell.js";
 
 const $ = id => document.getElementById(id);
@@ -81,7 +82,9 @@ function render() {
   const filtered = filteredTask(task, query);
   $("referenceContent").innerHTML = taskMarkup(filtered, query);
   const visibleCount = filtered.groups.reduce((sum, group) => sum + group.items.length, 0);
-  $("referenceStatus").textContent = query ? `Найдено фраз: ${visibleCount} · примеров: ${filtered.examples.length}` : `${task.groups.length} разделов · ${visibleCount} фраз · ${task.examples.length} примеров`;
+  $("referenceStatus").textContent = query
+    ? `Найдено ${pluralize(visibleCount, "фраза", "фразы", "фраз")} и ${pluralize(filtered.examples.length, "пример", "примера", "примеров")}`
+    : `${pluralize(task.groups.length, "раздел", "раздела", "разделов")} · ${pluralize(visibleCount, "фраза", "фразы", "фраз")} · ${pluralize(task.examples.length, "пример", "примера", "примеров")}`;
 }
 
 function toast(message) {

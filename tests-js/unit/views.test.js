@@ -7,6 +7,7 @@ import { formatTime, stepsMarkup, taskMarkup } from "../../frontend/js/runner/ta
 import { auditMarkup } from "../../frontend/js/account/account-security.js";
 import { api } from "../../frontend/js/shared/api.js";
 import { catalogMarkup, filterVariants, variantKind } from "../../frontend/js/catalog/variant-catalog.js";
+import { plural, pluralize } from "../../frontend/js/shared/plural.js";
 
 test("escapeHtml protects every HTML-sensitive character", () => {
   assert.equal(escapeHtml(`<script data-x="'">&`), "&lt;script data-x=&quot;&#39;&quot;&gt;&amp;");
@@ -157,4 +158,27 @@ test("variant catalog filters and escapes exam metadata", () => {
   const html = catalogMarkup([variants[0]]);
   assert.doesNotMatch(html, /<script>|<Demo>/);
   assert.match(html, /&lt;script&gt;|&lt;Demo&gt;/);
+});
+
+test("plural picks the Russian numeral form, including the 11-14 exception", () => {
+  const forms = ["вариант", "варианта", "вариантов"];
+  assert.equal(plural(1, ...forms), "вариант");
+  assert.equal(plural(2, ...forms), "варианта");
+  assert.equal(plural(5, ...forms), "вариантов");
+  assert.equal(plural(0, ...forms), "вариантов");
+  assert.equal(plural(11, ...forms), "вариантов");
+  assert.equal(plural(12, ...forms), "вариантов");
+  assert.equal(plural(14, ...forms), "вариантов");
+  assert.equal(plural(21, ...forms), "вариант");
+  assert.equal(plural(22, ...forms), "варианта");
+  assert.equal(plural(111, ...forms), "вариантов");
+  assert.equal(plural(121, ...forms), "вариант");
+  assert.equal(pluralize(3, ...forms), "3 варианта");
+});
+
+test("catalog card shows a correctly declined duration", () => {
+  const card = (totalMinutes) => catalogMarkup([{ id: "open-2026", year: 2026, label: "Open", source: "ФИПИ", totalMinutes, tasks: {} }]);
+  assert.match(card(1), /≈ 1 минута/);
+  assert.match(card(3), /≈ 3 минуты/);
+  assert.match(card(14), /≈ 14 минут/);
 });

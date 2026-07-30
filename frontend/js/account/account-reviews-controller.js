@@ -1,6 +1,7 @@
 import { api } from "../shared/api.js";
 import { teacherSubmissionsMarkup } from "./account-view.js";
 import { collectReviewScores } from "../runner/review.js";
+import { pluralize } from "../shared/plural.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -9,7 +10,7 @@ export function createAccountReviewsController(ctx) {
 
   function reset() {
     $("teacherSubmissions").innerHTML = "";
-    $("reviewQueueCount").textContent = "0 на проверке";
+    $("reviewQueueCount").textContent = "Ни одной работы на проверке";
   }
 
   async function loadTeacherSubmissions() {
@@ -22,7 +23,10 @@ export function createAccountReviewsController(ctx) {
       });
       const payload = await api(`/api/teacher/submissions?${params}`);
       $("teacherSubmissions").innerHTML = teacherSubmissionsMarkup(payload.submissions);
-      $("reviewQueueCount").textContent = `${payload.submissions.filter(item => item.status === "submitted").length} на проверке`;
+      const queue = payload.submissions.filter(item => item.status === "submitted").length;
+      $("reviewQueueCount").textContent = queue
+        ? `${pluralize(queue, "работа", "работы", "работ")} на проверке`
+        : "Ни одной работы на проверке";
       $("exportCsvBtn").href = `/api/teacher/export.csv?${params}`;
       $("exportPdfBtn").href = `/api/teacher/export.pdf?${params}`;
     } catch (error) {
