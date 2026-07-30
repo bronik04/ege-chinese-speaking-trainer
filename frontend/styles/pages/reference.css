@@ -1,6 +1,5 @@
 .reference-shell { padding: 48px 4vw 85px; }
 .reference-hero { display: grid; grid-template-columns: .85fr 1.15fr; gap: clamp(40px, 9vw, 140px); align-items: end; margin-bottom: 42px; }
-.reference-hero h1 { color: var(--crimson-deep); }
 .reference-intro { color: var(--ink-soft); font-size: 18px; }
 .reference-intro > p { max-width: 720px; margin: 0 0 24px; }
 .reference-search { display: block; color: var(--crimson); font: 800 10px/1.4 var(--font-utility); text-transform: uppercase; letter-spacing: .1em; }

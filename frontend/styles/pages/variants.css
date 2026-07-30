@@ -1,6 +1,5 @@
 .catalog-shell { padding: 48px 4vw 80px; }
 .catalog-hero { display: grid; grid-template-columns: 1fr .9fr; gap: clamp(40px, 8vw, 130px); align-items: end; margin-bottom: 45px; }
-.catalog-hero h1 { color: var(--crimson-deep); }
 .catalog-intro { padding-bottom: 7px; color: var(--ink-soft); font-size: 18px; }
 .catalog-intro > p { margin: 0 0 25px; }
 .catalog-facts { display: flex; gap: 26px; padding-top: 17px; border-top: 1px solid var(--line); font-size: 12px; }

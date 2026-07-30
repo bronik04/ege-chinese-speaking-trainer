@@ -9,6 +9,8 @@
 .about-portrait img { width: 100%; height: auto; display: block; border: 1px solid var(--line); border-top: 5px solid var(--crimson); background: var(--cream); }
 .about-portrait figcaption { padding: 9px 0; color: var(--ink-soft); font-size: 11px; }
 .about-intro h1 { color: var(--ink); }
+/* Имя остаётся главным: иероглифы здесь надзаголовок, а не заголовок. */
+.about-kicker { margin: 0 0 14px; color: var(--crimson); font: 900 clamp(30px, 3vw, 44px)/1 var(--font-cjk); letter-spacing: .06em; }
 .about-intro > p:not(.eyebrow) { max-width: 680px; color: var(--ink-soft); font-size: 18px; }
 .about-intro .about-role { margin: 28px 0 12px; color: var(--crimson-deep); font-weight: 700; }
 .draft-note { display: inline-block; margin-top: 18px; padding: 10px 13px; color: var(--crimson-deep); background: var(--gold-pale); font: 700 10px/1.45 var(--font-utility); text-transform: uppercase; letter-spacing: .06em; }

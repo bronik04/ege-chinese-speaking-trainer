@@ -88,7 +88,21 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator { cursor: pointe
 h1, h2, p { text-wrap: pretty; }
 h1 { margin: 0; font: 500 clamp(48px, 5.8vw, 86px)/.96 var(--font-display); letter-spacing: -.03em; }
 h1 em { color: var(--crimson); font-weight: inherit; }
-.hero-chinese { color: var(--ink); font-family: var(--font-cjk); font-size: .76em; letter-spacing: .04em; }
+
+/* Заголовок раздела: сначала предмет изучения по-китайски, затем русское название.
+   Иероглифы — главный голос страницы, кириллица поясняет. */
+.page-title { margin: 0; display: grid; justify-items: start; gap: 12px; letter-spacing: normal; }
+.page-title-zh { color: var(--crimson); font: 900 clamp(54px, 6.6vw, 104px)/1 var(--font-cjk); letter-spacing: .04em; }
+.page-title-ru { color: var(--ink); font: italic 500 clamp(24px, 2.3vw, 34px)/1.12 var(--font-display); }
+
+/* Главная набрана как 对联 — вертикальной строкой: это родная форма набора
+   для предмета, а не украшение. На узких экранах строка ложится горизонтально. */
+.hero-couplet { margin: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: clamp(22px, 3vw, 44px); align-items: center; letter-spacing: normal; }
+.hero-chinese { color: var(--crimson); font: 900 clamp(48px, 5.4vw, 84px)/1 var(--font-cjk); letter-spacing: .07em; writing-mode: vertical-rl; }
+.hero-gloss { display: grid; align-content: center; gap: 14px; }
+/* Пиньинь по правилам записывается строчными — прописные здесь были бы ошибкой. */
+.hero-reading { color: var(--ink-soft); font: 700 12px/1 var(--font-utility); letter-spacing: .16em; }
+.hero-translation { color: var(--ink); font: italic 500 clamp(28px, 2.8vw, 44px)/1.1 var(--font-display); }
 .hero-text { max-width: 590px; margin: 28px 0; color: var(--ink-soft); font-size: 18px; }
 .facts { display: flex; gap: 28px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--ink-soft); font-size: 13px; }
 .facts span { display: flex; align-items: baseline; gap: 7px; }
@@ -395,6 +409,10 @@ body.modal-open { overflow: hidden; }
   .account-btn { max-width: 46vw; padding: 7px 9px; }
   .home-screen { padding-top: 23px; }
   h1 { font-size: 46px; }
+  /* Вертикальная строка на узком экране съела бы весь первый экран. */
+  .hero-couplet { grid-template-columns: 1fr; gap: 18px; }
+  .hero-chinese { writing-mode: horizontal-tb; font-size: 58px; }
+  .hero-gloss { padding-top: 0; }
   .facts { gap: 12px; flex-wrap: wrap; }
   .variant-picker { grid-template-columns: 1fr; }
   .mode-card { grid-template-columns: auto 1fr; padding: 23px; }
