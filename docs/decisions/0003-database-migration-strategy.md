@@ -1,6 +1,6 @@
 # ADR 0003: Единая стратегия миграций базы данных
 
-**Статус:** Accepted
+**Статус:** Superseded by [ADR 0004](0004-sqlite-only-storage.md) в части dual-dialect; правила Alembic и заморозка baseline действуют
 
 ## Контекст
 
