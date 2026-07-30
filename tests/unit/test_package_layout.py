@@ -27,11 +27,11 @@ class PackageLayoutTest(unittest.TestCase):
 
         self.assertNotIn("legacy.server", sys.modules)
 
-    def test_legacy_server_is_outside_the_main_runtime_path(self):
+    def test_legacy_runtime_is_removed(self):
         root = Path(__file__).resolve().parents[2]
 
         self.assertFalse((root / "server.py").exists())
-        self.assertTrue((root / "legacy/server.py").is_file())
+        self.assertFalse((root / "legacy").exists())
 
     def test_frontend_content_and_public_files_are_separated(self):
         root = Path(__file__).resolve().parents[2]
