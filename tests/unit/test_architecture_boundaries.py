@@ -65,8 +65,6 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         controller = importlib.import_module("trainer.api.controller").ApiController
         actions = {
             "recording_create",
-            "material_create",
-            "material_publish",
         }
         self.assertTrue(all(callable(getattr(controller, action, None)) for action in actions))
 

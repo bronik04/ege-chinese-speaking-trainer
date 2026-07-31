@@ -10,6 +10,7 @@ from trainer.api.errors import ApiError, default_error_code
 from trainer.api.results import RequestContext
 from trainer.api.runtime import DATA_DIR, SESSION_DAYS, connect
 from trainer.domain.accounts import authorize_role, validate_credentials
+from trainer.domain.materials import editor_allowed
 from trainer.services import accounts as account_services
 
 
@@ -64,6 +65,17 @@ def require_authenticated(request: Request) -> dict:
     user = current_user_or_none(request)
     if not user:
         raise ApiError("authentication_required", "Authentication required", 401)
+    return user
+
+
+def require_material_editor(request: Request) -> dict:
+    user = current_user_or_none(request)
+    if not user:
+        raise ApiError("authentication_required", "Войдите, чтобы создавать материалы", 401)
+    if not user["emailVerified"]:
+        raise ApiError("email_verification_required", "Подтвердите email для работы с материалами", 403)
+    if not editor_allowed(user, os.environ.get("TRAINER_EDITOR_EMAILS", "")):
+        raise ApiError("editor_forbidden", "Создание материалов недоступно", 403)
     return user
 
 
