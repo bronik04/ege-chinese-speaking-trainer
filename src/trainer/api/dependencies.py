@@ -4,6 +4,8 @@ import os
 from http import HTTPStatus
 from http.cookies import SimpleCookie
 
+from trainer.api.errors import ApiError, default_error_code
+from trainer.api.results import RequestContext
 from trainer.api.runtime import DATA_DIR, SESSION_DAYS, connect
 from trainer.domain.accounts import authorize_role, validate_credentials
 from trainer.services import accounts as account_services
@@ -11,6 +13,56 @@ from trainer.services import accounts as account_services
 
 def account_public_url() -> str:
     return os.environ.get("TRAINER_PUBLIC_URL", "").rstrip("/") or "http://127.0.0.1:8080"
+
+
+def session_token(request) -> str | None:
+    cookie = SimpleCookie(request.headers.get("Cookie", ""))
+    morsel = cookie.get("trainer_session")
+    return morsel.value if morsel else None
+
+
+def request_context(request) -> RequestContext:
+    return RequestContext(
+        client_ip=request.client.host if request.client else "",
+        user_agent=request.headers.get("User-Agent", ""),
+    )
+
+
+def current_user_or_none(request) -> dict | None:
+    return account_services.current_user(connect, session_token(request))
+
+
+def _require_role(request, role: str) -> dict:
+    user = current_user_or_none(request)
+    decision = authorize_role(
+        user,
+        role,
+        teacher_emails=os.environ.get("TRAINER_TEACHER_EMAILS", ""),
+    )
+    if not decision.allowed:
+        status = 401 if decision.code == "authentication_required" else 403
+        public_code = (
+            decision.code
+            if decision.code in {"email_verification_required", "teacher_not_allowed"}
+            else default_error_code(status)
+        )
+        raise ApiError(public_code, decision.message, status)
+    return user
+
+
+def require_student(request) -> dict:
+    return _require_role(request, "student")
+
+
+def require_teacher(request) -> dict:
+    return _require_role(request, "teacher")
+
+
+def require_authenticated(request) -> dict:
+    user = current_user_or_none(request)
+    if not user:
+        raise ApiError("authentication_required", "Authentication required", 401)
+    return user
 
 
 class ApiDependenciesMixin:
