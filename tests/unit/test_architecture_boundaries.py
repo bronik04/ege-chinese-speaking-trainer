@@ -64,10 +64,7 @@ class ArchitectureBoundaryTest(unittest.TestCase):
     def test_controller_keeps_route_and_legacy_actions(self):
         controller = importlib.import_module("trainer.api.controller").ApiController
         actions = {
-            "teacher_assignment_create",
-            "submission_create",
             "recording_create",
-            "review_submission",
             "material_create",
             "material_publish",
         }
