@@ -143,8 +143,7 @@ def teacher_submissions(
     result = []
     for row in rows:
         recordings = database.execute(
-            """SELECT id, task_number, question_number, label, mime_type, size_bytes,
-                      transcript_status, transcript_text, transcript_error, transcribed_at
+            """SELECT id, task_number, question_number, label, mime_type, size_bytes
                FROM recordings WHERE submission_id = ? ORDER BY task_number, question_number, id""",
             (row["id"],),
         ).fetchall()

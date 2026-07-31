@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { assignmentTasksMarkup, studentAssignmentsMarkup, teacherGroupsMarkup } from "../../frontend/js/account/account-view.js";
+import {
+  assignmentTasksMarkup,
+  studentAssignmentsMarkup,
+  teacherGroupsMarkup,
+  teacherSubmissionsMarkup,
+} from "../../frontend/js/account/account-view.js";
 import { escapeHtml, mergeProgress } from "../../frontend/js/shared/progress.js";
 import { formatTime, stepsMarkup, taskMarkup } from "../../frontend/js/runner/task-view.js";
 import { auditMarkup } from "../../frontend/js/account/account-security.js";
@@ -109,6 +114,29 @@ test("task markup escapes JSON content and keeps runner state", () => {
   assert.match(html, /Вопрос 2 из 5/);
   assert.equal(formatTime(125), "02:05");
   assert.match(stepsMarkup([1, 2, 3], 1), /done/);
+});
+
+test("submission markup does not render transcripts", () => {
+  const markup = teacherSubmissionsMarkup([{
+    id: 1,
+    groupName: "Group",
+    studentName: "Student",
+    title: "Работа",
+    status: "submitted",
+    attempt: 1,
+    late: false,
+    tasks: [1],
+    review: null,
+    recordings: [{
+      id: 7,
+      label: "Задание 1",
+      url: "/api/recordings/7",
+      transcript_status: "completed",
+      transcript_text: "текст",
+    }],
+  }]);
+  assert.ok(!markup.includes("Расшифровка"));
+  assert.ok(!markup.includes("текст"));
 });
 
 test("audit markup translates actions and escapes network data", () => {
