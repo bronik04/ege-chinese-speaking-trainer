@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import ast
-import importlib
 import unittest
 from pathlib import Path
 
@@ -61,13 +60,15 @@ class ArchitectureBoundaryTest(unittest.TestCase):
                 source = (PACKAGE / "api" / "controllers" / name).read_text(encoding="utf-8")
                 self.assertNotIn("storage_from_env", source)
 
-    def test_controller_keeps_route_and_legacy_actions(self):
-        # Все действия переведены на функции (задачи 10-14); ApiController
-        # больше не диспетчерит ни одно из них. Задача 15 удалит этот тест
-        # вместе с самим шимом.
-        controller = importlib.import_module("trainer.api.controller").ApiController
-        actions: set[str] = set()
-        self.assertTrue(all(callable(getattr(controller, action, None)) for action in actions))
+    def test_shim_is_removed(self):
+        for name in ("http.py", "controller.py", "transport.py"):
+            with self.subTest(name=name):
+                self.assertFalse((PACKAGE / "api" / name).exists())
+
+    def test_controllers_do_not_depend_on_the_web_framework(self):
+        imports = imported_modules(PACKAGE / "api" / "controllers")
+        forbidden = ("fastapi", "starlette")
+        self.assertFalse(any(module.startswith(forbidden) for module in imports), imports)
 
 
 if __name__ == "__main__":
