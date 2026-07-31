@@ -27,7 +27,6 @@ EXPECTED_TABLES = {
     "sessions",
     "study_groups",
     "submissions",
-    "transcription_jobs",
     "user_progress",
     "users",
 }
@@ -107,6 +106,16 @@ class SqliteMigrationTest(unittest.TestCase):
             before = sqlite_schema(path)
             upgrade_sqlite_database(path)
             self.assertEqual(sqlite_schema(path), before)
+
+    def test_head_removes_transcription_schema(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "trainer.db"
+            upgrade_sqlite_database(path)
+            with closing(sqlite3.connect(path)) as database:
+                tables = {row[0] for row in database.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+                columns = {row[1] for row in database.execute("PRAGMA table_info(recordings)")}
+        self.assertNotIn("transcription_jobs", tables)
+        self.assertFalse({"transcript_status", "transcript_text", "transcript_error", "transcribed_at"} & columns)
 
 
 if __name__ == "__main__":
