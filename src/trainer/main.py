@@ -12,10 +12,12 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.routing import Match
 
 from trainer.api.errors import ApiError, api_error_handler, default_error_code, error_payload
 from trainer.api.routes import accounts, groups, materials, recordings, work
-from trainer.api.runtime import MAX_BODY, ROOT, connect, init_database
+from trainer.api.runtime import MAX_AUDIO_BODY, MAX_BODY, ROOT, connect, init_database
+from trainer.api.security import request_has_same_origin
 from trainer.infrastructure.observability import (
     configure_logging,
     current_request_id,
@@ -45,17 +47,41 @@ app.include_router(materials.router)
 
 
 BODY_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+AUDIO_UPLOAD_PATHS = re.compile(r"^/api/(submissions/\d+/recordings|materials/\d+/assets)$")
+
+
+def _matches_registered_route(request) -> bool:
+    # Проверяем только запросы, которые реально дойдут до обработчика: иначе
+    # запрос методом без зарегистрированного маршрута (например PUT на GET-only
+    # путь) перехватывался бы здесь с 403 вместо штатного 404/405 от роутера.
+    return any(route.matches(request.scope)[0] == Match.FULL for route in app.router.routes)
 
 
 @app.middleware("http")
-async def reject_oversized_json(request, call_next):
-    content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
-    if request.method in BODY_METHODS and content_type == "application/json":
+async def reject_cross_origin_writes(request, call_next):
+    if (
+        request.method in {"POST", "PUT", "DELETE"}
+        and _matches_registered_route(request)
+        and not request_has_same_origin(
+            request.headers.get("Host"),
+            request.headers.get("Origin"),
+            request.headers.get("Referer"),
+            request.headers.get("Sec-Fetch-Site"),
+        )
+    ):
+        return JSONResponse(error_payload("invalid_origin", "Invalid request origin"), status_code=403)
+    return await call_next(request)
+
+
+@app.middleware("http")
+async def reject_oversized_body(request, call_next):
+    if request.method in BODY_METHODS:
         # Отсутствующий или нечисловой Content-Length не отвергаем: так приходят
         # chunked-запросы, а GET с JSON-заголовком вообще не несёт тела.
         # Фактический размер в любом случае считает потоково invoke().
+        limit = MAX_AUDIO_BODY if AUDIO_UPLOAD_PATHS.match(request.url.path) else MAX_BODY
         raw_length = request.headers.get("content-length", "")
-        if raw_length.isdigit() and int(raw_length) > MAX_BODY:
+        if raw_length.isdigit() and int(raw_length) > limit:
             return JSONResponse(
                 error_payload("request_too_large", "Request body is too large"),
                 status_code=413,
