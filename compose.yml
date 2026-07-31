@@ -15,18 +15,6 @@ services:
       - ./backups:/app/backups
     ports:
       - "${TRAINER_BIND_ADDRESS:-127.0.0.1}:${TRAINER_PORT:-8080}:8080"
-  transcription-worker:
-    profiles: ["transcription"]
-    build: .
-    restart: unless-stopped
-    command: ["python", "-m", "scripts.transcription_worker"]
-    env_file: .env
-    networks: [trainer]
-    depends_on:
-      app:
-        condition: service_healthy
-    volumes:
-      - trainer_data:/app/var
   caddy:
     image: caddy:2.10-alpine
     restart: unless-stopped

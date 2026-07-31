@@ -496,6 +496,13 @@ class ApiFlowTest(unittest.TestCase):
         self.assertIn("retry-after", headers)
         self.assertGreater(body["retryAfter"], 0)
 
+    def test_recording_row_has_no_transcription_columns(self):
+        source = (Path(__file__).resolve().parents[2] / "src/trainer/api/controllers/recordings.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("transcript_status", source)
+        self.assertNotIn("enqueue_transcription", source)
+
 
 if __name__ == "__main__":
     unittest.main()

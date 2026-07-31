@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import importlib
 import subprocess
-import sys
 import unittest
 from pathlib import Path
 
@@ -18,14 +17,6 @@ class PackageLayoutTest(unittest.TestCase):
         config = importlib.import_module("trainer.config")
 
         self.assertEqual(config.PROJECT_ROOT, Path(__file__).resolve().parents[2])
-
-    def test_worker_does_not_import_legacy_server(self):
-        sys.modules.pop("trainer.workers.transcription", None)
-        sys.modules.pop("legacy.server", None)
-
-        importlib.import_module("trainer.workers.transcription")
-
-        self.assertNotIn("legacy.server", sys.modules)
 
     def test_legacy_runtime_is_removed(self):
         root = Path(__file__).resolve().parents[2]

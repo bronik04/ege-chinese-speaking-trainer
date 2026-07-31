@@ -12,8 +12,6 @@ from urllib.parse import parse_qs, urlparse
 from trainer.api.runtime import AUDIO_DIR, DATA_DIR, MAX_AUDIO_BODY, connect
 from trainer.infrastructure.audio import validate_duration
 from trainer.services.recordings import delete_recordings, read_recording, write_recording
-from trainer.services.transcription import enabled as transcription_enabled
-from trainer.services.transcription import enqueue as enqueue_transcription
 
 
 class RecordingControllerMixin:
@@ -73,8 +71,8 @@ class RecordingControllerMixin:
                 cursor = database.execute(
                     """
                     INSERT INTO recordings(submission_id, task_number, question_number, label, file_name, mime_type,
-                                           size_bytes, duration_seconds, transcript_status, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                           size_bytes, duration_seconds, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         submission_id,
@@ -85,12 +83,9 @@ class RecordingControllerMixin:
                         mime_type,
                         len(data),
                         duration,
-                        "pending" if transcription_enabled() else "disabled",
                         int(time.time()),
                     ),
                 )
-                if transcription_enabled():
-                    enqueue_transcription(database, cursor.lastrowid)
                 self.audit(
                     database,
                     "recording_uploaded",

@@ -51,9 +51,6 @@ jobs:
       - name: Test operational commands
         run: |
           python -m scripts.sqlite_restore_smoke
-          worker_data="$(mktemp -d)"
-          trap 'rm -rf "$worker_data"' EXIT
-          TRAINER_DATA_DIR="$worker_data" python -m trainer.workers.transcription --once
       - name: Install E2E browser
         run: npx playwright install --with-deps chromium
       - name: Test browser workflow
