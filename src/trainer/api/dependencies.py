@@ -4,6 +4,8 @@ import os
 from http import HTTPStatus
 from http.cookies import SimpleCookie
 
+from fastapi import Request
+
 from trainer.api.errors import ApiError, default_error_code
 from trainer.api.results import RequestContext
 from trainer.api.runtime import DATA_DIR, SESSION_DAYS, connect
@@ -15,24 +17,24 @@ def account_public_url() -> str:
     return os.environ.get("TRAINER_PUBLIC_URL", "").rstrip("/") or "http://127.0.0.1:8080"
 
 
-def session_token(request) -> str | None:
+def session_token(request: Request) -> str | None:
     cookie = SimpleCookie(request.headers.get("Cookie", ""))
     morsel = cookie.get("trainer_session")
     return morsel.value if morsel else None
 
 
-def request_context(request) -> RequestContext:
+def request_context(request: Request) -> RequestContext:
     return RequestContext(
         client_ip=request.client.host if request.client else "",
         user_agent=request.headers.get("User-Agent", ""),
     )
 
 
-def current_user_or_none(request) -> dict | None:
+def current_user_or_none(request: Request) -> dict | None:
     return account_services.current_user(connect, session_token(request))
 
 
-def _require_role(request, role: str) -> dict:
+def _require_role(request: Request, role: str) -> dict:
     user = current_user_or_none(request)
     decision = authorize_role(
         user,
@@ -50,15 +52,15 @@ def _require_role(request, role: str) -> dict:
     return user
 
 
-def require_student(request) -> dict:
+def require_student(request: Request) -> dict:
     return _require_role(request, "student")
 
 
-def require_teacher(request) -> dict:
+def require_teacher(request: Request) -> dict:
     return _require_role(request, "teacher")
 
 
-def require_authenticated(request) -> dict:
+def require_authenticated(request: Request) -> dict:
     user = current_user_or_none(request)
     if not user:
         raise ApiError("authentication_required", "Authentication required", 401)

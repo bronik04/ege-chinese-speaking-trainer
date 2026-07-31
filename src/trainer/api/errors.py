@@ -38,11 +38,21 @@ def default_error_code(status: int | HTTPStatus) -> str:
 
 
 class ApiError(Exception):
-    def __init__(self, code: str, message: str, status: int = 400):
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        status: int = 400,
+        *,
+        headers: dict[str, str] | None = None,
+        **details: object,
+    ):
         super().__init__(message)
         self.code = code
         self.message = message
         self.status = status
+        self.headers = headers or {}
+        self.details = details
 
 
 async def api_error_handler(request, error: ApiError) -> JSONResponse:
@@ -55,4 +65,7 @@ async def api_error_handler(request, error: ApiError) -> JSONResponse:
         status=error.status,
         path=request.url.path,
     )
-    return JSONResponse(error_payload(error.code, error.message), status_code=error.status)
+    response = JSONResponse(error_payload(error.code, error.message, **error.details), status_code=error.status)
+    for name, value in error.headers.items():
+        response.headers[name] = value
+    return response
