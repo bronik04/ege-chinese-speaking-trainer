@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 from http import HTTPStatus
 
-from trainer.infrastructure.observability import current_request_id
+from fastapi.responses import JSONResponse
+
+from trainer.infrastructure.observability import current_request_id, log_event
 
 DEFAULT_CODES = {
     HTTPStatus.BAD_REQUEST: "invalid_request",
@@ -32,3 +35,24 @@ def default_error_code(status: int | HTTPStatus) -> str:
     except ValueError:
         return "request_failed"
     return DEFAULT_CODES.get(resolved, f"http_{resolved.value}")
+
+
+class ApiError(Exception):
+    def __init__(self, code: str, message: str, status: int = 400):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.status = status
+
+
+async def api_error_handler(request, error: ApiError) -> JSONResponse:
+    log_event(
+        logging.getLogger("trainer.api"),
+        logging.WARNING if error.status < 500 else logging.ERROR,
+        "api_error",
+        error.message,
+        code=error.code,
+        status=error.status,
+        path=request.url.path,
+    )
+    return JSONResponse(error_payload(error.code, error.message), status_code=error.status)
