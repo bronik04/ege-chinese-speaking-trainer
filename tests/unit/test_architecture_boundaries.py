@@ -62,10 +62,11 @@ class ArchitectureBoundaryTest(unittest.TestCase):
                 self.assertNotIn("storage_from_env", source)
 
     def test_controller_keeps_route_and_legacy_actions(self):
+        # Все действия переведены на функции (задачи 10-14); ApiController
+        # больше не диспетчерит ни одно из них. Задача 15 удалит этот тест
+        # вместе с самим шимом.
         controller = importlib.import_module("trainer.api.controller").ApiController
-        actions = {
-            "recording_create",
-        }
+        actions: set[str] = set()
         self.assertTrue(all(callable(getattr(controller, action, None)) for action in actions))
 
 

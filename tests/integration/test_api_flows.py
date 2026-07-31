@@ -1,5 +1,6 @@
 import json
 import os
+import secrets
 import tempfile
 import unittest
 from pathlib import Path
@@ -91,6 +92,47 @@ class ApiFlowTest(unittest.TestCase):
         self.client.cookies.clear()
         response = self.client.get(path, headers={"Cookie": cookie})
         return response.status_code, response.content, response.headers.get("Content-Type")
+
+    def request_raw(self, path, cookie, headers=None):
+        self.client.cookies.clear()
+        response = self.client.get(path, headers={"Cookie": cookie, **(headers or {})})
+        return response.status_code, dict(response.headers), response.content
+
+    def create_recording(self):
+        email = f"range-{secrets.token_hex(4)}@example.test"
+        status, _, headers = self.request(
+            "POST",
+            "/api/auth/register",
+            {"email": email, "password": "password123", "displayName": "Range", "role": "student"},
+        )
+        self.assertEqual(status, 201)
+        cookie = self.cookie_from(headers)
+        with runtime.connect() as database:
+            student_id = database.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()["id"]
+            teacher_id = database.execute(
+                "INSERT INTO users(email,password_hash,display_name,role,created_at) VALUES (?,?,?,?,?)",
+                (f"range-teacher-{secrets.token_hex(4)}@example.test", "x", "Teacher", "teacher", 1),
+            ).lastrowid
+            group_id = database.execute(
+                "INSERT INTO study_groups(teacher_id,name,join_code,created_at) VALUES (?,?,?,?)",
+                (teacher_id, "Group", secrets.token_hex(4).upper()[:6], 1),
+            ).lastrowid
+            database.execute(
+                "INSERT INTO group_members(group_id,user_id,joined_at) VALUES (?,?,?)", (group_id, student_id, 1)
+            )
+            assignment_id = database.execute(
+                "INSERT INTO assignments(group_id,teacher_id,title,variant_id,tasks_json,created_at) VALUES (?,?,?,?,?,?)",
+                (group_id, teacher_id, "Work", "demo-2026", "[2]", 1),
+            ).lastrowid
+            submission_id = database.execute(
+                "INSERT INTO submissions(assignment_id,student_id,attempt_number,run_json,submitted_at) VALUES (?,?,?,?,?)",
+                (assignment_id, student_id, 1, "{}", 1),
+            ).lastrowid
+        status, payload = self.request_audio(
+            f"/api/submissions/{submission_id}/recordings?task=2&label=Range", b"0123456789", cookie
+        )
+        self.assertEqual(status, 201, payload)
+        return payload["recording"]["id"], cookie
 
     @staticmethod
     def cookie_from(headers):
@@ -502,6 +544,15 @@ class ApiFlowTest(unittest.TestCase):
         )
         self.assertNotIn("transcript_status", source)
         self.assertNotIn("enqueue_transcription", source)
+
+    def test_recording_supports_range_requests(self):
+        recording_id, cookie = self.create_recording()
+        status, headers, body = self.request_raw(
+            f"/api/recordings/{recording_id}", cookie, headers={"Range": "bytes=0-3"}
+        )
+        self.assertEqual(status, 206)
+        self.assertTrue(headers.get("content-range", "").startswith("bytes 0-3/"))
+        self.assertEqual(len(body), 4)
 
 
 if __name__ == "__main__":

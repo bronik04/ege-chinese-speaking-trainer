@@ -32,6 +32,23 @@ class LocalStorageTest(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     storage_from_env(Path(directory))
 
+    def test_local_path_and_stream_match_read(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.webm"
+            source.write_bytes(b"audio-bytes")
+            storage = LocalAudioStorage(root / "audio")
+            storage.put("12/answer.webm", source, "audio/webm")
+
+            path = storage.local_path("12/answer.webm")
+            self.assertIsNotNone(path)
+            self.assertEqual(path.read_bytes(), b"audio-bytes")
+            self.assertIsNone(storage.local_path("12/missing.webm"))
+
+            self.assertEqual(b"".join(storage.stream("12/answer.webm")), b"audio-bytes")
+            with self.assertRaises(FileNotFoundError):
+                list(storage.stream("12/missing.webm"))
+
 
 class S3StorageTest(unittest.TestCase):
     @patch("boto3.client")
@@ -50,6 +67,16 @@ class S3StorageTest(unittest.TestCase):
         client.upload_file.assert_called_once()
         client.get_object.assert_called_once_with(Bucket="answers", Key="1/answer.webm")
         client.delete_object.assert_called_once_with(Bucket="answers", Key="1/answer.webm")
+
+    @patch("boto3.client")
+    def test_local_path_is_none_and_stream_matches_read(self, client_factory):
+        client = Mock()
+        client.get_object.return_value = {"Body": Mock(iter_chunks=Mock(return_value=iter([b"audio", b"-bytes"])))}
+        client_factory.return_value = client
+        storage = S3AudioStorage(bucket="answers", endpoint_url="https://account.r2.example", region="auto")
+
+        self.assertIsNone(storage.local_path("1/answer.webm"))
+        self.assertEqual(b"".join(storage.stream("1/answer.webm")), b"audio-bytes")
 
 
 if __name__ == "__main__":

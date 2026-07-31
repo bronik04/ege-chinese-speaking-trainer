@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 
 
@@ -35,3 +36,13 @@ class S3AudioStorage:
 
     def delete(self, key: str) -> None:
         self.client.delete_object(Bucket=self.bucket, Key=key)
+
+    def local_path(self, key: str) -> Path | None:
+        return None
+
+    def stream(self, key: str) -> Iterator[bytes]:
+        try:
+            body = self.client.get_object(Bucket=self.bucket, Key=key)["Body"]
+        except Exception as error:
+            self._raise_not_found(error, key)
+        yield from body.iter_chunks(64 * 1024)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from contextlib import suppress
 from pathlib import Path
 
@@ -12,6 +13,14 @@ def write_recording(root: Path, key: str, source: Path, content_type: str) -> No
 
 def read_recording(root: Path, key: str) -> bytes:
     return storage_from_env(root).read(key)
+
+
+def storage_local_path(root: Path, key: str) -> Path | None:
+    return storage_from_env(root).local_path(key)
+
+
+def stream_recording(root: Path, key: str) -> Iterator[bytes]:
+    return storage_from_env(root).stream(key)
 
 
 def delete_recordings(root: Path, keys) -> None:

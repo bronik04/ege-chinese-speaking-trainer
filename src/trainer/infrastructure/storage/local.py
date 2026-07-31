@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 
 
@@ -39,3 +40,15 @@ class LocalAudioStorage:
                 parent.rmdir()
             except OSError:
                 pass
+
+    def local_path(self, key: str) -> Path | None:
+        target = self._path(key)
+        return target if target.is_file() else None
+
+    def stream(self, key: str) -> Iterator[bytes]:
+        target = self._path(key)
+        if not target.is_file():
+            raise FileNotFoundError(key)
+        with target.open("rb") as source:
+            while chunk := source.read(64 * 1024):
+                yield chunk
