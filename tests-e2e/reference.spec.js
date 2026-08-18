@@ -31,15 +31,15 @@ test("reference library filters phrases and switches exam tasks", async ({ page 
 });
 
 test("shared account, logo and footer are available across public pages", async ({ page }) => {
-  for (const path of ["/variants.html", "/reference.html", "/variant-editor.html", "/about.html"]) {
+  for (const path of ["/variants.html", "/reference.html", "/variant-editor.html"]) {
     await page.goto(path);
     await expect(page.locator(".brand-logo")).toBeVisible();
     await expect(page.locator(".account-btn")).toBeVisible();
     await expect(page.locator(".site-footer")).toBeVisible();
+    await expect(page.locator('a[href="about.html"]')).toHaveCount(0);
   }
-  await page.goto("/about.html");
-  await expect(page.locator(".about-portrait img")).toBeVisible();
-  await expect(page.locator("#achievementsTitle")).toHaveText("Достижения");
+  const response = await page.goto("/about.html");
+  expect(response?.status()).toBe(404);
   await page.goto("/reference.html");
   await page.locator("[data-account-link]").click();
   await expect(page.locator("#authModal")).toBeVisible();
@@ -58,4 +58,26 @@ test("reference link is hidden only during an active task", async ({ page }) => 
   await expect(page.locator("#referenceLink")).toBeVisible();
   await page.locator('[data-start="1"]').click();
   await expect(page.locator("#referenceLink")).toBeHidden();
+});
+
+test("runner keeps locked task content out of the accessibility tree", async ({ page }) => {
+  await page.goto("/");
+  await page.locator('[data-start="1"]').click();
+  await expect(page.locator("#runnerScreen")).not.toHaveAttribute("aria-live");
+  await expect(page.locator("#taskContent")).toHaveAttribute("aria-hidden", "true");
+  await expect(page.locator("#taskContent")).toHaveJSProperty("inert", true);
+  await page.locator("#mainActionBtn").click();
+  await expect(page.locator("#taskContent")).toHaveAttribute("aria-hidden", "false");
+  await expect(page.locator("#taskContent")).toHaveJSProperty("inert", false);
+});
+
+test("mobile navigation and utility controls fit the viewport and a finger", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/reference.html");
+  await expect(page.locator(".copy-phrase").first()).toHaveCSS("min-height", "44px");
+  await expect(page.locator(".header-link").first()).toHaveCSS("min-height", "44px");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
+  await page.goto("/variants.html");
+  await expect(page.locator(".year-filter").first()).toHaveCSS("min-height", "44px");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
 });
