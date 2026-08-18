@@ -11,7 +11,7 @@ import { escapeHtml, mergeProgress } from "../../frontend/js/shared/progress.js"
 import { formatTime, stepsMarkup, taskMarkup } from "../../frontend/js/runner/task-view.js";
 import { fastModeForRun } from "../../frontend/js/runner/runner-controller.js";
 import { auditMarkup } from "../../frontend/js/account/account-security.js";
-import { api } from "../../frontend/js/shared/api.js";
+import { api, completeSubmission } from "../../frontend/js/shared/api.js";
 import { catalogMarkup, filterVariants, variantKind } from "../../frontend/js/catalog/variant-catalog.js";
 import { plural, pluralize } from "../../frontend/js/shared/plural.js";
 
@@ -173,6 +173,24 @@ test("api exposes structured server error metadata", async () => {
       assert.equal(error.requestId, "request-123");
       return true;
     });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("completeSubmission finalizes the uploaded attempt", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (path, options) => {
+    calls.push([path, options]);
+    return { ok: true, json: async () => ({ submission: { id: 41, status: "submitted" } }) };
+  };
+  try {
+    const payload = await completeSubmission(41);
+    assert.equal(payload.submission.status, "submitted");
+    assert.deepEqual(calls, [["/api/submissions/41/complete", {
+      method: "POST", body: "{}", headers: { "Content-Type": "application/json" },
+    }]]);
   } finally {
     globalThis.fetch = originalFetch;
   }

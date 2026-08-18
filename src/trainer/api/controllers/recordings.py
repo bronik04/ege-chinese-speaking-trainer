@@ -14,6 +14,7 @@ from trainer.api.runtime import AUDIO_DIR, DATA_DIR, MAX_AUDIO_BODY, connect
 from trainer.infrastructure.audio import validate_duration
 from trainer.services import accounts as account_services
 from trainer.services.recordings import delete_recordings, write_recording
+from trainer.services.storage_cleanup import enqueue_cleanup_job
 
 
 def recording_create(
@@ -36,6 +37,8 @@ def recording_create(
             "Неподдерживаемый формат аудио",
             HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
         )
+    if (task == 1 and question not in {1, 2, 3, 4, 5}) or (task in {2, 3} and question is not None):
+        raise ApiError(default_error_code(HTTPStatus.BAD_REQUEST), "Некорректный номер записи", HTTPStatus.BAD_REQUEST)
     length = len(body)
     if not 0 < length <= MAX_AUDIO_BODY:
         raise ApiError(
@@ -46,7 +49,7 @@ def recording_create(
     with connect() as database:
         row = database.execute(
             """
-            SELECT submissions.id, assignments.tasks_json FROM submissions
+            SELECT submissions.id, submissions.status, assignments.tasks_json FROM submissions
             JOIN assignments ON assignments.id = submissions.assignment_id
             WHERE submissions.id = ? AND submissions.student_id = ?
             """,
@@ -56,6 +59,8 @@ def recording_create(
             raise ApiError(
                 default_error_code(HTTPStatus.FORBIDDEN), "Запись не относится к этой попытке", HTTPStatus.FORBIDDEN
             )
+        if row["status"] != "uploading":
+            raise ApiError("submission_not_uploading", "Работа уже отправлена", HTTPStatus.CONFLICT)
     relative = f"{submission_id}/{secrets.token_urlsafe(18)}.{extensions[mime_type]}"
     temporary_dir = DATA_DIR / "tmp"
     temporary_dir.mkdir(parents=True, exist_ok=True)
@@ -74,6 +79,18 @@ def recording_create(
     try:
         write_recording(AUDIO_DIR, relative, temporary_path, mime_type)
         with connect() as database:
+            replaced = database.execute(
+                """
+                SELECT id, file_name FROM recordings
+                WHERE submission_id = ? AND task_number = ? AND question_number IS ?
+                """,
+                (submission_id, task, question),
+            ).fetchall()
+            if replaced:
+                database.execute(
+                    "DELETE FROM recordings WHERE submission_id = ? AND task_number = ? AND question_number IS ?",
+                    (submission_id, task, question),
+                )
             cursor = database.execute(
                 """
                 INSERT INTO recordings(submission_id, task_number, question_number, label, file_name, mime_type,
@@ -92,6 +109,13 @@ def recording_create(
                     int(time.time()),
                 ),
             )
+            if replaced:
+                enqueue_cleanup_job(
+                    database,
+                    audio_keys=[item["file_name"] for item in replaced],
+                    material_keys=[],
+                    assignment_keys=[],
+                )
             account_services.audit(
                 database,
                 "recording_uploaded",
@@ -114,13 +138,17 @@ def recording_get(recording_id: int, user: dict) -> FileResult:
         row = database.execute(
             """
             SELECT recordings.file_name, recordings.mime_type, recordings.size_bytes,
-                   submissions.student_id, assignments.teacher_id
+                   submissions.status, submissions.student_id, assignments.teacher_id
             FROM recordings JOIN submissions ON submissions.id = recordings.submission_id
             JOIN assignments ON assignments.id = submissions.assignment_id
             WHERE recordings.id = ?
             """,
             (recording_id,),
         ).fetchone()
-    if not row or user["id"] not in {row["student_id"], row["teacher_id"]}:
+    if (
+        not row
+        or user["id"] not in {row["student_id"], row["teacher_id"]}
+        or (row["status"] == "uploading" and user["id"] != row["student_id"])
+    ):
         raise ApiError(default_error_code(HTTPStatus.NOT_FOUND), "Запись не найдена", HTTPStatus.NOT_FOUND)
     return FileResult(key=row["file_name"], mime_type=row["mime_type"], size_bytes=row["size_bytes"])

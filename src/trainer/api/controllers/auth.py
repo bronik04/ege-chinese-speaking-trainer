@@ -34,7 +34,7 @@ from trainer.infrastructure.database.accounts import (
 )
 from trainer.infrastructure.database.core import INTEGRITY_ERRORS
 from trainer.services import accounts as account_services
-from trainer.services.accounts import delete_account_storage
+from trainer.services.storage_cleanup import enqueue_cleanup_job, process_cleanup_jobs
 
 
 def _ensure_auth_attempt_allowed(kind: str, email: str, client_ip: str) -> None:
@@ -328,6 +328,12 @@ def account_delete(payload: DeleteAccountRequest, user: dict, context: RequestCo
         audio_keys = [item["file_name"] for item in files]
         material_keys = [item["storage_key"] for item in material_assets]
         assignment_keys = [item["storage_key"] for item in assignment_assets]
+        enqueue_cleanup_job(
+            database,
+            audio_keys=audio_keys,
+            material_keys=material_keys,
+            assignment_keys=assignment_keys,
+        )
         account_services.audit(
             database,
             "account_deleted",
@@ -340,27 +346,27 @@ def account_delete(payload: DeleteAccountRequest, user: dict, context: RequestCo
     # Файлы удаляем только после коммита: иначе откат транзакции оставил бы
     # живой аккаунт со строками, ссылающимися на уже уничтоженные файлы.
     try:
-        delete_account_storage(
-            runtime.AUDIO_DIR,
-            audio_keys,
-            runtime.MATERIAL_ASSET_DIR,
-            material_keys,
-            runtime.ASSIGNMENT_ASSET_DIR,
-            assignment_keys,
+        with connect() as database:
+            summary = process_cleanup_jobs(
+                database,
+                audio_root=runtime.AUDIO_DIR,
+                material_root=runtime.MATERIAL_ASSET_DIR,
+                assignment_root=runtime.ASSIGNMENT_ASSET_DIR,
+            )
+        logging.getLogger("trainer.accounts").info(
+            "Account storage cleanup processed",
+            extra={
+                "event": "account_storage_cleanup_processed",
+                "fields": {"completed": summary.completed, "failed": summary.failed, "pending": summary.pending},
+            },
         )
     except Exception:
-        # Аккаунт уже удалён, поэтому запрос считается успешным, но остаток
-        # файлов требует ручной уборки — пишем причину и объём в лог.
+        # Аккаунт уже удалён; задача остаётся в БД для следующей попытки.
         logging.getLogger("trainer.accounts").exception(
             "Account storage cleanup failed",
             extra={
                 "event": "account_storage_cleanup_failed",
-                "fields": {
-                    "userId": user["id"],
-                    "audioKeys": len(audio_keys),
-                    "materialKeys": len(material_keys),
-                    "assignmentKeys": len(assignment_keys),
-                },
+                "fields": {"userId": user["id"]},
             },
         )
     return ActionResult({"ok": True}, clear_session=True)

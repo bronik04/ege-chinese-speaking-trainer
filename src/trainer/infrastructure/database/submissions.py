@@ -11,8 +11,9 @@ def create_submission_with_retry(
     assignment_id: int,
     student_id: int,
     encoded_run: str,
-    submitted_at: int,
+    submitted_at: int | None,
     *,
+    status: str = "submitted",
     max_attempts: int = 3,
 ) -> tuple[int, int]:
     last_error: Exception | None = None
@@ -26,10 +27,10 @@ def create_submission_with_retry(
                 ).fetchone()["number"]
                 cursor = database.execute(
                     """
-                    INSERT INTO submissions(assignment_id, student_id, attempt_number, run_json, submitted_at)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO submissions(assignment_id, student_id, attempt_number, status, run_json, submitted_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
                     """,
-                    (assignment_id, student_id, attempt, encoded_run, submitted_at),
+                    (assignment_id, student_id, attempt, status, encoded_run, submitted_at),
                 )
                 return cursor.lastrowid, attempt
         except INTEGRITY_ERRORS as error:

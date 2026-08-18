@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from trainer.infrastructure.database.migrations import upgrade_sqlite_database
 from trainer.services.accounts import delete_account_storage
 from trainer.services.assignment_assets import copy_assignment_assets_from_env, read_assignment_asset
 from trainer.services.recordings import delete_recordings, read_recording, write_recording
+from trainer.services.storage_cleanup import enqueue_cleanup_job, process_cleanup_jobs
 
 
 class RecordingStorageServiceTest(unittest.TestCase):
@@ -68,6 +72,48 @@ class AccountStorageServiceTest(unittest.TestCase):
         audio.delete.assert_called_once_with("recording.webm")
         materials.delete.assert_called_once_with("material.webp")
         assignments.delete.assert_called_once_with("assignment.webp")
+
+
+class StorageCleanupJobServiceTest(unittest.TestCase):
+    @patch("trainer.services.storage_cleanup.storage_from_env")
+    def test_failed_job_is_retained_and_successful_retry_removes_it(self, factory):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "trainer.sqlite3"
+            upgrade_sqlite_database(path)
+            with closing(sqlite3.connect(path)) as database:
+                database.row_factory = sqlite3.Row
+                job_id = enqueue_cleanup_job(
+                    database,
+                    audio_keys=["recording.webm"],
+                    material_keys=[],
+                    assignment_keys=[],
+                    now=100,
+                )
+                factory.return_value.delete.side_effect = OSError("storage unavailable")
+                summary = process_cleanup_jobs(
+                    database,
+                    audio_root=root / "audio",
+                    material_root=root / "materials",
+                    assignment_root=root / "assignments",
+                    now=101,
+                )
+                self.assertEqual((summary.completed, summary.failed), (0, 1))
+                self.assertEqual(
+                    database.execute("SELECT attempts FROM storage_cleanup_jobs WHERE id=?", (job_id,)).fetchone()[0], 1
+                )
+                factory.return_value.delete.side_effect = None
+                summary = process_cleanup_jobs(
+                    database,
+                    audio_root=root / "audio",
+                    material_root=root / "materials",
+                    assignment_root=root / "assignments",
+                    now=102,
+                )
+                self.assertEqual((summary.completed, summary.failed), (1, 0))
+                self.assertIsNone(
+                    database.execute("SELECT id FROM storage_cleanup_jobs WHERE id=?", (job_id,)).fetchone()
+                )
 
     @patch("trainer.services.accounts.storage_from_env")
     def test_account_cleanup_propagates_storage_failure(self, factory):
