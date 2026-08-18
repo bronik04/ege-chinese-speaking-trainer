@@ -14,6 +14,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.routing import Match
 
+from trainer.api.body_limit import BodyLimitMiddleware
 from trainer.api.errors import ApiError, api_error_handler, default_error_code, error_payload
 from trainer.api.routes import accounts, groups, materials, recordings, work
 from trainer.api.runtime import MAX_AUDIO_BODY, MAX_BODY, ROOT, connect, init_database
@@ -47,7 +48,22 @@ app.include_router(materials.router)
 
 
 BODY_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
-AUDIO_UPLOAD_PATHS = re.compile(r"^/api/(submissions/\d+/recordings|materials/\d+/assets)$")
+RECORDING_UPLOAD_PATH = re.compile(r"^/api/submissions/\d+/recordings$")
+MATERIAL_ASSET_UPLOAD_PATH = re.compile(r"^/api/materials/\d+/assets$")
+MAX_MATERIAL_ASSET_BODY = 5_000_000
+
+
+def _body_limit_for_request(method: str, path: str) -> int | None:
+    if method not in BODY_METHODS:
+        return None
+    if RECORDING_UPLOAD_PATH.match(path):
+        return MAX_AUDIO_BODY
+    if MATERIAL_ASSET_UPLOAD_PATH.match(path):
+        return MAX_MATERIAL_ASSET_BODY
+    return MAX_BODY
+
+
+app.add_middleware(BodyLimitMiddleware, limit_for_request=_body_limit_for_request)
 
 
 def _matches_registered_route(request) -> bool:
@@ -78,8 +94,9 @@ async def reject_oversized_body(request, call_next):
     if request.method in BODY_METHODS:
         # Отсутствующий или нечисловой Content-Length не отвергаем: так приходят
         # chunked-запросы, а GET с JSON-заголовком вообще не несёт тела.
-        # Фактический размер в любом случае считает потоково invoke().
-        limit = MAX_AUDIO_BODY if AUDIO_UPLOAD_PATHS.match(request.url.path) else MAX_BODY
+        # Фактический размер в любом случае считает потоковый ASGI middleware.
+        limit = _body_limit_for_request(request.method, request.url.path)
+        assert limit is not None
         raw_length = request.headers.get("content-length", "")
         if raw_length.isdigit() and int(raw_length) > limit:
             return JSONResponse(

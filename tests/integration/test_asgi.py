@@ -105,6 +105,21 @@ class FastApiSmokeTest(unittest.TestCase):
         self.assertEqual(response.status_code, 413)
         self.assertEqual(response.json()["code"], "request_too_large")
 
+    def test_rejects_oversized_chunked_body_before_validation(self):
+        # Отсутствие Content-Length не должно позволять передать более 1 MB
+        # до того, как FastAPI попробует разобрать JSON.
+        response = self.client.post(
+            "/api/auth/login",
+            headers={
+                "Origin": "http://testserver",
+                "Sec-Fetch-Site": "same-origin",
+                "Content-Type": "application/json",
+            },
+            content=iter([b"x" * 100_001 for _ in range(11)]),
+        )
+        self.assertEqual(response.status_code, 413)
+        self.assertEqual(response.json()["code"], "request_too_large")
+
     def test_json_content_type_without_body_is_not_rejected(self):
         # Клиенты, проставляющие JSON content-type по умолчанию, не должны терять
         # bodyless-запросы, а chunked-запросы не обязаны нести Content-Length.
