@@ -57,6 +57,9 @@ test("student submits audio and teacher reviews it", async ({ browser }) => {
   } finally {
     fs.rmSync(audioPath, { force: true });
   }
+  const beforeComplete = await teacher.request.get("/api/teacher/submissions");
+  expect((await beforeComplete.json()).submissions).toEqual([]);
+  await post(student, `/api/submissions/${submission.submission.id}/complete`, {});
 
   const page = await teacher.newPage();
   await page.goto("/");

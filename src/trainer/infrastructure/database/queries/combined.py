@@ -79,6 +79,7 @@ def student_assignments(database: sqlite3.Connection, student_id: int) -> list[d
                    submissions.submitted_at, reviews.total_score, reviews.max_score, reviews.comment
             FROM submissions LEFT JOIN reviews ON reviews.submission_id = submissions.id
             WHERE submissions.assignment_id = ? AND submissions.student_id = ?
+              AND submissions.status IN ('submitted', 'graded')
             ORDER BY submissions.attempt_number DESC LIMIT 1
             """,
             (row["id"], student_id),
@@ -109,7 +110,7 @@ def teacher_submissions(
     student: str = "",
     status: str = "",
 ) -> list[dict]:
-    filters = ["assignments.teacher_id = ?"]
+    filters = ["assignments.teacher_id = ?", "submissions.status IN ('submitted', 'graded')"]
     parameters: list[object] = [teacher_id]
     if group_id:
         filters.append("study_groups.id = ?")
@@ -220,6 +221,7 @@ def submission_history(database: sqlite3.Connection, teacher_id: int, submission
         SELECT submissions.assignment_id, submissions.student_id FROM submissions
         JOIN assignments ON assignments.id = submissions.assignment_id
         WHERE submissions.id = ? AND assignments.teacher_id = ?
+          AND submissions.status IN ('submitted', 'graded')
         """,
         (submission_id, teacher_id),
     ).fetchone()

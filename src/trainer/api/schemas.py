@@ -66,6 +66,10 @@ class SubmissionRequest(ApiSchema):
     run: dict[str, Any]
 
 
+class SubmissionCompleteRequest(ApiSchema):
+    pass
+
+
 class ReviewRequest(ApiSchema):
     scores: dict[str, dict[str, int]]
     comment: str = Field(default="", max_length=3000)

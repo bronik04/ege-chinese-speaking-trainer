@@ -24,3 +24,7 @@ export function uploadAudio(submissionId, recording) {
     body: recording.blob,
   });
 }
+
+export function completeSubmission(submissionId) {
+  return api(`/api/submissions/${submissionId}/complete`, { method: "POST", body: "{}" });
+}

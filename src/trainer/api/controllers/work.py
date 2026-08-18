@@ -232,15 +232,11 @@ def submission_create(
     run = payload.run
     if not isinstance(run, dict):
         raise ApiError(default_error_code(HTTPStatus.BAD_REQUEST), "Некорректная попытка", HTTPStatus.BAD_REQUEST)
-    encoded_run = json.dumps(run, ensure_ascii=False, separators=(",", ":"))
-    if len(encoded_run) > 100_000:
-        raise ApiError(
-            default_error_code(HTTPStatus.BAD_REQUEST), "Данные попытки слишком велики", HTTPStatus.BAD_REQUEST
-        )
+    run = dict(run)
     with connect() as database:
         assignment = database.execute(
             """
-            SELECT assignments.id FROM assignments
+            SELECT assignments.id, assignments.due_at FROM assignments
             JOIN group_members ON group_members.group_id = assignments.group_id
             WHERE assignments.id = ? AND group_members.user_id = ?
             """,
@@ -248,17 +244,18 @@ def submission_create(
         ).fetchone()
         if not assignment:
             raise ApiError("assignment_not_found", "Задание не найдено", HTTPStatus.NOT_FOUND)
-        assignment_details = database.execute(
-            "SELECT due_at FROM assignments WHERE id = ?", (assignment_id,)
-        ).fetchone()
-    submitted_at = int(time.time())
+    run["fastMode"] = False
+    encoded_run = json.dumps(run, ensure_ascii=False, separators=(",", ":"))
+    if len(encoded_run) > 100_000:
+        raise ApiError(
+            default_error_code(HTTPStatus.BAD_REQUEST), "Данные попытки слишком велики", HTTPStatus.BAD_REQUEST
+        )
     try:
         submission_id, attempt = create_submission_with_retry(
-            connect, assignment_id, user["id"], encoded_run, submitted_at
+            connect, assignment_id, user["id"], encoded_run, None, status="uploading"
         )
     except RuntimeError:
         raise ApiError("submission_conflict", "Не удалось создать попытку. Повторите запрос", HTTPStatus.CONFLICT)
-    late = bool(assignment_details["due_at"] is not None and submitted_at > assignment_details["due_at"])
     with connect() as database:
         account_services.audit(
             database,
@@ -271,12 +268,69 @@ def submission_create(
                 "submissionId": submission_id,
                 "assignmentId": assignment_id,
                 "attempt": attempt,
-                "late": late,
+                "status": "uploading",
             },
         )
     return ActionResult(
-        {"submission": {"id": submission_id, "attempt": attempt, "late": late}}, status=HTTPStatus.CREATED
+        {"submission": {"id": submission_id, "attempt": attempt, "status": "uploading", "dueAt": assignment["due_at"]}},
+        status=HTTPStatus.CREATED,
     )
+
+
+def _required_recording_positions(tasks: list[int]) -> set[tuple[int, int | None]]:
+    required: set[tuple[int, int | None]] = set()
+    if 1 in tasks:
+        required.update((1, question) for question in range(1, 6))
+    required.update((task, None) for task in (2, 3) if task in tasks)
+    return required
+
+
+def submission_complete(submission_id: int, user: dict, context: RequestContext) -> ActionResult:
+    with connect() as database:
+        submission = database.execute(
+            """
+            SELECT submissions.status, assignments.tasks_json, assignments.due_at
+            FROM submissions JOIN assignments ON assignments.id = submissions.assignment_id
+            WHERE submissions.id = ? AND submissions.student_id = ?
+            """,
+            (submission_id, user["id"]),
+        ).fetchone()
+        if not submission:
+            raise ApiError("submission_not_found", "Работа не найдена", HTTPStatus.NOT_FOUND)
+        if submission["status"] != "uploading":
+            raise ApiError("submission_not_uploading", "Работа уже отправлена", HTTPStatus.CONFLICT)
+        recordings = database.execute(
+            "SELECT task_number, question_number FROM recordings WHERE submission_id = ?", (submission_id,)
+        ).fetchall()
+        required = _required_recording_positions(json.loads(submission["tasks_json"]))
+        uploaded = {(item["task_number"], item["question_number"]) for item in recordings}
+        missing = sorted(required - uploaded, key=lambda item: (item[0], item[1] or 0))
+        if missing:
+            details = {
+                "missing": [
+                    {"task": task, **({"question": question} if question is not None else {})}
+                    for task, question in missing
+                ]
+            }
+            raise ApiError(
+                "submission_incomplete", "Загрузите все обязательные записи", HTTPStatus.CONFLICT, details=details
+            )
+        submitted_at = int(time.time())
+        database.execute(
+            "UPDATE submissions SET status = 'submitted', submitted_at = ? WHERE id = ? AND status = 'uploading'",
+            (submitted_at, submission_id),
+        )
+        late = bool(submission["due_at"] is not None and submitted_at > submission["due_at"])
+        account_services.audit(
+            database,
+            "submission_completed",
+            client_ip=context.client_ip,
+            user_agent=context.user_agent,
+            user_id=user["id"],
+            email=user["email"],
+            details={"submissionId": submission_id, "late": late},
+        )
+    return ActionResult({"submission": {"id": submission_id, "status": "submitted", "late": late}})
 
 
 def teacher_submissions(query: dict, user: dict) -> ActionResult:

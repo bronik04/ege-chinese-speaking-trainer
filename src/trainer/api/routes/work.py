@@ -8,7 +8,13 @@ from trainer.api.controllers import work as actions
 from trainer.api.dependencies import current_user_or_none, request_context, require_student, require_teacher
 from trainer.api.errors import ApiError
 from trainer.api.routes import respond
-from trainer.api.schemas import AssignmentRequest, AssignmentUpdateRequest, ReviewRequest, SubmissionRequest
+from trainer.api.schemas import (
+    AssignmentRequest,
+    AssignmentUpdateRequest,
+    ReviewRequest,
+    SubmissionCompleteRequest,
+    SubmissionRequest,
+)
 from trainer.services.assignment_assets import read_assignment_asset
 
 router = APIRouter(prefix="/api")
@@ -67,6 +73,17 @@ async def create_submission(
     request: Request, assignment_id: int, payload: SubmissionRequest, user: dict = Depends(require_student)
 ):
     result = await run_in_threadpool(actions.submission_create, assignment_id, payload, user, request_context(request))
+    return respond(result)
+
+
+@router.post("/submissions/{submission_id}/complete")
+async def complete_submission(
+    request: Request,
+    submission_id: int,
+    _: SubmissionCompleteRequest,
+    user: dict = Depends(require_student),
+):
+    result = await run_in_threadpool(actions.submission_complete, submission_id, user, request_context(request))
     return respond(result)
 
 

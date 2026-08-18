@@ -125,8 +125,11 @@ class ApiFlowTest(unittest.TestCase):
                 (group_id, teacher_id, "Work", "demo-2026", "[2]", 1),
             ).lastrowid
             submission_id = database.execute(
-                "INSERT INTO submissions(assignment_id,student_id,attempt_number,run_json,submitted_at) VALUES (?,?,?,?,?)",
-                (assignment_id, student_id, 1, "{}", 1),
+                """
+                INSERT INTO submissions(assignment_id,student_id,attempt_number,status,run_json,submitted_at)
+                VALUES (?,?,?,?,?,?)
+                """,
+                (assignment_id, student_id, 1, "uploading", "{}", None),
             ).lastrowid
         status, payload = self.request_audio(
             f"/api/submissions/{submission_id}/recordings?task=2&label=Range", b"0123456789", cookie
@@ -147,9 +150,9 @@ class ApiFlowTest(unittest.TestCase):
         url = message["body"].strip().splitlines()[-1]
         return parse_qs(urlparse(url).query)[parameter][0]
 
-    def test_account_deletion_completes_when_storage_cleanup_fails(self):
+    def test_account_deletion_persists_cleanup_job_when_immediate_cleanup_fails(self):
         # Удаление файлов идёт после коммита, поэтому отказ хранилища не должен
-        # ни отменять удаление аккаунта, ни возвращать ошибку пользователю.
+        # ни отменять удаление аккаунта, ни терять задание на повторную очистку.
         email = "storage-failure@example.test"
         status, _, headers = self.request(
             "POST",
@@ -159,20 +162,21 @@ class ApiFlowTest(unittest.TestCase):
         self.assertEqual(status, 201)
         cookie = self.cookie_from(headers)
 
-        original = auth.delete_account_storage
+        original = auth.process_cleanup_jobs
 
-        def failing_cleanup(*_arguments):
+        def failing_cleanup(*_arguments, **_kwargs):
             raise OSError("storage down")
 
-        auth.delete_account_storage = failing_cleanup
+        auth.process_cleanup_jobs = failing_cleanup
         try:
             status, _, _ = self.request("DELETE", "/api/account", {"password": "password123"}, cookie)
         finally:
-            auth.delete_account_storage = original
+            auth.process_cleanup_jobs = original
 
         self.assertEqual(status, 200)
         with runtime.connect() as database:
             self.assertIsNone(database.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone())
+            self.assertEqual(database.execute("SELECT COUNT(*) FROM storage_cleanup_jobs").fetchone()[0], 1)
 
     def test_account_verification_password_reset_and_audit(self):
         email = "security@example.test"
@@ -414,26 +418,69 @@ class ApiFlowTest(unittest.TestCase):
         status, submission_payload, _ = self.request(
             "POST",
             f"/api/assignments/{assignment_id}/submissions",
-            {"run": {"variantId": "demo-2026", "tasks": [1, 2]}},
+            {"run": {"variantId": "demo-2026", "tasks": [1, 2], "fastMode": True}},
             student_cookie,
         )
         self.assertEqual(status, 201)
         submission_id = submission_payload["submission"]["id"]
-        self.assertTrue(submission_payload["submission"]["late"])
+        self.assertEqual(submission_payload["submission"]["status"], "uploading")
+        self.assertEqual(submission_payload["submission"]["dueAt"], 1)
+        with runtime.connect() as database:
+            stored_run = json.loads(
+                database.execute("SELECT run_json FROM submissions WHERE id = ?", (submission_id,)).fetchone()[
+                    "run_json"
+                ]
+            )
+        self.assertFalse(stored_run["fastMode"])
         status, recording_payload = self.request_audio(
             f"/api/submissions/{submission_id}/recordings?task=2&label=Answer", b"test-audio", student_cookie
         )
         self.assertEqual(status, 201)
         recording_id = recording_payload["recording"]["id"]
+        status, replacement_payload = self.request_audio(
+            f"/api/submissions/{submission_id}/recordings?task=2&label=Answer", b"replacement-audio", student_cookie
+        )
+        self.assertEqual(status, 201)
+        recording_id = replacement_payload["recording"]["id"]
+        with runtime.connect() as database:
+            self.assertEqual(
+                database.execute(
+                    "SELECT COUNT(*) FROM recordings WHERE submission_id = ? AND task_number = 2", (submission_id,)
+                ).fetchone()[0],
+                1,
+            )
+            self.assertEqual(database.execute("SELECT COUNT(*) FROM storage_cleanup_jobs").fetchone()[0], 1)
+        status, _, _ = self.request_bytes(f"/api/recordings/{recording_id}", teacher_cookie)
+        self.assertEqual(status, 404)
+        status, teacher_submissions, _ = self.request("GET", "/api/teacher/submissions", cookie=teacher_cookie)
+        self.assertEqual(status, 200)
+        self.assertEqual(teacher_submissions["submissions"], [])
+        status, incomplete, _ = self.request("POST", f"/api/submissions/{submission_id}/complete", {}, student_cookie)
+        self.assertEqual(status, 409)
+        self.assertEqual(incomplete["code"], "submission_incomplete")
+        for question in range(1, 6):
+            status, _ = self.request_audio(
+                f"/api/submissions/{submission_id}/recordings?task=1&question={question}&label=Question",
+                b"test-audio",
+                student_cookie,
+            )
+            self.assertEqual(status, 201)
+        status, _, _ = self.request("POST", f"/api/submissions/{submission_id}/complete", {}, student_cookie)
+        self.assertEqual(status, 200)
+        status, rejected_upload = self.request_audio(
+            f"/api/submissions/{submission_id}/recordings?task=2&label=Answer", b"test-audio", student_cookie
+        )
+        self.assertEqual(status, 409)
+        self.assertEqual(rejected_upload["code"], "submission_not_uploading")
+
         status, audio_data, content_type = self.request_bytes(f"/api/recordings/{recording_id}", teacher_cookie)
         self.assertEqual(status, 200, audio_data)
-        self.assertEqual(audio_data, b"test-audio")
+        self.assertEqual(audio_data, b"replacement-audio")
         self.assertEqual(content_type, "audio/webm")
-
         status, teacher_submissions, _ = self.request("GET", "/api/teacher/submissions", cookie=teacher_cookie)
         self.assertEqual(status, 200)
         self.assertTrue(teacher_submissions["submissions"][0]["late"])
-        self.assertEqual(teacher_submissions["submissions"][0]["recordings"][0]["id"], recording_id)
+        self.assertEqual(len(teacher_submissions["submissions"][0]["recordings"]), 6)
         status, history, _ = self.request("GET", f"/api/teacher/submissions/{submission_id}", cookie=teacher_cookie)
         self.assertEqual(status, 200)
         self.assertEqual(history["attempts"][0]["id"], submission_id)
