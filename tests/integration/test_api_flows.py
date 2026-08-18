@@ -414,12 +414,19 @@ class ApiFlowTest(unittest.TestCase):
         status, submission_payload, _ = self.request(
             "POST",
             f"/api/assignments/{assignment_id}/submissions",
-            {"run": {"variantId": "demo-2026", "tasks": [1, 2]}},
+            {"run": {"variantId": "demo-2026", "tasks": [1, 2], "fastMode": True}},
             student_cookie,
         )
         self.assertEqual(status, 201)
         submission_id = submission_payload["submission"]["id"]
         self.assertTrue(submission_payload["submission"]["late"])
+        with runtime.connect() as database:
+            stored_run = json.loads(
+                database.execute("SELECT run_json FROM submissions WHERE id = ?", (submission_id,)).fetchone()[
+                    "run_json"
+                ]
+            )
+        self.assertFalse(stored_run["fastMode"])
         status, recording_payload = self.request_audio(
             f"/api/submissions/{submission_id}/recordings?task=2&label=Answer", b"test-audio", student_cookie
         )

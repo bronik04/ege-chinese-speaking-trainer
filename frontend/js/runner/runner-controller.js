@@ -4,6 +4,10 @@ import { formatTime, stepsMarkup, taskMarkup } from "./task-view.js";
 
 const $ = (id) => document.getElementById(id);
 
+export function fastModeForRun(assignment, savedFastMode) {
+  return !assignment && Boolean(savedFastMode);
+}
+
 export function createRunnerController(ctx) {
   let mode = "exam";
   let taskQueue = [];
@@ -25,7 +29,7 @@ export function createRunnerController(ctx) {
 
   const taskData = (task) => ctx.getVariant().tasks[String(task)];
   const durationFor = (task, kind) => {
-    if (!$("fastMode").checked) return taskData(task)[kind + "Seconds"];
+    if (!fastModeForRun(activeAssignment, $("fastMode").checked)) return taskData(task)[kind + "Seconds"];
     if (task === 1) return kind === "prep" ? 8 : 5;
     return kind === "prep" ? 8 : 10;
   };
@@ -94,6 +98,7 @@ export function createRunnerController(ctx) {
   function startRun(startMode, assignment = null) {
     if (!ctx.getVariant()) return;
     activeAssignment = assignment;
+    $("fastMode").disabled = Boolean(assignment);
     mode = assignment ? "assignment" : startMode === "exam" ? "exam" : "practice";
     taskQueue = assignment ? [...assignment.tasks] : mode === "exam" ? [1, 2, 3] : [Number(startMode)];
     taskIndex = 0;
@@ -113,7 +118,7 @@ export function createRunnerController(ctx) {
       completedTasks: [],
       currentTask: taskQueue[0],
       phase: "idle",
-      fastMode: $("fastMode").checked,
+      fastMode: fastModeForRun(assignment, $("fastMode").checked),
       assignmentId: assignment?.id || null,
       startedAt: new Date().toISOString()
     };
@@ -313,6 +318,7 @@ export function createRunnerController(ctx) {
     ctx.finalizeActiveRun("interrupted", recordings.length);
     phase = "idle";
     activeAssignment = null;
+    $("fastMode").disabled = false;
     ctx.showScreen("home");
   }
   
@@ -331,6 +337,9 @@ export function createRunnerController(ctx) {
   return {
     startRun, ensureMicrophone, startPreparation, skipPhase, exitRun, beep,
     toggleSound, cleanup,
-    resetAssignment: () => { activeAssignment = null; },
+    resetAssignment: () => {
+      activeAssignment = null;
+      $("fastMode").disabled = false;
+    },
   };
 }

@@ -9,6 +9,7 @@ import {
 } from "../../frontend/js/account/account-view.js";
 import { escapeHtml, mergeProgress } from "../../frontend/js/shared/progress.js";
 import { formatTime, stepsMarkup, taskMarkup } from "../../frontend/js/runner/task-view.js";
+import { fastModeForRun } from "../../frontend/js/runner/runner-controller.js";
 import { auditMarkup } from "../../frontend/js/account/account-security.js";
 import { api } from "../../frontend/js/shared/api.js";
 import { catalogMarkup, filterVariants, variantKind } from "../../frontend/js/catalog/variant-catalog.js";
@@ -114,6 +115,11 @@ test("task markup escapes JSON content and keeps runner state", () => {
   assert.match(html, /Вопрос 2 из 5/);
   assert.equal(formatTime(125), "02:05");
   assert.match(stepsMarkup([1, 2, 3], 1), /done/);
+});
+
+test("assigned run ignores the saved fast-mode preference", () => {
+  assert.equal(fastModeForRun({ id: 14, tasks: [2] }, true), false);
+  assert.equal(fastModeForRun(null, true), true);
 });
 
 test("submission markup does not render transcripts", () => {

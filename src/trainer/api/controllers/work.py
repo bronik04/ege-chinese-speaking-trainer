@@ -232,15 +232,11 @@ def submission_create(
     run = payload.run
     if not isinstance(run, dict):
         raise ApiError(default_error_code(HTTPStatus.BAD_REQUEST), "Некорректная попытка", HTTPStatus.BAD_REQUEST)
-    encoded_run = json.dumps(run, ensure_ascii=False, separators=(",", ":"))
-    if len(encoded_run) > 100_000:
-        raise ApiError(
-            default_error_code(HTTPStatus.BAD_REQUEST), "Данные попытки слишком велики", HTTPStatus.BAD_REQUEST
-        )
+    run = dict(run)
     with connect() as database:
         assignment = database.execute(
             """
-            SELECT assignments.id FROM assignments
+            SELECT assignments.id, assignments.due_at FROM assignments
             JOIN group_members ON group_members.group_id = assignments.group_id
             WHERE assignments.id = ? AND group_members.user_id = ?
             """,
@@ -248,9 +244,12 @@ def submission_create(
         ).fetchone()
         if not assignment:
             raise ApiError("assignment_not_found", "Задание не найдено", HTTPStatus.NOT_FOUND)
-        assignment_details = database.execute(
-            "SELECT due_at FROM assignments WHERE id = ?", (assignment_id,)
-        ).fetchone()
+    run["fastMode"] = False
+    encoded_run = json.dumps(run, ensure_ascii=False, separators=(",", ":"))
+    if len(encoded_run) > 100_000:
+        raise ApiError(
+            default_error_code(HTTPStatus.BAD_REQUEST), "Данные попытки слишком велики", HTTPStatus.BAD_REQUEST
+        )
     submitted_at = int(time.time())
     try:
         submission_id, attempt = create_submission_with_retry(
@@ -258,7 +257,7 @@ def submission_create(
         )
     except RuntimeError:
         raise ApiError("submission_conflict", "Не удалось создать попытку. Повторите запрос", HTTPStatus.CONFLICT)
-    late = bool(assignment_details["due_at"] is not None and submitted_at > assignment_details["due_at"])
+    late = bool(assignment["due_at"] is not None and submitted_at > assignment["due_at"])
     with connect() as database:
         account_services.audit(
             database,
