@@ -46,7 +46,7 @@ button:disabled { cursor: wait; opacity: .48; }
 .back-btn, .text-btn { border: 0; background: transparent; }
 .header-actions { display: flex; align-items: center; gap: 20px; }
 .site-nav { display: flex; align-items: center; gap: 20px; }
-.header-link { color: var(--crimson-deep); border-bottom: 1px solid var(--crimson); padding: 5px 0; text-decoration: none; font: 800 10px/1 var(--font-utility); text-transform: uppercase; letter-spacing: .1em; white-space: nowrap; }
+.header-link { min-height: 44px; display: inline-flex; align-items: center; color: var(--crimson-deep); border-bottom: 1px solid var(--crimson); padding: 5px 0; text-decoration: none; font: 800 10px/1 var(--font-utility); text-transform: uppercase; letter-spacing: .1em; white-space: nowrap; }
 .header-link:hover { color: var(--crimson); }
 .header-link[aria-current="page"] { color: var(--crimson); border-bottom-width: 3px; border-bottom-color: var(--gold); }
 .project-select { width: 100%; position: relative; text-transform: none; letter-spacing: normal; }

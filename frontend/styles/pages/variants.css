@@ -12,7 +12,7 @@
 .catalog-search input { width: 100%; margin-top: 6px; padding: 9px 4px; color: var(--ink); border: 0; border-bottom: 1px solid var(--crimson); border-radius: 0; outline: 0; background: transparent; font: 15px/1.4 var(--font-body); }
 .catalog-search input:focus { border-bottom-width: 2px; }
 .year-filters { min-height: 51px; padding: 11px 27px; display: flex; gap: 8px; align-items: center; overflow-x: auto; border-bottom: 1px solid var(--line); }
-.year-filter { flex: 0 0 auto; border: 1px solid var(--line); padding: 7px 11px; background: transparent; color: var(--ink-soft); font: 800 10px/1 var(--font-utility); letter-spacing: .07em; }
+.year-filter { min-height: 44px; flex: 0 0 auto; border: 1px solid var(--line); padding: 7px 11px; background: transparent; color: var(--ink-soft); font: 800 10px/1 var(--font-utility); letter-spacing: .07em; }
 /* Выбранный год залит, наведение только подсвечивает рамку: иначе под курсором
    невозможно понять, какой фильтр включён. */
 .year-filter:hover { color: var(--crimson-deep); border-color: var(--crimson); background: var(--cream); }

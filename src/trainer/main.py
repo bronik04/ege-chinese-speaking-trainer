@@ -183,7 +183,6 @@ async def static_files(path: str):
         "variants.html",
         "variant-editor.html",
         "reference.html",
-        "about.html",
     }
     if relative in pages:
         base, resource = ROOT / "frontend/pages", relative

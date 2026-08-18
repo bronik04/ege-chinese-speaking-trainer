@@ -50,7 +50,7 @@
 .phrase-card:nth-last-child(-n+2) { border-bottom: 0; }
 .phrase-card b { display: block; color: var(--crimson-deep); font: 600 20px/1.35 var(--font-cjk); }
 .phrase-card span { display: block; margin-top: 6px; color: var(--ink-soft); font-size: 12px; }
-.copy-phrase { position: absolute; right: 13px; top: 14px; width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid var(--gold); color: var(--crimson); background: var(--cream); font-size: 12px; }
+.copy-phrase { position: absolute; right: 8px; top: 8px; width: 44px; height: 44px; min-height: 44px; display: grid; place-items: center; border: 1px solid var(--gold); color: var(--crimson); background: var(--cream); font-size: 12px; }
 .copy-phrase:hover { color: var(--gold-pale); background: var(--crimson-deep); border-color: var(--crimson-deep); }
 .examples-heading { margin: 18px 18px 0; padding: 24px 12px 12px; border-top: 3px solid var(--crimson); }
 .examples-heading h3 { margin: 0; color: var(--crimson-deep); font: 600 37px/1 var(--font-display); }

@@ -86,6 +86,8 @@ export function createRunnerController(ctx) {
     $("modeLabel").textContent = `${ctx.getVariant().label} · ${mode === "exam" ? "экзамен" : mode === "assignment" ? "задание преподавателя" : "тренировка"}`;
     $("taskContent").innerHTML = taskMarkup(task, taskData(task), { phase, questionIndex, selectedPhoto, photoChoiceMade });
     $("taskPaper").classList.toggle("locked", isLocked);
+    $("taskContent").setAttribute("aria-hidden", String(isLocked));
+    $("taskContent").inert = isLocked;
     $("taskLock").setAttribute("aria-hidden", String(!isLocked));
     document.querySelectorAll("[data-photo]").forEach(button => button.addEventListener("click", () => {
       if (phase === "answer") return;
