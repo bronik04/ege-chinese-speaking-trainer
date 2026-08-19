@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 
 const originHeaders = { Origin: "http://127.0.0.1:8091", "Sec-Fetch-Site": "same-origin" };
+const ownerEmail = "owner@example.test";
 
 async function verificationToken(email) {
   const outbox = path.join(process.env.E2E_DATA_DIR, "outbox.log");
@@ -25,17 +26,27 @@ async function post(context, url, data) {
   return response.json();
 }
 
+async function signInAsOwner(context) {
+  const registration = await context.request.post("/api/auth/register", {
+    headers: originHeaders,
+    data: { email: ownerEmail, password: "original123", displayName: "E2E Teacher" },
+  });
+  if (registration.status() === 201) {
+    expect((await registration.json()).user.role).toBe("teacher");
+    await post(context, "/api/auth/email/confirm", { token: await verificationToken(ownerEmail) });
+    return;
+  }
+  expect(registration.status(), await registration.text()).toBe(409);
+  await post(context, "/api/auth/login", { email: ownerEmail, password: "original123" });
+}
+
 test("student submits audio and teacher reviews it", async ({ browser }) => {
   const stamp = Date.now();
   const teacher = await browser.newContext({ baseURL: "http://127.0.0.1:8091" });
   const student = await browser.newContext({ baseURL: "http://127.0.0.1:8091" });
-  const teacherEmail = "workflow-teacher@example.test";
-  await post(teacher, "/api/auth/register", {
-    email: teacherEmail, password: "password123", displayName: "E2E Teacher", role: "teacher",
-  });
-  await post(teacher, "/api/auth/email/confirm", { token: await verificationToken(teacherEmail) });
+  await signInAsOwner(teacher);
   await post(student, "/api/auth/register", {
-    email: `student-${stamp}@example.test`, password: "password123", displayName: "E2E Student", role: "student",
+    email: `student-${stamp}@example.test`, password: "password123", displayName: "E2E Student",
   });
   const group = await post(teacher, "/api/teacher/groups", { name: "E2E Group" });
   await post(student, "/api/groups/join", { code: group.group.code });

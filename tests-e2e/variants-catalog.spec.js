@@ -4,6 +4,7 @@ import path from "node:path";
 
 const originHeaders = { Origin: "http://127.0.0.1:8091", "Sec-Fetch-Site": "same-origin" };
 const baseURL = "http://127.0.0.1:8091";
+const ownerEmail = "owner@example.test";
 let publishedSlug = null;
 
 test.describe.configure({ mode: "serial" });
@@ -27,6 +28,20 @@ async function verificationToken(email) {
   return token;
 }
 
+async function signInAsOwner(context) {
+  const registration = await context.request.post("/api/auth/register", {
+    headers: originHeaders,
+    data: { email: ownerEmail, password: "original123", displayName: "Snapshot Teacher" },
+  });
+  if (registration.status() === 201) {
+    expect((await registration.json()).user.role).toBe("teacher");
+    await post(context, "/api/auth/email/confirm", { token: await verificationToken(ownerEmail) });
+    return;
+  }
+  expect(registration.status(), await registration.text()).toBe(409);
+  await post(context, "/api/auth/login", { email: ownerEmail, password: "original123" });
+}
+
 test("guest catalog exposes only the open 2026 variant", async ({ page }) => {
   await page.goto("/variants.html");
   await expect(page.locator(".variant-card")).toHaveCount(1);
@@ -46,7 +61,7 @@ test("registered user publishes a standalone task and opens it from catalog", as
   const email = "catalog-author@example.test";
   const registration = await context.request.post("/api/auth/register", {
     headers: originHeaders,
-    data: { email, password: "password123", displayName: "Автор", role: "student" },
+    data: { email, password: "password123", displayName: "Автор" },
   });
   expect(registration.ok(), await registration.text()).toBeTruthy();
   const confirmation = await context.request.post("/api/auth/email/confirm", {
@@ -113,13 +128,9 @@ test("assigned snapshot opens after the author deletes the source material", asy
   const teacher = await browser.newContext({ baseURL });
   const student = await browser.newContext({ baseURL });
   const author = await browser.newContext({ baseURL });
-  const teacherEmail = "snapshot-teacher@example.test";
-  await post(teacher, "/api/auth/register", {
-    email: teacherEmail, password: "password123", displayName: "Snapshot Teacher", role: "teacher",
-  });
-  await post(teacher, "/api/auth/email/confirm", { token: await verificationToken(teacherEmail) });
+  await signInAsOwner(teacher);
   await post(student, "/api/auth/register", {
-    email: "snapshot-student@example.test", password: "password123", displayName: "Snapshot Student", role: "student",
+    email: "snapshot-student@example.test", password: "password123", displayName: "Snapshot Student",
   });
   const group = await post(teacher, "/api/teacher/groups", { name: "Snapshot group" });
   await post(student, "/api/groups/join", { code: group.group.code });
