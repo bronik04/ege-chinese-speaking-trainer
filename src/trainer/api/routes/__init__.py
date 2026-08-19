@@ -24,12 +24,22 @@ def respond(result: ActionResult) -> JSONResponse:
     return response
 
 
-def file_response(stored: FileResult, range_header: str | None = None) -> Response:
+def file_response(
+    stored: FileResult,
+    range_header: str | None = None,
+    *,
+    range_header_count: int = 1,
+) -> Response:
     headers = {
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
         "Accept-Ranges": "bytes",
     }
+    if range_header_count > 1:
+        return Response(
+            status_code=416,
+            headers={**headers, "Content-Range": f"bytes */{stored.size_bytes}"},
+        )
     try:
         byte_range = parse_single_byte_range(range_header, stored.size_bytes)
     except RangeNotSatisfiable:

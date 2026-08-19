@@ -36,7 +36,7 @@ def parse_single_byte_range(value: str | None, size: int) -> ByteRange | None:
         unit, expression = value.split("=", 1)
     except ValueError as exc:
         raise RangeNotSatisfiable("malformed range header") from exc
-    if unit != "bytes" or "," in expression:
+    if unit.lower() != "bytes" or "," in expression:
         raise RangeNotSatisfiable("unsupported or multiple range")
     if re.fullmatch(r"[0-9]*-[0-9]*", expression) is None:
         raise RangeNotSatisfiable("malformed byte range")

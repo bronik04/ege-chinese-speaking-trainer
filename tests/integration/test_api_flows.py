@@ -698,6 +698,34 @@ class ApiFlowTest(unittest.TestCase):
         self.assertEqual(headers["content-range"], "bytes */10")
         self.assertEqual(body, b"")
 
+    def test_recording_rejects_repeated_range_headers_without_reading_audio(self):
+        recording_id, cookie = self.create_recording()
+        storage_calls = []
+
+        def local_path(*args, **kwargs):
+            storage_calls.append(("local_path", args, kwargs))
+            return None
+
+        def stream(*args, **kwargs):
+            storage_calls.append(("stream", args, kwargs))
+            return iter([b"unexpected"])
+
+        request = self.client.build_request(
+            "GET",
+            f"/api/recordings/{recording_id}",
+            headers=[("Cookie", cookie), ("Range", "bytes=0-1"), ("Range", "bytes=4-5")],
+        )
+        with (
+            patch.object(routes, "storage_local_path", local_path),
+            patch.object(routes, "stream_recording", stream),
+        ):
+            response = self.client.send(request)
+
+        self.assertEqual(response.status_code, 416)
+        self.assertEqual(response.headers["content-range"], "bytes */10")
+        self.assertEqual(response.content, b"")
+        self.assertEqual(storage_calls, [])
+
 
 if __name__ == "__main__":
     unittest.main()
