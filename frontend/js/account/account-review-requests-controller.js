@@ -4,10 +4,10 @@ import { studentReviewRequestsMarkup } from "./account-view.js";
 const $ = (id) => document.getElementById(id);
 
 export function createAccountReviewRequestsController(ctx) {
-  let pendingRequest = null;
+  let pendingSubmission = null;
 
   function reset() {
-    pendingRequest = null;
+    pendingSubmission = null;
     $("studentReviewRequestsPanel").classList.add("hidden");
     $("studentReviewRequestsList").innerHTML = "";
   }
@@ -27,7 +27,7 @@ export function createAccountReviewRequestsController(ctx) {
     }
   }
 
-  function showError(error, selection, runId) {
+  function showError(error, selection, submission) {
     const message = $("reviewRequestMessage");
     message.replaceChildren(`Не удалось отправить: ${error.message}. `);
     const retry = document.createElement("button");
@@ -35,13 +35,12 @@ export function createAccountReviewRequestsController(ctx) {
     retry.className = "secondary-btn";
     retry.textContent = "Повторить отправку";
     retry.addEventListener("click", async () => {
-      if (ctx.getCompletedRun()?.id !== runId) {
+      if (pendingSubmission !== submission || ctx.getCompletedRun()?.id !== submission.runId) {
         message.textContent = "Повторить можно только для исходной попытки.";
         return;
       }
       try {
-        await submitReviewRequest(selection);
-        ctx.onReviewRequestSent?.();
+        if (await submitReviewRequest(selection)) ctx.onReviewRequestSent?.();
       } catch (_) {
         // Следующая ошибка заменит это сообщение новой кнопкой повтора.
       }
@@ -54,44 +53,64 @@ export function createAccountReviewRequestsController(ctx) {
     const run = ctx.getCompletedRun();
     const completedTasks = ctx.getCompletedTasks();
     const recordings = ctx.getCompletedRecordings();
-    if (pendingRequest && pendingRequest.runId !== run?.id) pendingRequest = null;
+    if (pendingSubmission && pendingSubmission.runId !== run?.id) pendingSubmission = null;
     if (!run || !tasks.length || tasks.some(task => !completedTasks.includes(task))) {
       throw new Error("Выберите завершённое задание");
     }
     if (!recordings.length) throw new Error("Нет аудиозаписей для отправки");
-    const sameSelection = pendingRequest
-      && pendingRequest.kind === selection.kind
-      && pendingRequest.tasks.join(",") === tasks.join(",");
-    if (pendingRequest && !sameSelection) {
+    const sameSelection = pendingSubmission
+      && pendingSubmission.kind === selection.kind
+      && pendingSubmission.tasks.join(",") === tasks.join(",");
+    if (pendingSubmission && !sameSelection) {
       throw new Error("Сначала повторите отправку выбранного разбора");
     }
+    if (pendingSubmission?.running) return pendingSubmission.promise;
+    const submission = pendingSubmission || {
+      runId: run.id,
+      kind: selection.kind,
+      tasks,
+      requestId: null,
+      promise: null,
+      running: false,
+    };
+    pendingSubmission = submission;
+    submission.running = true;
+    submission.promise = sendReviewRequest(submission, selection, run, recordings);
+    return submission.promise;
+  }
+
+  async function sendReviewRequest(submission, selection, run, recordings) {
     try {
-      if (!pendingRequest) {
+      if (!submission.requestId) {
         const payload = await createReviewRequest({
           kind: selection.kind,
-          tasks,
+          tasks: submission.tasks,
           variantId: run.variantId,
           run,
         });
-        pendingRequest = { id: payload.reviewRequest.id, runId: run.id, kind: selection.kind, tasks };
+        submission.requestId = payload.reviewRequest.id;
       }
-      for (const recording of recordings.filter(item => tasks.includes(item.task))) {
-        await uploadReviewRecording(pendingRequest.id, recording);
+      for (const recording of recordings.filter(item => submission.tasks.includes(item.task))) {
+        await uploadReviewRecording(submission.requestId, recording);
       }
-      await completeReviewRequest(pendingRequest.id);
-      pendingRequest = null;
+      await completeReviewRequest(submission.requestId);
+      if (pendingSubmission !== submission) return false;
+      pendingSubmission = null;
       $("reviewRequestMessage").textContent = "Заявка отправлена на разбор.";
       ctx.toast("Аудиозаписи отправлены преподавателю");
       await loadStudentReviewRequests();
+      return true;
     } catch (error) {
-      showError(error, selection, run.id);
+      if (pendingSubmission === submission) showError(error, selection, submission);
       throw error;
+    } finally {
+      submission.running = false;
     }
   }
 
   return {
     reset,
-    clearPendingReviewRequest: () => { pendingRequest = null; },
+    clearPendingReviewRequest: () => { pendingSubmission = null; },
     loadStudentReviewRequests,
     submitReviewRequest,
   };

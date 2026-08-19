@@ -220,3 +220,53 @@ test("student starts a new run after a failed upload without reusing its review 
     await student.close();
   }
 });
+
+test("concurrent runs keep delayed uploads and completion on their own review requests", async ({ browser }) => {
+  const stamp = Date.now();
+  const student = await browser.newContext({ baseURL: "http://127.0.0.1:8091" });
+  const page = await student.newPage();
+  const recordingUrls = [];
+  let signalFirstUpload;
+  let releaseFirstUpload;
+  const firstUploadStarted = new Promise(resolve => { signalFirstUpload = resolve; });
+  const firstUploadRelease = new Promise(resolve => { releaseFirstUpload = resolve; });
+  let holdFirstUpload = true;
+  await page.route("**/api/review-requests/*/recordings?*", async route => {
+    const url = route.request().url();
+    recordingUrls.push(url);
+    if (holdFirstUpload && url.includes("task=2")) {
+      holdFirstUpload = false;
+      signalFirstUpload();
+      await firstUploadRelease;
+    }
+    await route.continue();
+  });
+  try {
+    await installRecorder(page);
+    await page.goto("/");
+    await registerStudent(page, stamp);
+    await page.locator("#fastMode").check({ force: true });
+    await finishTask(page, 2);
+    await page.getByRole("button", { name: "Отправить одно задание" }).click();
+    await firstUploadStarted;
+
+    await page.locator("#restartBtn").click();
+    await finishTask(page, 3);
+    await page.getByRole("button", { name: "Отправить одно задание" }).click();
+    await expect(page.locator("#reviewRequestMessage")).toContainText("отправлена");
+
+    releaseFirstUpload();
+    await expect.poll(async () => {
+      const payload = await (await student.request.get("/api/student/review-requests")).json();
+      return payload.requests.filter(request => request.status === "queued").length;
+    }).toBe(2);
+
+    expect(recordingUrls).toHaveLength(2);
+    expect(recordingUrls[0]).toContain("task=2");
+    expect(recordingUrls[1]).toContain("task=3");
+    expect(new URL(recordingUrls[0]).pathname).not.toBe(new URL(recordingUrls[1]).pathname);
+  } finally {
+    releaseFirstUpload?.();
+    await student.close();
+  }
+});

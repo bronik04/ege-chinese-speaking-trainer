@@ -237,8 +237,7 @@ function renderReviewRequestChooser() {
       : { kind: "task", tasks: [Number(taskSelect.value)] };
     submit.disabled = true;
     try {
-      await account.submitReviewRequest(selection);
-      reviewRequestSent = true;
+      if (await account.submitReviewRequest(selection)) reviewRequestSent = true;
     } catch (_) {
       // Контроллер показывает ошибку и кнопку повтора непосредственно у выбора.
     } finally {
