@@ -2,12 +2,14 @@ import { createAccountAssignmentsController } from "./account-assignments-contro
 import { createAccountAuthController } from "./account-auth-controller.js";
 import { createAccountGroupsController } from "./account-groups-controller.js";
 import { createAccountReviewsController } from "./account-reviews-controller.js";
+import { createAccountReviewRequestsController } from "./account-review-requests-controller.js";
 import { createAccountSecurityController } from "./account-security-controller.js";
 
 export function createAccountController(ctx) {
   let assignments;
   let groups;
   let reviews;
+  let reviewRequests;
   let security;
 
   const refreshAccountData = async () => {
@@ -15,7 +17,7 @@ export function createAccountController(ctx) {
     if (auth.user.role === "teacher") {
       await Promise.all([groups.loadTeacherDashboard(), reviews.loadTeacherSubmissions(), assignments.loadTeacherAssignments()]);
     } else {
-      await Promise.all([groups.loadStudentGroups(), assignments.loadStudentAssignments()]);
+      await Promise.all([groups.loadStudentGroups(), assignments.loadStudentAssignments(), reviewRequests.loadStudentReviewRequests()]);
     }
   };
 
@@ -23,6 +25,7 @@ export function createAccountController(ctx) {
     groups?.reset();
     assignments?.reset();
     reviews?.reset();
+    reviewRequests?.reset();
   };
 
   const auth = createAccountAuthController({
@@ -44,6 +47,7 @@ export function createAccountController(ctx) {
     getTeacherGroups: groups.getTeacherGroups,
   });
   reviews = createAccountReviewsController({ toast: ctx.toast, getUser: () => auth.user });
+  reviewRequests = createAccountReviewRequestsController({ ...ctx, getUser: () => auth.user });
   security = createAccountSecurityController({ ...ctx, auth });
 
   return {
@@ -64,6 +68,8 @@ export function createAccountController(ctx) {
     loadTeacherDashboard: groups.loadTeacherDashboard,
     createGroup: groups.createGroup,
     loadStudentAssignments: assignments.loadStudentAssignments,
+    loadStudentReviewRequests: reviewRequests.loadStudentReviewRequests,
+    submitReviewRequest: reviewRequests.submitReviewRequest,
     startAssignedRun: assignments.startAssignedRun,
     renderAssignmentOptions: assignments.renderAssignmentOptions,
     createAssignment: assignments.createAssignment,

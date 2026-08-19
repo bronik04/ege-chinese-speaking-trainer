@@ -40,53 +40,139 @@ async function signInAsOwner(context) {
   await post(context, "/api/auth/login", { email: ownerEmail, password: "original123" });
 }
 
-test("student submits audio and teacher reviews it", async ({ browser }) => {
+function createSampleAudio() {
+  const audioPath = path.join(os.tmpdir(), `ege-e2e-${Date.now()}.webm`);
+  execFileSync("ffmpeg", ["-loglevel", "error", "-f", "lavfi", "-i", "anullsrc", "-t", "1", "-c:a", "libopus", "-y", audioPath]);
+  try {
+    return fs.readFileSync(audioPath).toString("base64");
+  } finally {
+    fs.rmSync(audioPath, { force: true });
+  }
+}
+
+async function installRecorder(page) {
+  await page.addInitScript(audio => {
+    class TestMediaRecorder {
+      static isTypeSupported() { return true; }
+      constructor() { this.state = "inactive"; this.mimeType = "audio/webm"; }
+      start() { this.state = "recording"; }
+      stop() {
+        this.state = "inactive";
+        const bytes = Uint8Array.from(atob(audio), character => character.charCodeAt(0));
+        this.ondataavailable?.({ data: new Blob([bytes], { type: this.mimeType }) });
+        this.onstop?.();
+      }
+    }
+    Object.defineProperty(navigator, "mediaDevices", { value: { getUserMedia: async () => ({ active: true, getTracks: () => [] }) } });
+    Object.defineProperty(window, "MediaRecorder", { value: TestMediaRecorder });
+  }, createSampleAudio());
+}
+
+async function registerStudent(page, stamp) {
+  await page.locator("#authButton").click();
+  await page.locator("#registerTab").click();
+  await page.locator("#authName").fill("E2E Student");
+  await page.locator("#authEmail").fill(`student-${stamp}@example.test`);
+  await page.locator("#authPassword").fill("password123");
+  await page.locator("#authForm").evaluate(form => form.requestSubmit());
+  await expect(page.locator("#authModal")).toHaveClass(/hidden/);
+}
+
+async function finishTask(page, task) {
+  await page.locator(`[data-start="${task}"]`).click();
+  await page.locator("#mainActionBtn").click();
+  await page.locator("#skipBtn").click();
+  await page.locator("#skipBtn").click();
+  await expect(page.locator("#resultScreen")).not.toHaveClass(/hidden/);
+}
+
+async function finishCompleteAttempt(page) {
+  await page.locator('[data-start="exam"]').click();
+  await page.locator("#mainActionBtn").click();
+  await page.locator("#skipBtn").click();
+  for (let question = 0; question < 5; question += 1) await page.locator("#skipBtn").click();
+  for (const task of [2, 3]) {
+    await expect(page.locator("#taskBadge")).toHaveText(`Задание ${task}`);
+    await page.locator("#mainActionBtn").click();
+    await page.locator("#skipBtn").click();
+    await page.locator("#skipBtn").click();
+  }
+  await expect(page.locator("#resultScreen")).not.toHaveClass(/hidden/);
+}
+
+test("student submits a single task only after an explicit review request", async ({ browser }) => {
   const stamp = Date.now();
   const teacher = await browser.newContext({ baseURL: "http://127.0.0.1:8091" });
   const student = await browser.newContext({ baseURL: "http://127.0.0.1:8091" });
   await signInAsOwner(teacher);
-  await post(student, "/api/auth/register", {
-    email: `student-${stamp}@example.test`, password: "password123", displayName: "E2E Student",
-  });
-  const group = await post(teacher, "/api/teacher/groups", { name: "E2E Group" });
-  await post(student, "/api/groups/join", { code: group.group.code });
-  const assignment = await post(teacher, "/api/teacher/assignments", {
-    groupId: group.group.id, title: "E2E speaking task", variantId: "demo-2026", tasks: [2], dueAt: null,
-  });
-  const submission = await post(student, `/api/assignments/${assignment.assignment.id}/submissions`, {
-    run: { id: `e2e-${stamp}`, status: "completed", completedTasks: [2] },
-  });
-
-  const audioPath = path.join(os.tmpdir(), `ege-e2e-${stamp}.webm`);
-  execFileSync("ffmpeg", ["-loglevel", "error", "-f", "lavfi", "-i", "anullsrc", "-t", "1", "-c:a", "libopus", "-y", audioPath]);
+  const page = await student.newPage();
   try {
-    const upload = await student.request.post(
-      `/api/submissions/${submission.submission.id}/recordings?task=2&label=E2E%20answer`,
-      { headers: { ...originHeaders, "Content-Type": "audio/webm" }, data: fs.readFileSync(audioPath) },
-    );
-    expect(upload.ok(), await upload.text()).toBeTruthy();
+    await installRecorder(page);
+    await page.goto("/");
+    await registerStudent(page, stamp);
+    await page.locator("#fastMode").check({ force: true });
+    await finishTask(page, 2);
+    expect((await (await teacher.request.get("/api/teacher/review-requests")).json()).requests).toEqual([]);
+    await page.getByLabel("Одно задание").check();
+    await page.locator("#reviewTaskSelect").selectOption("2");
+    await page.getByRole("button", { name: "Отправить одно задание" }).click();
+    await expect(page.locator("#reviewRequestMessage")).toContainText("отправлена");
+    await expect.poll(async () => (await (await teacher.request.get("/api/teacher/review-requests")).json()).requests.length).toBe(1);
   } finally {
-    fs.rmSync(audioPath, { force: true });
+    await teacher.close();
+    await student.close();
   }
-  const beforeComplete = await teacher.request.get("/api/teacher/submissions");
-  expect((await beforeComplete.json()).submissions).toEqual([]);
-  await post(student, `/api/submissions/${submission.submission.id}/complete`, {});
+});
 
-  const page = await teacher.newPage();
-  await page.goto("/");
-  await page.locator("#authButton").click();
-  await page.locator("#teacherCabinetBtn").click();
-  await expect(page.locator("#teacherSubmissions")).toContainText("E2E Student");
-  const audio = page.locator("#teacherSubmissions audio");
-  await expect(audio).toHaveCount(1);
-  const audioResponse = await teacher.request.get(await audio.getAttribute("src"));
-  expect(audioResponse.headers()["content-type"]).toContain("audio/webm");
-  await page.locator('[name="task-2-content"]').fill("3");
-  await page.locator('[name="task-2-organization"]').fill("2");
-  await page.locator('[name="task-2-language"]').fill("2");
-  await page.locator('[name="comment"]').fill("E2E review completed");
-  await page.locator("[data-review-submission] button[type=submit]").click();
-  await expect(page.locator("#toast")).toContainText("7/7");
-  await teacher.close();
-  await student.close();
+test("student submits a complete attempt with every completed task", async ({ browser }) => {
+  const stamp = Date.now();
+  const student = await browser.newContext({ baseURL: "http://127.0.0.1:8091" });
+  const page = await student.newPage();
+  try {
+    await installRecorder(page);
+    await page.goto("/");
+    await registerStudent(page, stamp);
+    await page.locator("#fastMode").check({ force: true });
+    await finishCompleteAttempt(page);
+    await page.getByLabel("Всю попытку").check();
+    await page.getByRole("button", { name: "Отправить всю попытку" }).click();
+    await expect(page.locator("#studentReviewRequestsList .review-request-card")).toHaveCount(1);
+    await expect(page.locator("#studentReviewRequestsList")).toContainText("Задания 1, 2, 3");
+  } finally {
+    await student.close();
+  }
+});
+
+test("student retries a failed upload without creating a duplicate review request", async ({ browser }) => {
+  const stamp = Date.now();
+  const student = await browser.newContext({ baseURL: "http://127.0.0.1:8091" });
+  const page = await student.newPage();
+  let createdRequests = 0;
+  let rejectUpload = true;
+  await page.route("**/api/review-requests", route => {
+    if (route.request().method() === "POST") createdRequests += 1;
+    return route.continue();
+  });
+  await page.route("**/api/review-requests/*/recordings?*", route => {
+    if (rejectUpload) {
+      rejectUpload = false;
+      return route.abort();
+    }
+    return route.continue();
+  });
+  try {
+    await installRecorder(page);
+    await page.goto("/");
+    await registerStudent(page, stamp);
+    await page.locator("#fastMode").check({ force: true });
+    await finishTask(page, 2);
+    await page.getByRole("button", { name: "Отправить одно задание" }).click();
+    await expect(page.getByRole("button", { name: "Повторить отправку" })).toBeVisible();
+    await page.getByRole("button", { name: "Повторить отправку" }).click();
+    await expect(page.locator("#reviewRequestMessage")).toContainText("отправлена");
+    expect(createdRequests).toBe(1);
+    await expect(page.getByRole("button", { name: "Отправить одно задание" })).toBeDisabled();
+  } finally {
+    await student.close();
+  }
 });

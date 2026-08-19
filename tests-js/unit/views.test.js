@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   assignmentTasksMarkup,
   studentAssignmentsMarkup,
+  studentReviewRequestsMarkup,
   teacherGroupsMarkup,
   teacherSubmissionsMarkup,
 } from "../../frontend/js/account/account-view.js";
@@ -100,6 +101,35 @@ test("assignment UI marks late work and limits standalone task choices", () => {
   const choices = assignmentTasksMarkup({ kind: "task", taskNumber: 2 });
   assert.match(choices, /value="2"/);
   assert.doesNotMatch(choices, /value="exam"|value="1"|value="3"/);
+});
+
+test("student review request markup hides queued scores and escapes the variant title", () => {
+  const queued = studentReviewRequestsMarkup([{
+    kind: "task",
+    status: "queued",
+    variantId: "<script>alert(1)</script>",
+    tasks: [2],
+    submittedAt: 1_789_000_000,
+    total: 7,
+    maximum: 7,
+  }]);
+  assert.match(queued, /Одно задание/);
+  assert.match(queued, /На разборе/);
+  assert.doesNotMatch(queued, /7\/7/);
+  assert.doesNotMatch(queued, /<script>/);
+  assert.match(queued, /&lt;script&gt;/);
+
+  const reviewed = studentReviewRequestsMarkup([{
+    kind: "attempt",
+    status: "reviewed",
+    variantId: "demo-2026",
+    tasks: [1, 2, 3],
+    submittedAt: 1_789_000_000,
+    total: 7,
+    maximum: 7,
+  }]);
+  assert.match(reviewed, /Вся попытка/);
+  assert.match(reviewed, /Разобрано: 7\/7/);
 });
 
 test("task markup escapes JSON content and keeps runner state", () => {

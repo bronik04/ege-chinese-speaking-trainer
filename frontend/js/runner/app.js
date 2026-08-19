@@ -28,6 +28,7 @@ let progress = loadLocalProgress(progressStorageKey);
 const interruptedRunId = progress.activeRun?.id ?? null;
 let account = null;
 let runner = null;
+let reviewRequestSent = false;
 
 const taskData = (task) => variant.tasks[String(task)];
 
@@ -201,6 +202,52 @@ function updateVariantUI() {
   }
 }
 
+function renderReviewRequestChooser() {
+  const panel = $("reviewRequestPanel");
+  const run = runner.getCompletedRun();
+  const tasks = runner.getCompletedTasks();
+  const recordings = runner.getCompletedRecordings();
+  const isStudent = account?.user?.role === "student";
+  if (!run || !tasks.length) {
+    panel.classList.add("hidden");
+    return;
+  }
+  panel.classList.remove("hidden");
+  const taskSelect = $("reviewTaskSelect");
+  taskSelect.innerHTML = tasks.map(task => `<option value="${task}">Задание ${task}</option>`).join("");
+  const taskChoice = document.querySelector('[name="reviewKind"][value="task"]');
+  const attemptChoice = document.querySelector('[name="reviewKind"][value="attempt"]');
+  const submit = $("sendReviewRequestBtn");
+  const message = $("reviewRequestMessage");
+  const update = () => {
+    const isAttempt = attemptChoice.checked;
+    taskSelect.disabled = isAttempt;
+    $("reviewTaskLabel").classList.toggle("hidden", isAttempt);
+    submit.textContent = isAttempt ? "Отправить всю попытку" : "Отправить одно задание";
+    submit.disabled = reviewRequestSent || !recordings.length || !isStudent;
+    if (!isStudent && !reviewRequestSent) message.textContent = "Войдите как ученик, чтобы отправить запись на разбор.";
+    else if (!recordings.length && !reviewRequestSent) message.textContent = "Нет аудиозаписей для отправки.";
+    else if (!reviewRequestSent && !message.hasChildNodes()) message.textContent = "";
+  };
+  taskChoice.onchange = update;
+  attemptChoice.onchange = update;
+  submit.onclick = async () => {
+    const selection = attemptChoice.checked
+      ? { kind: "attempt", tasks: [...tasks] }
+      : { kind: "task", tasks: [Number(taskSelect.value)] };
+    submit.disabled = true;
+    try {
+      await account.submitReviewRequest(selection);
+      reviewRequestSent = true;
+    } catch (_) {
+      // Контроллер показывает ошибку и кнопку повтора непосредственно у выбора.
+    } finally {
+      update();
+    }
+  };
+  update();
+}
+
 runner = createRunnerController({
   getVariant: () => variant,
   getProgress: () => progress,
@@ -210,6 +257,10 @@ runner = createRunnerController({
   finalizeActiveRun,
   toast,
   getAccount: () => account,
+  onRunFinished: () => {
+    reviewRequestSent = false;
+    renderReviewRequestChooser();
+  },
 });
 const {
   startRun, ensureMicrophone, startPreparation, skipPhase, exitRun,
@@ -226,6 +277,13 @@ account = createAccountController({
   startRun,
   getVariantIndex: () => variantIndex,
   refreshMaterials: initVariants,
+  getCompletedRecordings: () => runner.getCompletedRecordings(),
+  getCompletedTasks: () => runner.getCompletedTasks(),
+  getCompletedRun: () => runner.getCompletedRun(),
+  onReviewRequestSent: () => {
+    reviewRequestSent = true;
+    renderReviewRequestChooser();
+  },
 });
 const {
   initAuth, setAuthMode, openModal, closeModal, submitAuth, logout, requestPasswordReset,

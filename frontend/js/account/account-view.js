@@ -21,6 +21,19 @@ export function studentAssignmentsMarkup(assignments) {
   }).join("");
 }
 
+export function studentReviewRequestsMarkup(requests) {
+  if (!requests.length) {
+    return '<p class="student-review-requests-empty">Пока нет отправленных разборов.</p>';
+  }
+  return requests.map(request => {
+    const type = request.kind === "attempt" ? "Вся попытка" : "Одно задание";
+    const status = request.status === "reviewed"
+      ? `Разобрано: ${request.total}/${request.maximum}`
+      : request.status === "queued" ? "На разборе" : "Загружаем записи";
+    return `<article class="review-request-card"><div><p class="eyebrow">${type}</p><h3>${escapeHtml(request.variantId)}</h3><span>Задания ${request.tasks.join(", ")} · ${formatHistoryDate(request.submittedAt * 1000)}</span><small>${status}</small></div></article>`;
+  }).join("");
+}
+
 export function assignmentTasksMarkup(variant) {
   if (variant?.kind === "task") {
     return `<option value="${variant.taskNumber}">Только задание ${variant.taskNumber}</option>`;

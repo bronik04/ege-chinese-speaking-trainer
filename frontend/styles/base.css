@@ -146,6 +146,12 @@ h1 em { color: var(--crimson); font-weight: inherit; }
 .secondary-btn:hover { color: var(--cream); background: var(--crimson); }
 .student-assignments { padding: 22px; border-top: 4px solid var(--gold); background: var(--cream); }
 .student-assignments h2, .teacher-review-section h2 { margin: 0; color: var(--crimson-deep); font: 600 32px/1 var(--font-display); }
+.student-review-requests { padding: 22px; border-top: 4px solid var(--gold); background: var(--cream); }
+.student-review-requests h2 { margin: 0; color: var(--crimson-deep); font: 600 32px/1 var(--font-display); }
+.review-request-list { display: grid; gap: 10px; margin-top: 16px; }
+.review-request-card { padding: 16px; background: var(--paper); border: 1px solid var(--line); }
+.review-request-card h3 { margin: 2px 0; color: var(--crimson-deep); }
+.review-request-card span, .review-request-card small { display: block; color: var(--ink-soft); font-size: 12px; }
 .assignment-list { display: grid; gap: 10px; margin-top: 16px; }
 .assignment-card { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 16px; padding: 16px; background: var(--paper); border: 1px solid var(--line); }
 .assignment-card h3 { margin: 2px 0; color: var(--crimson-deep); }
@@ -228,6 +234,13 @@ h1 em { color: var(--crimson); font-weight: inherit; }
 .recording-item audio { grid-column: 1/-1; width: 100%; }
 .download-link { color: var(--crimson); text-decoration: none; font: 800 10px/1.4 var(--font-utility); text-transform: uppercase; letter-spacing: .08em; }
 .empty-recording { padding: 22px 0; }
+.review-request-panel { display: grid; gap: 13px; margin-top: 24px; padding-top: 22px; border-top: 1px solid var(--line); }
+.review-request-panel h3 { margin: -5px 0 0; color: var(--crimson-deep); font: 500 27px/1.1 var(--font-display); }
+.review-request-panel fieldset { display: grid; gap: 8px; margin: 0; padding: 0; border: 0; }
+.review-request-panel fieldset label, .review-request-panel > label { color: var(--ink-soft); font-size: 13px; }
+.review-request-panel > label { display: grid; gap: 6px; font: 700 10px/1.4 var(--font-utility); text-transform: uppercase; letter-spacing: .08em; }
+.review-request-panel select { width: 100%; padding: 9px; border: 1px solid var(--line); border-radius: 0; background: var(--cream); }
+.review-request-panel > p:last-child { min-height: 20px; margin: 0; color: var(--ink-soft); font-size: 12px; }
 .checklist-panel { display: grid; gap: 14px; position: sticky; top: 18px; }
 .checklist-panel label { display: grid; grid-template-columns: auto 1fr; gap: 9px; align-items: start; font-size: 13px; }
 .checklist-panel input { accent-color: var(--crimson); margin-top: 4px; }

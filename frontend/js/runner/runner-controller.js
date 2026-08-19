@@ -1,4 +1,3 @@
-import { api, completeSubmission, uploadAudio } from "../shared/api.js";
 import { createRunId } from "../shared/progress.js";
 import { formatTime, stepsMarkup, taskMarkup } from "./task-view.js";
 
@@ -26,7 +25,9 @@ export function createRunnerController(ctx) {
   let soundEnabled = true;
   let audioContext = null;
   let activeAssignment = null;
-  let pendingSubmission = null;
+  let completedRun = null;
+  let completedTasks = [];
+  let completedRecordings = [];
 
   const taskData = (task) => ctx.getVariant().tasks[String(task)];
   const durationFor = (task, kind) => {
@@ -110,6 +111,9 @@ export function createRunnerController(ctx) {
     photoChoiceMade = false;
     recordings.forEach(item => URL.revokeObjectURL(item.url));
     recordings = [];
+    completedRun = null;
+    completedTasks = [];
+    completedRecordings = [];
     phase = "idle";
     clearTimer();
     ctx.getProgress().activeRun = {
@@ -284,40 +288,14 @@ export function createRunnerController(ctx) {
     clearTimer();
     phase = "done";
     ctx.finalizeActiveRun("completed", recordings.length);
+    const run = ctx.getProgress().runs[0];
+    completedRun = run ? { ...run, tasks: [...run.tasks], completedTasks: [...run.completedTasks] } : null;
+    completedTasks = [...(run?.completedTasks || [])];
+    completedRecordings = recordings.map(recording => ({ ...recording }));
     renderRecordings();
     ctx.showScreen("result");
-    if (activeAssignment && ctx.getAccount()?.user?.role === "student") {
-      await submitAssignedRun();
-    } else {
-      $("submissionStatus").textContent = "Аудио хранится только в этой вкладке.";
-    }
-  }
-
-  async function submitAssignedRun() {
-    const status = $("submissionStatus");
-    status.textContent = "Отправляем работу преподавателю…";
-    try {
-      if (!pendingSubmission) {
-        const payload = await api(`/api/assignments/${activeAssignment.id}/submissions`, {
-          method: "POST", body: JSON.stringify({ run: ctx.getProgress().runs[0] })
-        });
-        pendingSubmission = payload.submission;
-      }
-      for (const recording of recordings) await uploadAudio(pendingSubmission.id, recording);
-      await completeSubmission(pendingSubmission.id);
-      status.textContent = `Работа отправлена · попытка ${pendingSubmission.attempt}`;
-      pendingSubmission = null;
-      ctx.toast("Работа и аудиозаписи отправлены преподавателю");
-      await ctx.getAccount().loadStudentAssignments();
-    } catch (error) {
-      status.replaceChildren(`Не удалось отправить: ${error.message}. Записи доступны ниже. `);
-      const retry = document.createElement("button");
-      retry.type = "button";
-      retry.className = "secondary-btn";
-      retry.textContent = "Повторить отправку";
-      retry.addEventListener("click", () => submitAssignedRun());
-      status.append(retry);
-    }
+    $("submissionStatus").textContent = "Аудио остаётся в этой вкладке, пока вы сами не отправите его на разбор.";
+    ctx.onRunFinished?.();
   }
   
   function renderRecordings() {
@@ -337,7 +315,6 @@ export function createRunnerController(ctx) {
     ctx.finalizeActiveRun("interrupted", recordings.length);
     phase = "idle";
     activeAssignment = null;
-    pendingSubmission = null;
     $("fastMode").disabled = false;
     ctx.showScreen("home");
   }
@@ -357,9 +334,11 @@ export function createRunnerController(ctx) {
   return {
     startRun, ensureMicrophone, startPreparation, skipPhase, exitRun, beep,
     toggleSound, cleanup,
+    getCompletedRecordings: () => completedRecordings.map(recording => ({ ...recording })),
+    getCompletedTasks: () => [...completedTasks],
+    getCompletedRun: () => completedRun && { ...completedRun, tasks: [...completedRun.tasks], completedTasks: [...completedRun.completedTasks] },
     resetAssignment: () => {
       activeAssignment = null;
-      pendingSubmission = null;
       $("fastMode").disabled = false;
     },
   };

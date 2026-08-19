@@ -72,6 +72,10 @@
           <div><span class="status-dot" id="micDot"></span><b id="micStatus">Микрофон ещё не проверен</b><small>Записи остаются только на этом устройстве</small></div>
           <button class="secondary-btn" id="checkMicBtn" type="button">Проверить микрофон</button>
         </div>
+        <section class="student-review-requests hidden" id="studentReviewRequestsPanel">
+          <div><p class="eyebrow">Личная история</p><h2>Мои разборы</h2></div>
+          <div class="review-request-list" id="studentReviewRequestsList"></div>
+        </section>
         <section class="student-assignments hidden" id="studentAssignmentsPanel">
           <div><p class="eyebrow">От преподавателя</p><h2>Мои задания</h2></div>
           <div class="assignment-list" id="studentAssignmentsList"></div>
@@ -116,6 +120,17 @@
         <div class="recordings-panel">
           <h2>Ваши записи</h2>
           <div id="recordingsList"></div>
+          <section class="review-request-panel hidden" id="reviewRequestPanel" aria-labelledby="reviewRequestTitle">
+            <p class="eyebrow">Разбор с преподавателем</p>
+            <h3 id="reviewRequestTitle">Отправить на разбор</h3>
+            <fieldset id="reviewRequestChoices">
+              <label><input type="radio" name="reviewKind" value="task" checked> Одно задание</label>
+              <label><input type="radio" name="reviewKind" value="attempt"> Всю попытку</label>
+            </fieldset>
+            <label id="reviewTaskLabel">Задание<select id="reviewTaskSelect"></select></label>
+            <button class="primary-btn wide" id="sendReviewRequestBtn" type="button">Отправить одно задание</button>
+            <p id="reviewRequestMessage" aria-live="polite"></p>
+          </section>
         </div>
         <aside class="checklist-panel">
           <h2>Быстрая самопроверка</h2>
