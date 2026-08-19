@@ -4,13 +4,15 @@ import secrets
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 from fastapi.testclient import TestClient
 
 import asgi
-from trainer.api import dependencies, runtime
+from trainer.api import dependencies, routes, runtime
 from trainer.api.controllers import auth, recordings
+from trainer.api.results import FileResult
 from trainer.api.security import request_has_same_origin
 from trainer.domain.accounts import password_hash, password_matches
 
@@ -27,6 +29,80 @@ class SecurityHelpersTest(unittest.TestCase):
         self.assertTrue(request_has_same_origin(host, None, "http://127.0.0.1:8080/page", "same-origin"))
         self.assertFalse(request_has_same_origin(host, None, None, None))
         self.assertFalse(request_has_same_origin(host, "https://evil.example", None, "cross-site"))
+
+
+class FileResponseTest(unittest.IsolatedAsyncioTestCase):
+    stored = FileResult(key="answer.webm", mime_type="audio/webm", size_bytes=10)
+
+    @staticmethod
+    async def response_body(response):
+        return b"".join([chunk async for chunk in response.body_iterator])
+
+    async def test_remote_recording_without_range_streams_full_body_with_exact_length(self):
+        def remote_path(_root, _key):
+            return None
+
+        def full_stream(_root, _key, *, start=None, end=None):
+            self.assertIsNone(start)
+            self.assertIsNone(end)
+            return iter([b"0123", b"456789"])
+
+        with (
+            patch.object(routes, "storage_local_path", remote_path),
+            patch.object(routes, "stream_recording", full_stream),
+        ):
+            response = routes.file_response(self.stored)
+            body = await self.response_body(response)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["content-length"], "10")
+        self.assertEqual(body, b"0123456789")
+
+    async def test_remote_recording_range_streams_exact_inclusive_bounds(self):
+        stream_calls = []
+
+        def remote_path(_root, _key):
+            return None
+
+        def ranged_stream(_root, key, *, start=None, end=None):
+            stream_calls.append((key, start, end))
+            return iter([b"23", b"45"])
+
+        with (
+            patch.object(routes, "storage_local_path", remote_path),
+            patch.object(routes, "stream_recording", ranged_stream),
+        ):
+            response = routes.file_response(self.stored, "bytes=2-5")
+            body = await self.response_body(response)
+
+        self.assertEqual(response.status_code, 206)
+        self.assertEqual(response.headers["accept-ranges"], "bytes")
+        self.assertEqual(response.headers["content-range"], "bytes 2-5/10")
+        self.assertEqual(response.headers["content-length"], "4")
+        self.assertEqual(body, b"2345")
+        self.assertEqual(stream_calls, [("answer.webm", 2, 5)])
+
+    def test_multiple_ranges_return_empty_416_without_accessing_storage(self):
+        storage_calls = []
+
+        def unexpected_local_path(*args, **kwargs):
+            storage_calls.append(("local_path", args, kwargs))
+            return None
+
+        def unexpected_stream(*args, **kwargs):
+            storage_calls.append(("stream", args, kwargs))
+            return iter([b"unexpected"])
+
+        with (
+            patch.object(routes, "storage_local_path", unexpected_local_path),
+            patch.object(routes, "stream_recording", unexpected_stream),
+        ):
+            response = routes.file_response(self.stored, "bytes=0-1,4-5")
+
+        self.assertEqual(response.status_code, 416)
+        self.assertEqual(response.headers["content-range"], "bytes */10")
+        self.assertEqual(response.body, b"")
+        self.assertEqual(storage_calls, [])
 
 
 class ApiFlowTest(unittest.TestCase):
@@ -598,8 +674,57 @@ class ApiFlowTest(unittest.TestCase):
             f"/api/recordings/{recording_id}", cookie, headers={"Range": "bytes=0-3"}
         )
         self.assertEqual(status, 206)
-        self.assertTrue(headers.get("content-range", "").startswith("bytes 0-3/"))
-        self.assertEqual(len(body), 4)
+        self.assertEqual(headers["content-range"], "bytes 0-3/10")
+        self.assertEqual(headers["content-length"], "4")
+        self.assertEqual(body, b"0123")
+
+    def test_recording_returns_suffix_range_with_precise_headers(self):
+        recording_id, cookie = self.create_recording()
+        status, headers, body = self.request_raw(
+            f"/api/recordings/{recording_id}", cookie, headers={"Range": "bytes=-4"}
+        )
+        self.assertEqual(status, 206)
+        self.assertEqual(headers["accept-ranges"], "bytes")
+        self.assertEqual(headers["content-range"], "bytes 6-9/10")
+        self.assertEqual(headers["content-length"], "4")
+        self.assertEqual(body, b"6789")
+
+    def test_recording_rejects_multiple_ranges_without_reading_audio(self):
+        recording_id, cookie = self.create_recording()
+        status, headers, body = self.request_raw(
+            f"/api/recordings/{recording_id}", cookie, headers={"Range": "bytes=0-1,4-5"}
+        )
+        self.assertEqual(status, 416)
+        self.assertEqual(headers["content-range"], "bytes */10")
+        self.assertEqual(body, b"")
+
+    def test_recording_rejects_repeated_range_headers_without_reading_audio(self):
+        recording_id, cookie = self.create_recording()
+        storage_calls = []
+
+        def local_path(*args, **kwargs):
+            storage_calls.append(("local_path", args, kwargs))
+            return None
+
+        def stream(*args, **kwargs):
+            storage_calls.append(("stream", args, kwargs))
+            return iter([b"unexpected"])
+
+        request = self.client.build_request(
+            "GET",
+            f"/api/recordings/{recording_id}",
+            headers=[("Cookie", cookie), ("Range", "bytes=0-1"), ("Range", "bytes=4-5")],
+        )
+        with (
+            patch.object(routes, "storage_local_path", local_path),
+            patch.object(routes, "stream_recording", stream),
+        ):
+            response = self.client.send(request)
+
+        self.assertEqual(response.status_code, 416)
+        self.assertEqual(response.headers["content-range"], "bytes */10")
+        self.assertEqual(response.content, b"")
+        self.assertEqual(storage_calls, [])
 
 
 if __name__ == "__main__":

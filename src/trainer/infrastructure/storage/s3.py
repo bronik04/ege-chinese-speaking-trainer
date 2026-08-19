@@ -40,9 +40,12 @@ class S3AudioStorage:
     def local_path(self, key: str) -> Path | None:
         return None
 
-    def stream(self, key: str) -> Iterator[bytes]:
+    def stream(self, key: str, *, start: int | None = None, end: int | None = None) -> Iterator[bytes]:
+        params = {"Bucket": self.bucket, "Key": key}
+        if start is not None:
+            params["Range"] = f"bytes={start}-{end}"
         try:
-            body = self.client.get_object(Bucket=self.bucket, Key=key)["Body"]
+            body = self.client.get_object(**params)["Body"]
         except Exception as error:
             self._raise_not_found(error, key)
         yield from body.iter_chunks(64 * 1024)

@@ -45,10 +45,17 @@ class LocalAudioStorage:
         target = self._path(key)
         return target if target.is_file() else None
 
-    def stream(self, key: str) -> Iterator[bytes]:
+    def stream(self, key: str, *, start: int | None = None, end: int | None = None) -> Iterator[bytes]:
         target = self._path(key)
         if not target.is_file():
             raise FileNotFoundError(key)
         with target.open("rb") as source:
-            while chunk := source.read(64 * 1024):
+            source.seek(start or 0)
+            remaining = None if end is None else end - (start or 0) + 1
+            while remaining is None or remaining > 0:
+                chunk = source.read(64 * 1024 if remaining is None else min(64 * 1024, remaining))
+                if not chunk:
+                    break
                 yield chunk
+                if remaining is not None:
+                    remaining -= len(chunk)
