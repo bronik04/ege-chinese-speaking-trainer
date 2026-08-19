@@ -1,6 +1,7 @@
 import unittest
 
 from trainer.domain.grading import validate_scores
+from trainer.domain.review_requests import required_recording_positions, validate_review_selection
 
 
 class GradingTest(unittest.TestCase):
@@ -21,6 +22,40 @@ class GradingTest(unittest.TestCase):
     def test_out_of_range_score_is_rejected(self):
         with self.assertRaises(ValueError):
             validate_scores({"3": {"content": 4, "organization": 2, "language": 3}}, [3])
+
+
+class ReviewRequestSelectionTest(unittest.TestCase):
+    def test_accepts_a_single_task_review_selection(self):
+        selection = validate_review_selection("task", [2])
+        self.assertEqual(selection.kind, "task")
+        self.assertEqual(selection.tasks, (2,))
+
+    def test_accepts_a_complete_attempt_selection(self):
+        selection = validate_review_selection("attempt", [1, 2, 3])
+        self.assertEqual(selection.kind, "attempt")
+        self.assertEqual(selection.tasks, (1, 2, 3))
+
+    def test_rejects_empty_task_selection(self):
+        with self.assertRaises(ValueError):
+            validate_review_selection("attempt", [])
+
+    def test_rejects_duplicate_task_selection(self):
+        with self.assertRaises(ValueError):
+            validate_review_selection("attempt", [1, 1])
+
+    def test_rejects_out_of_range_task_selection(self):
+        with self.assertRaises(ValueError):
+            validate_review_selection("attempt", [4])
+
+    def test_rejects_multiple_tasks_for_a_single_task_request(self):
+        with self.assertRaises(ValueError):
+            validate_review_selection("task", [1, 2])
+
+    def test_requires_all_recordings_for_selected_tasks(self):
+        self.assertEqual(
+            required_recording_positions([1, 3]),
+            {(1, 1), (1, 2), (1, 3), (1, 4), (1, 5), (3, None)},
+        )
 
 
 if __name__ == "__main__":

@@ -23,6 +23,10 @@ EXPECTED_TABLES = {
     "material_assets",
     "materials",
     "recordings",
+    "review_request_assets",
+    "review_request_items",
+    "review_request_recordings",
+    "review_requests",
     "reviews",
     "sessions",
     "storage_cleanup_jobs",
@@ -96,6 +100,50 @@ class SqliteMigrationTest(unittest.TestCase):
                 },
             )
             self.assertIn("storage_cleanup_jobs_created_idx", sqlite_schema(path)[1])
+            self.assertTrue(
+                {
+                    "review_requests_student_submitted_idx",
+                    "review_requests_queue_idx",
+                    "review_request_items_request_idx",
+                    "review_request_recordings_item_idx",
+                    "review_request_recordings_item_question_idx",
+                    "review_request_recordings_item_unanswered_idx",
+                    "review_request_assets_request_idx",
+                }.issubset(sqlite_schema(path)[1])
+            )
+
+    def test_review_recording_allows_one_unquestioned_recording_per_item(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "trainer.sqlite3"
+            upgrade_sqlite_database(path)
+            with closing(sqlite3.connect(path)) as database:
+                database.execute("PRAGMA foreign_keys=ON")
+                student_id = database.execute(
+                    "INSERT INTO users(email,password_hash,display_name,role,created_at) VALUES (?,?,?,?,?)",
+                    ("student@example.test", "hash", "Student", "student", 1),
+                ).lastrowid
+                request_id = database.execute(
+                    """INSERT INTO review_requests(student_id,kind,status,variant_id,run_json)
+                       VALUES (?,?,?,?,?)""",
+                    (student_id, "task", "uploading", "demo-2026", "{}"),
+                ).lastrowid
+                item_id = database.execute(
+                    """INSERT INTO review_request_items(request_id,task_number,task_snapshot_json)
+                       VALUES (?,?,?)""",
+                    (request_id, 2, "{}"),
+                ).lastrowid
+                database.execute(
+                    """INSERT INTO review_request_recordings(item_id,question_number,label,storage_key,mime_type,size_bytes,created_at)
+                       VALUES (?,?,?,?,?,?,?)""",
+                    (item_id, None, "First", "private/first.webm", "audio/webm", 1, 1),
+                )
+
+                with self.assertRaises(sqlite3.IntegrityError):
+                    database.execute(
+                        """INSERT INTO review_request_recordings(item_id,question_number,label,storage_key,mime_type,size_bytes,created_at)
+                           VALUES (?,?,?,?,?,?,?)""",
+                        (item_id, None, "Second", "private/second.webm", "audio/webm", 1, 1),
+                    )
 
     def test_existing_legacy_database_is_stamped_without_data_loss(self):
         with tempfile.TemporaryDirectory() as directory:
