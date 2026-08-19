@@ -19,8 +19,8 @@ def storage_local_path(root: Path, key: str) -> Path | None:
     return storage_from_env(root).local_path(key)
 
 
-def stream_recording(root: Path, key: str) -> Iterator[bytes]:
-    return storage_from_env(root).stream(key)
+def stream_recording(root: Path, key: str, *, start: int | None = None, end: int | None = None) -> Iterator[bytes]:
+    return storage_from_env(root).stream(key, start=start, end=end)
 
 
 def delete_recordings(root: Path, keys) -> None:
