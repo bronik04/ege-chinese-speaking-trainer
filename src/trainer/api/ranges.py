@@ -1,7 +1,7 @@
 """Parsing helpers for HTTP byte-range requests."""
 
-from dataclasses import dataclass
 import re
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
