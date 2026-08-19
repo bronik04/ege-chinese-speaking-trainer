@@ -108,8 +108,8 @@ class FileResponseTest(unittest.IsolatedAsyncioTestCase):
 class ApiFlowTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.original_teacher_emails = os.environ.get("TRAINER_TEACHER_EMAILS")
-        os.environ["TRAINER_TEACHER_EMAILS"] = "teacher@example.test"
+        cls.original_owner_email = os.environ.get("TRAINER_OWNER_EMAIL")
+        os.environ["TRAINER_OWNER_EMAIL"] = "teacher@example.test"
         cls.temp_dir = tempfile.TemporaryDirectory()
         root = Path(cls.temp_dir.name)
         runtime.DATA_DIR = root
@@ -133,10 +133,10 @@ class ApiFlowTest(unittest.TestCase):
     def tearDownClass(cls):
         cls.client_context.__exit__(None, None, None)
         recordings.validate_duration = cls.original_validate_duration
-        if cls.original_teacher_emails is None:
-            os.environ.pop("TRAINER_TEACHER_EMAILS", None)
+        if cls.original_owner_email is None:
+            os.environ.pop("TRAINER_OWNER_EMAIL", None)
         else:
-            os.environ["TRAINER_TEACHER_EMAILS"] = cls.original_teacher_emails
+            os.environ["TRAINER_OWNER_EMAIL"] = cls.original_owner_email
         cls.temp_dir.cleanup()
 
     def request(self, method, path, payload=None, cookie=None, include_origin=True):
@@ -179,7 +179,7 @@ class ApiFlowTest(unittest.TestCase):
         status, _, headers = self.request(
             "POST",
             "/api/auth/register",
-            {"email": email, "password": "password123", "displayName": "Range", "role": "student"},
+            {"email": email, "password": "password123", "displayName": "Range"},
         )
         self.assertEqual(status, 201)
         cookie = self.cookie_from(headers)
@@ -233,7 +233,7 @@ class ApiFlowTest(unittest.TestCase):
         status, _, headers = self.request(
             "POST",
             "/api/auth/register",
-            {"email": email, "password": "password123", "displayName": "Ученик", "role": "student"},
+            {"email": email, "password": "password123", "displayName": "Ученик"},
         )
         self.assertEqual(status, 201)
         cookie = self.cookie_from(headers)
@@ -260,7 +260,6 @@ class ApiFlowTest(unittest.TestCase):
             "email": email,
             "password": "original123",
             "displayName": "Чэнь Мин",
-            "role": "student",
         }
         status, payload, headers = self.request("POST", "/api/auth/register", account)
         self.assertEqual(status, 201)
@@ -300,7 +299,6 @@ class ApiFlowTest(unittest.TestCase):
             "email": "teacher@example.test",
             "password": "teacher123",
             "displayName": "Ли Лаоши",
-            "role": "teacher",
         }
         status, _, headers = self.request("POST", "/api/auth/register", teacher)
         self.assertEqual(status, 201)
@@ -314,10 +312,9 @@ class ApiFlowTest(unittest.TestCase):
         self.assertEqual(status, 200)
 
         student = {
-            "email": "student@example.test",
+            "email": "student-workflow@example.test",
             "password": "student123",
             "displayName": "Анна Петрова",
-            "role": "student",
         }
         status, _, headers = self.request("POST", "/api/auth/register", student)
         self.assertEqual(status, 201)
@@ -327,7 +324,6 @@ class ApiFlowTest(unittest.TestCase):
             "email": "snapshot-author@example.test",
             "password": "author123",
             "displayName": "Автор материала",
-            "role": "student",
         }
         status, _, headers = self.request("POST", "/api/auth/register", author)
         self.assertEqual(status, 201)
@@ -394,7 +390,6 @@ class ApiFlowTest(unittest.TestCase):
             "email": "snapshot-outsider@example.test",
             "password": "outsider123",
             "displayName": "Посторонний пользователь",
-            "role": "student",
         }
         status, _, headers = self.request("POST", "/api/auth/register", outsider)
         self.assertEqual(status, 201)
@@ -616,19 +611,43 @@ class ApiFlowTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(list(runtime.ASSIGNMENT_ASSET_DIR.rglob("*.webp")), [])
 
-    def test_teacher_registration_requires_allowlist(self):
-        status, payload, _ = self.request(
-            "POST",
-            "/api/auth/register",
-            {
-                "email": "impostor@example.test",
-                "password": "password123",
-                "displayName": "Not a teacher",
-                "role": "teacher",
-            },
-        )
-        self.assertEqual(status, 403)
-        self.assertEqual(payload["code"], "teacher_not_allowed")
+    def test_owner_registration_derives_teacher_role(self):
+        original_owner_email = os.environ.get("TRAINER_OWNER_EMAIL")
+        os.environ["TRAINER_OWNER_EMAIL"] = "owner@example.test"
+        try:
+            status, owner, _ = self.request(
+                "POST",
+                "/api/auth/register",
+                {"email": "owner@example.test", "password": "password123", "displayName": "Owner"},
+            )
+            self.assertEqual(status, 201)
+            self.assertEqual(owner["user"]["role"], "teacher")
+
+            status, student, _ = self.request(
+                "POST",
+                "/api/auth/register",
+                {"email": "student@example.test", "password": "password123", "displayName": "Student"},
+            )
+            self.assertEqual(status, 201)
+            self.assertEqual(student["user"]["role"], "student")
+
+            status, rejected, _ = self.request(
+                "POST",
+                "/api/auth/register",
+                {
+                    "email": "impostor@example.test",
+                    "password": "password123",
+                    "displayName": "Impostor",
+                    "role": "teacher",
+                },
+            )
+            self.assertEqual(status, 422)
+            self.assertEqual(rejected["code"], "request_validation_failed")
+        finally:
+            if original_owner_email is None:
+                os.environ.pop("TRAINER_OWNER_EMAIL", None)
+            else:
+                os.environ["TRAINER_OWNER_EMAIL"] = original_owner_email
 
     def test_migrations_are_recorded(self):
         with runtime.connect() as database:

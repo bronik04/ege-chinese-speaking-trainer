@@ -4,6 +4,7 @@ import path from "node:path";
 
 const originHeaders = { Origin: "http://127.0.0.1:8091", "Sec-Fetch-Site": "same-origin" };
 const baseURL = "http://127.0.0.1:8091";
+const ownerEmail = "owner@example.test";
 
 async function post(context, url, data) {
   const response = await context.request.post(url, { headers: originHeaders, data });
@@ -11,15 +12,19 @@ async function post(context, url, data) {
   return response.json();
 }
 
-async function register(context, email, role = "student") {
-  const result = await post(context, "/api/auth/register", {
+async function register(context, email, displayName = "E2E Student") {
+  return post(context, "/api/auth/register", {
     email,
     password: "original123",
-    displayName: role === "teacher" ? "E2E Teacher" : "E2E Student",
-    role,
+    displayName,
   });
-  if (role === "teacher") {
-    const token = await tokenFromOutbox(email, "verify");
+}
+
+async function registerOwner(context, { confirm = true } = {}) {
+  const result = await register(context, ownerEmail, "E2E Teacher");
+  expect(result.user.role).toBe("teacher");
+  if (confirm) {
+    const token = await tokenFromOutbox(ownerEmail, "verify");
     await post(context, "/api/auth/email/confirm", { token });
   }
   return result;
@@ -48,7 +53,7 @@ test("student registers, signs out and signs back in through the account form", 
   await page.locator("#authName").fill("UI Student");
   await page.locator("#authEmail").fill(email);
   await page.locator("#authPassword").fill("original123");
-  await page.locator("#authRole").selectOption("student");
+  await expect(page.locator("#authRole")).toHaveCount(0);
   await page.locator("#authSubmitBtn").click();
   await expect(page.locator("#authButtonText")).toHaveText(email);
 
@@ -84,20 +89,20 @@ test("student resets a password through the emailed token", async ({ browser }) 
   await login.close();
 });
 
-test("unverified teacher cannot open privileged APIs", async ({ browser }) => {
+test("unverified owner cannot open privileged APIs", async ({ browser }) => {
   const teacher = await browser.newContext({ baseURL });
-  await post(teacher, "/api/auth/register", {
-    email: "unverified-teacher@example.test",
-    password: "original123",
-    displayName: "Unverified Teacher",
-    role: "teacher",
-  });
+  await registerOwner(teacher, { confirm: false });
   const response = await teacher.request.post("/api/teacher/groups", {
     headers: originHeaders,
     data: { name: "Blocked group" },
   });
   expect(response.status()).toBe(403);
   expect((await response.json()).code).toBe("email_verification_required");
+  const deletion = await teacher.request.delete("/api/account", {
+    headers: originHeaders,
+    data: { password: "original123" },
+  });
+  expect(deletion.ok(), await deletion.text()).toBeTruthy();
   await teacher.close();
 });
 
@@ -126,7 +131,7 @@ test("teacher resends an assignment as a separate work item", async ({ browser }
   const stamp = Date.now();
   const teacher = await browser.newContext({ baseURL });
   const student = await browser.newContext({ baseURL });
-  await register(teacher, "resend-teacher@example.test", "teacher");
+  await registerOwner(teacher);
   await register(student, `resend-student-${stamp}@example.test`);
   const teacherPage = await teacher.newPage();
   await teacherPage.goto("/");

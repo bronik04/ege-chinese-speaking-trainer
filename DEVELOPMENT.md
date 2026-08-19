@@ -61,7 +61,7 @@ cp .env.example .env
 - `TRAINER_SECURE_COOKIE=1` — защищённые cookie в продакшене;
 - `TRAINER_LOG_LEVEL` — уровень структурированных логов;
 - `TRAINER_MAX_AUDIO_SECONDS`, `TRAINER_MAX_AUDIO_BYTES` — ограничения аудио;
-- `TRAINER_TEACHER_EMAILS` — email, которым разрешена роль преподавателя;
+- `TRAINER_OWNER_EMAIL` — единственный email владельца кабинета преподавателя;
 - `TRAINER_EDITOR_MODE` — политика авторов материалов;
 - `TRAINER_EDITOR_EMAILS` — email авторов для режима `allowlist`;
 - `DATABASE_URL` — подключение PostgreSQL;
@@ -70,6 +70,10 @@ cp .env.example .env
 В production `TRAINER_PUBLIC_URL` обязателен: ссылки подтверждения email и сброса пароля строятся только из этого
 адреса. Если переменная не задана, используется development fallback `http://127.0.0.1:8080`; заголовки `Host`,
 `Origin` и forwarded-заголовки для account links не используются.
+
+Если задан `TRAINER_PUBLIC_URL`, обязательно укажите `TRAINER_OWNER_EMAIL`: без него приложение завершит запуск с
+ошибкой конфигурации. Роль преподавателя получает только этот email после подтверждения; локальный запуск без
+`TRAINER_OWNER_EMAIL` создаёт только ученические аккаунты.
 
 ## Материалы и политика авторов
 
@@ -92,10 +96,11 @@ TRAINER_EDITOR_MODE=allowlist
 TRAINER_EDITOR_EMAILS=owner@example.ru
 ```
 
-Роль преподавателя также выдаётся по allowlist. До подтверждения email группы, назначения и проверка работ заблокированы:
+Роль преподавателя выдаётся только единственному владельцу из `TRAINER_OWNER_EMAIL`. До подтверждения email группы,
+назначения и проверка работ заблокированы:
 
 ```bash
-TRAINER_TEACHER_EMAILS=teacher@example.ru
+TRAINER_OWNER_EMAIL=teacher@example.ru
 ```
 
 Назначение хранит неизменяемый снимок материала. Удаление или переиздание исходного варианта не меняет уже выданную работу. Работы после `dueAt` принимаются, но помечаются как просроченные.

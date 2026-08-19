@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import logging
-import os
 import time
 from http import HTTPStatus
 
 from trainer.api import runtime
-from trainer.api.dependencies import account_public_url
+from trainer.api.dependencies import account_public_url, owner_email_from_env
 from trainer.api.errors import ApiError, default_error_code
 from trainer.api.results import ActionResult, RequestContext
 from trainer.api.runtime import SESSION_DAYS, connect
@@ -19,9 +18,9 @@ from trainer.api.schemas import (
     TokenRequest,
 )
 from trainer.domain.accounts import (
-    email_in_allowlist,
     password_hash,
     password_matches,
+    registration_role,
     token_digest,
     validate_credentials,
 )
@@ -55,18 +54,14 @@ def auth_register(payload: RegisterRequest, context: RequestContext) -> ActionRe
     _ensure_auth_attempt_allowed("register", email, context.client_ip)
     if error:
         raise ApiError(default_error_code(HTTPStatus.BAD_REQUEST), error, HTTPStatus.BAD_REQUEST)
-    role = payload.role
+    role = registration_role(email, owner_email_from_env())
     display_name = payload.displayName.strip()
-    if role not in {"student", "teacher"}:
-        raise ApiError(default_error_code(HTTPStatus.BAD_REQUEST), "Выберите тип аккаунта", HTTPStatus.BAD_REQUEST)
     if not 2 <= len(display_name) <= 80:
         raise ApiError(
             default_error_code(HTTPStatus.BAD_REQUEST),
             "Укажите имя длиной от 2 до 80 символов",
             HTTPStatus.BAD_REQUEST,
         )
-    if role == "teacher" and not email_in_allowlist(email, os.environ.get("TRAINER_TEACHER_EMAILS", "")):
-        raise ApiError("teacher_not_allowed", "Роль преподавателя недоступна", HTTPStatus.FORBIDDEN)
     try:
         with connect() as database:
             cursor = database.execute(

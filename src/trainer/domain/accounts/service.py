@@ -5,7 +5,7 @@ import hmac
 import re
 import secrets
 from dataclasses import dataclass
-from typing import Mapping
+from typing import Literal, Mapping
 
 PASSWORD_ITERATIONS = 260_000
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
@@ -52,11 +52,15 @@ def validate_credentials(email: str, password: str) -> tuple[str, str, str | Non
     return normalized_email, normalized_password, None
 
 
+def registration_role(email: str, owner_email: str) -> Literal["student", "teacher"]:
+    return "teacher" if owner_email and email.strip().lower() == owner_email else "student"
+
+
 def authorize_role(
     user: Mapping[str, object] | None,
     required_role: str,
     *,
-    teacher_emails: str = "",
+    owner_email: str = "",
 ) -> AccessDecision:
     if not user:
         return AccessDecision(False, "authentication_required", "Authentication required")
@@ -66,6 +70,6 @@ def authorize_role(
         return AccessDecision(
             False, "email_verification_required", "Подтвердите email для доступа к кабинету преподавателя"
         )
-    if required_role == "teacher" and not email_in_allowlist(str(user.get("email", "")), teacher_emails):
+    if required_role == "teacher" and str(user.get("email", "")).strip().lower() != owner_email:
         return AccessDecision(False, "teacher_not_allowed", "Роль преподавателя недоступна")
     return AccessDecision(True)

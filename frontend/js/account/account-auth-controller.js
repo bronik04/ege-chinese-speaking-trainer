@@ -102,11 +102,10 @@ export function createAccountAuthController(ctx) {
     const email = $("authEmail").value.trim();
     const password = $("authPassword").value;
     const displayName = $("authName").value.trim();
-    const role = $("authRole").value;
     $("authSubmitBtn").disabled = true;
     $("authMessage").textContent = "";
     try {
-      const credentials = mode === "login" ? { email, password } : { email, password, displayName, role };
+      const credentials = mode === "login" ? { email, password } : { email, password, displayName };
       const payload = await api(`/api/auth/${mode}`, { method: "POST", body: JSON.stringify(credentials) });
       setUser(payload.user);
       ctx.switchProgressScope(user, { adoptGuest: mode === "register" });

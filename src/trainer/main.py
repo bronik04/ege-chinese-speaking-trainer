@@ -15,6 +15,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.routing import Match
 
 from trainer.api.body_limit import BodyLimitMiddleware
+from trainer.api.dependencies import validate_account_configuration
 from trainer.api.errors import ApiError, api_error_handler, default_error_code, error_payload
 from trainer.api.routes import accounts, groups, materials, recordings, work
 from trainer.api.runtime import MAX_AUDIO_BODY, MAX_BODY, ROOT, connect, init_database
@@ -34,6 +35,7 @@ logger = logging.getLogger("trainer.http")
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    validate_account_configuration()
     init_database()
     yield
 

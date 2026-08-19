@@ -1,3 +1,4 @@
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -69,7 +70,6 @@ class FastApiSmokeTest(unittest.TestCase):
                 "email": "asgi@example.test",
                 "password": "password123",
                 "displayName": "ASGI User",
-                "role": "student",
             },
         )
         self.assertEqual(response.status_code, 201, response.text)
@@ -82,7 +82,6 @@ class FastApiSmokeTest(unittest.TestCase):
             json={
                 "email": "invalid@example.test",
                 "password": "password123",
-                "role": "student",
                 "unexpected": True,
             },
         )
@@ -91,6 +90,29 @@ class FastApiSmokeTest(unittest.TestCase):
         self.assertEqual(payload["code"], "request_validation_failed")
         self.assertEqual(payload["message"], "Некорректные данные запроса")
         self.assertEqual({item["location"] for item in payload["fields"]}, {"displayName", "unexpected"})
+
+    def test_public_deployment_requires_configured_owner(self):
+        with patch.dict(
+            os.environ,
+            {"TRAINER_PUBLIC_URL": "https://trainer.example.test", "TRAINER_OWNER_EMAIL": ""},
+        ):
+            with self.assertRaisesRegex(RuntimeError, "TRAINER_OWNER_EMAIL"):
+                with TestClient(asgi.app):
+                    pass
+
+    def test_registration_rejects_obsolete_role_field(self):
+        response = self.client.post(
+            "/api/auth/register",
+            headers={"Origin": "http://testserver", "Sec-Fetch-Site": "same-origin"},
+            json={
+                "email": "role@example.test",
+                "password": "password123",
+                "displayName": "Role User",
+                "role": "teacher",
+            },
+        )
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json()["code"], "request_validation_failed")
 
     def test_rejects_oversized_json_before_validation(self):
         response = self.client.post(
