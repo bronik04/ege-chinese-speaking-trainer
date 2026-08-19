@@ -19,6 +19,28 @@ def _keys(values) -> list[str]:
     return list(dict.fromkeys(value for value in values if isinstance(value, str) and value))
 
 
+def account_review_storage_keys(database, student_id: int) -> tuple[list[str], list[str]]:
+    recordings = database.execute(
+        """SELECT review_request_recordings.storage_key
+           FROM review_request_recordings
+           JOIN review_request_items ON review_request_items.id=review_request_recordings.item_id
+           JOIN review_requests ON review_requests.id=review_request_items.request_id
+           WHERE review_requests.student_id=?""",
+        (student_id,),
+    ).fetchall()
+    assets = database.execute(
+        """SELECT review_request_assets.storage_key
+           FROM review_request_assets
+           JOIN review_requests ON review_requests.id=review_request_assets.request_id
+           WHERE review_requests.student_id=?""",
+        (student_id,),
+    ).fetchall()
+    return (
+        _keys(row["storage_key"] for row in recordings),
+        _keys(row["storage_key"] for row in assets),
+    )
+
+
 def enqueue_cleanup_job(
     database,
     *,

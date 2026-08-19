@@ -10,6 +10,7 @@ from urllib.parse import parse_qs, urlparse
 from fastapi.testclient import TestClient
 
 import asgi
+from trainer import main as trainer_main
 from trainer.api import dependencies, routes, runtime
 from trainer.api.controllers import auth, recordings
 from trainer.api.results import FileResult
@@ -226,6 +227,185 @@ class ApiFlowTest(unittest.TestCase):
         url = message["body"].strip().splitlines()[-1]
         return parse_qs(urlparse(url).query)[parameter][0]
 
+    def verified_owner_cookie(self):
+        credentials = {"email": "teacher@example.test", "password": "teacher123"}
+        status, _, headers = self.request(
+            "POST",
+            "/api/auth/register",
+            {**credentials, "displayName": "Ли Лаоши"},
+        )
+        created = status == 201
+        if status == 409:
+            status, _, headers = self.request("POST", "/api/auth/login", credentials)
+        self.assertIn(status, {200, 201})
+        with runtime.connect() as database:
+            database.execute(
+                "UPDATE users SET email_verified_at=COALESCE(email_verified_at, 1) WHERE email=?",
+                (credentials["email"],),
+            )
+        if created:
+            self.addCleanup(self.delete_test_user, credentials["email"])
+        return self.cookie_from(headers)
+
+    @staticmethod
+    def delete_test_user(email):
+        with runtime.connect() as database:
+            database.execute("DELETE FROM users WHERE email=?", (email,))
+
+    def register_student(self, prefix):
+        email = f"{prefix}-{secrets.token_hex(4)}@example.test"
+        status, _, headers = self.request(
+            "POST",
+            "/api/auth/register",
+            {"email": email, "password": "student123", "displayName": prefix.title()},
+        )
+        self.assertEqual(status, 201)
+        return self.cookie_from(headers)
+
+    def test_student_queues_single_task_for_owner_review(self):
+        owner_cookie = self.verified_owner_cookie()
+        student_cookie = self.register_student("review-single")
+        other_student_cookie = self.register_student("review-other")
+
+        status, created, _ = self.request(
+            "POST",
+            "/api/review-requests",
+            {
+                "kind": "task",
+                "variantId": "demo-2026",
+                "tasks": [2],
+                "run": {"id": "review-task-2", "status": "completed", "completedTasks": [2]},
+            },
+            student_cookie,
+        )
+        self.assertEqual(status, 201, created)
+        request_id = created["reviewRequest"]["id"]
+        self.assertEqual(created["reviewRequest"]["status"], "uploading")
+
+        status, owner_queue, _ = self.request("GET", "/api/teacher/review-requests", cookie=owner_cookie)
+        self.assertEqual(status, 200)
+        self.assertNotIn(request_id, {item["id"] for item in owner_queue["requests"]})
+
+        status, recording = self.request_audio(
+            f"/api/review-requests/{request_id}/recordings?task=2&label=Ответ",
+            b"0123456789",
+            student_cookie,
+        )
+        self.assertEqual(status, 201, recording)
+        recording_id = recording["recording"]["id"]
+
+        status, hidden_detail, _ = self.request(
+            "GET", f"/api/teacher/review-requests/{request_id}", cookie=other_student_cookie
+        )
+        self.assertEqual(status, 404, hidden_detail)
+        status, _, _ = self.request_bytes(f"/api/review-recordings/{recording_id}", other_student_cookie)
+        self.assertEqual(status, 404)
+
+        status, completed, _ = self.request("POST", f"/api/review-requests/{request_id}/complete", {}, student_cookie)
+        self.assertEqual(status, 200, completed)
+        self.assertEqual(completed["reviewRequest"]["status"], "queued")
+
+        status, owner_queue, _ = self.request("GET", "/api/teacher/review-requests", cookie=owner_cookie)
+        self.assertEqual(status, 200)
+        queued = next(item for item in owner_queue["requests"] if item["id"] == request_id)
+        self.assertEqual(queued["status"], "queued")
+        status, history, _ = self.request("GET", "/api/student/review-requests", cookie=student_cookie)
+        self.assertEqual(status, 200)
+        queued_student_item = next(item for item in history["requests"] if item["id"] == request_id)
+        self.assertNotIn("total", queued_student_item)
+        self.assertNotIn("maximum", queued_student_item)
+
+        status, headers, body = self.request_raw(
+            f"/api/review-recordings/{recording_id}", owner_cookie, headers={"Range": "bytes=2-5"}
+        )
+        self.assertEqual(status, 206)
+        self.assertEqual(headers["content-range"], "bytes 2-5/10")
+        self.assertEqual(body, b"2345")
+
+        scores = {"2": {"content": 3, "organization": 2, "language": 2}}
+        status, blocked, _ = self.request(
+            "PUT", f"/api/teacher/review-requests/{request_id}/scores", {"scores": scores}, student_cookie
+        )
+        self.assertEqual(status, 403, blocked)
+        status, reviewed, _ = self.request(
+            "PUT", f"/api/teacher/review-requests/{request_id}/scores", {"scores": scores}, owner_cookie
+        )
+        self.assertEqual(status, 200, reviewed)
+        self.assertEqual(reviewed["reviewRequest"]["status"], "reviewed")
+        self.assertEqual(reviewed["reviewRequest"]["total"], 7)
+        self.assertEqual(reviewed["reviewRequest"]["maximum"], 7)
+        self.assertNotIn("comment", json.dumps(reviewed))
+
+        status, history, _ = self.request("GET", "/api/student/review-requests", cookie=student_cookie)
+        self.assertEqual(status, 200)
+        student_item = next(item for item in history["requests"] if item["id"] == request_id)
+        self.assertEqual((student_item["total"], student_item["maximum"]), (7, 7))
+
+        corrected_scores = {"2": {"content": 2, "organization": 1, "language": 1}}
+        status, corrected, _ = self.request(
+            "PUT",
+            f"/api/teacher/review-requests/{request_id}/scores",
+            {"scores": corrected_scores},
+            owner_cookie,
+        )
+        self.assertEqual(status, 200, corrected)
+        self.assertEqual((corrected["reviewRequest"]["total"], corrected["reviewRequest"]["maximum"]), (4, 7))
+
+    def test_student_queues_complete_attempt_for_owner_review(self):
+        owner_cookie = self.verified_owner_cookie()
+        student_cookie = self.register_student("review-attempt")
+        status, created, _ = self.request(
+            "POST",
+            "/api/review-requests",
+            {
+                "kind": "attempt",
+                "variantId": "demo-2026",
+                "tasks": [1, 2],
+                "run": {"id": "review-attempt-1-2", "status": "completed", "completedTasks": [1, 2]},
+            },
+            student_cookie,
+        )
+        self.assertEqual(status, 201, created)
+        request_id = created["reviewRequest"]["id"]
+
+        for question in range(1, 5):
+            status, recording = self.request_audio(
+                f"/api/review-requests/{request_id}/recordings?task=1&question={question}&label=Вопрос",
+                f"question-{question}".encode(),
+                student_cookie,
+            )
+            self.assertEqual(status, 201, recording)
+
+        status, incomplete, _ = self.request("POST", f"/api/review-requests/{request_id}/complete", {}, student_cookie)
+        self.assertEqual(status, 409, incomplete)
+        self.assertEqual(incomplete["code"], "review_request_incomplete")
+        self.assertEqual(incomplete["missing"], [{"task": 1, "question": 5}, {"task": 2}])
+        status, owner_queue, _ = self.request("GET", "/api/teacher/review-requests", cookie=owner_cookie)
+        self.assertNotIn(request_id, {item["id"] for item in owner_queue["requests"]})
+
+        status, _ = self.request_audio(
+            f"/api/review-requests/{request_id}/recordings?task=1&question=5&label=Вопрос",
+            b"question-5",
+            student_cookie,
+        )
+        self.assertEqual(status, 201)
+        status, _ = self.request_audio(
+            f"/api/review-requests/{request_id}/recordings?task=2&label=Ответ",
+            b"task-2",
+            student_cookie,
+        )
+        self.assertEqual(status, 201)
+
+        status, completed, _ = self.request("POST", f"/api/review-requests/{request_id}/complete", {}, student_cookie)
+        self.assertEqual(status, 200, completed)
+        status, detail, _ = self.request("GET", f"/api/teacher/review-requests/{request_id}", cookie=owner_cookie)
+        self.assertEqual(status, 200, detail)
+        review_request = detail["reviewRequest"]
+        self.assertEqual(review_request["status"], "queued")
+        self.assertEqual(review_request["tasks"], [1, 2])
+        self.assertEqual(set(review_request["material"]), {"1", "2"})
+        self.assertEqual(sum(len(item["recordings"]) for item in review_request["items"]), 6)
+
     def test_account_deletion_persists_cleanup_job_when_immediate_cleanup_fails(self):
         # Удаление файлов идёт после коммита, поэтому отказ хранилища не должен
         # ни отменять удаление аккаунта, ни терять задание на повторную очистку.
@@ -253,6 +433,112 @@ class ApiFlowTest(unittest.TestCase):
         with runtime.connect() as database:
             self.assertIsNone(database.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone())
             self.assertEqual(database.execute("SELECT COUNT(*) FROM storage_cleanup_jobs").fetchone()[0], 1)
+
+    def test_account_deletion_removes_private_review_recording_and_snapshot(self):
+        owner_cookie = self.verified_owner_cookie()
+        student_cookie = self.register_student("review-delete")
+        other_student_cookie = self.register_student("review-delete-other")
+        with runtime.connect() as database:
+            student_id = database.execute(
+                "SELECT id FROM users WHERE email LIKE 'review-delete-%' ORDER BY id DESC LIMIT 1"
+            ).fetchone()["id"]
+            material_id = database.execute(
+                """INSERT INTO materials(slug,owner_id,kind,task_number,title,year,source,status,content_json,
+                                          created_at,updated_at,published_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    f"review-delete-{student_id}",
+                    student_id,
+                    "task",
+                    2,
+                    "Review delete",
+                    2027,
+                    "Author",
+                    "published",
+                    "{}",
+                    1,
+                    1,
+                    1,
+                ),
+            ).lastrowid
+            source_key = f"materials/{material_id}/source.webp"
+            asset_id = database.execute(
+                """INSERT INTO material_assets(material_id,storage_key,mime_type,size_bytes,created_at)
+                   VALUES (?,?,?,?,?)""",
+                (material_id, source_key, "image/webp", 14, 1),
+            ).lastrowid
+            database.execute(
+                "UPDATE materials SET content_json=? WHERE id=?",
+                (json.dumps({"2": {"images": [f"/api/material-assets/{asset_id}"] * 3}}), material_id),
+            )
+            slug = database.execute("SELECT slug FROM materials WHERE id=?", (material_id,)).fetchone()["slug"]
+        source_path = runtime.MATERIAL_ASSET_DIR / source_key
+        source_path.parent.mkdir(parents=True, exist_ok=True)
+        source_path.write_bytes(b"snapshot-image")
+
+        status, created, _ = self.request(
+            "POST",
+            "/api/review-requests",
+            {
+                "kind": "task",
+                "variantId": slug,
+                "tasks": [2],
+                "run": {"id": "delete-review", "status": "completed", "completedTasks": [2]},
+            },
+            student_cookie,
+        )
+        self.assertEqual(status, 201, created)
+        request_id = created["reviewRequest"]["id"]
+        status, recording = self.request_audio(
+            f"/api/review-requests/{request_id}/recordings?task=2&label=Ответ",
+            b"private-review-audio",
+            student_cookie,
+        )
+        self.assertEqual(status, 201, recording)
+        with runtime.connect() as database:
+            audio_key = database.execute(
+                """SELECT review_request_recordings.storage_key FROM review_request_recordings
+                   JOIN review_request_items ON review_request_items.id=review_request_recordings.item_id
+                   WHERE review_request_items.request_id=?""",
+                (request_id,),
+            ).fetchone()["storage_key"]
+            review_asset = database.execute(
+                "SELECT id,storage_key FROM review_request_assets WHERE request_id=?", (request_id,)
+            ).fetchone()
+            review_asset_id = review_asset["id"]
+            asset_key = review_asset["storage_key"]
+        review_audio_path = runtime.AUDIO_DIR / audio_key
+        review_asset_path = runtime.ASSIGNMENT_ASSET_DIR / asset_key
+        self.assertTrue(review_audio_path.is_file())
+        self.assertTrue(review_asset_path.is_file())
+
+        status, _, _ = self.request_bytes(f"/api/review-assets/{review_asset_id}", owner_cookie)
+        self.assertEqual(status, 404)
+        status, body, content_type = self.request_bytes(f"/api/review-assets/{review_asset_id}", student_cookie)
+        self.assertEqual(status, 200)
+        self.assertEqual(body, b"snapshot-image")
+        self.assertEqual(content_type, "image/webp")
+        status, completed, _ = self.request("POST", f"/api/review-requests/{request_id}/complete", {}, student_cookie)
+        self.assertEqual(status, 200, completed)
+        status, headers, body = self.request_raw(
+            f"/api/review-assets/{review_asset_id}", owner_cookie, headers={"Range": "bytes=0-7"}
+        )
+        self.assertEqual(status, 206)
+        self.assertEqual(headers["content-range"], "bytes 0-7/14")
+        self.assertEqual(body, b"snapshot")
+        status, _, _ = self.request_bytes(f"/api/review-assets/{review_asset_id}", other_student_cookie)
+        self.assertEqual(status, 404)
+
+        status, deleted, _ = self.request("DELETE", "/api/account", {"password": "student123"}, student_cookie)
+        self.assertEqual(status, 200, deleted)
+        self.assertFalse(review_audio_path.exists())
+        self.assertFalse(review_asset_path.exists())
+
+    def test_review_recording_upload_uses_audio_body_limit(self):
+        self.assertEqual(
+            trainer_main._body_limit_for_request("POST", "/api/review-requests/42/recordings"),
+            runtime.MAX_AUDIO_BODY,
+        )
 
     def test_account_verification_password_reset_and_audit(self):
         email = "security@example.test"

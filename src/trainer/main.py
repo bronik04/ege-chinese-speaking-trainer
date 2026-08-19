@@ -17,7 +17,7 @@ from starlette.routing import Match
 from trainer.api.body_limit import BodyLimitMiddleware
 from trainer.api.dependencies import validate_account_configuration
 from trainer.api.errors import ApiError, api_error_handler, default_error_code, error_payload
-from trainer.api.routes import accounts, groups, materials, recordings, work
+from trainer.api.routes import accounts, groups, materials, recordings, review_requests, work
 from trainer.api.runtime import MAX_AUDIO_BODY, MAX_BODY, ROOT, connect, init_database
 from trainer.api.security import request_has_same_origin
 from trainer.infrastructure.observability import (
@@ -46,11 +46,12 @@ app.include_router(accounts.router)
 app.include_router(groups.router)
 app.include_router(work.router)
 app.include_router(recordings.router)
+app.include_router(review_requests.router)
 app.include_router(materials.router)
 
 
 BODY_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
-RECORDING_UPLOAD_PATH = re.compile(r"^/api/submissions/\d+/recordings$")
+RECORDING_UPLOAD_PATH = re.compile(r"^/api/(?:submissions|review-requests)/\d+/recordings$")
 MATERIAL_ASSET_UPLOAD_PATH = re.compile(r"^/api/materials/[^/]+/assets$")
 MAX_MATERIAL_ASSET_BODY = 5_000_000
 

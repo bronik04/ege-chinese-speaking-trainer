@@ -33,7 +33,7 @@ from trainer.infrastructure.database.accounts import (
 )
 from trainer.infrastructure.database.core import INTEGRITY_ERRORS
 from trainer.services import accounts as account_services
-from trainer.services.storage_cleanup import enqueue_cleanup_job, process_cleanup_jobs
+from trainer.services.storage_cleanup import account_review_storage_keys, enqueue_cleanup_job, process_cleanup_jobs
 
 
 def _ensure_auth_attempt_allowed(kind: str, email: str, client_ip: str) -> None:
@@ -320,9 +320,10 @@ def account_delete(payload: DeleteAccountRequest, user: dict, context: RequestCo
                WHERE assignments.teacher_id=?""",
             (user["id"],),
         ).fetchall()
-        audio_keys = [item["file_name"] for item in files]
+        review_audio_keys, review_asset_keys = account_review_storage_keys(database, user["id"])
+        audio_keys = [item["file_name"] for item in files] + review_audio_keys
         material_keys = [item["storage_key"] for item in material_assets]
-        assignment_keys = [item["storage_key"] for item in assignment_assets]
+        assignment_keys = [item["storage_key"] for item in assignment_assets] + review_asset_keys
         enqueue_cleanup_job(
             database,
             audio_keys=audio_keys,
