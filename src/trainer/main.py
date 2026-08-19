@@ -49,7 +49,7 @@ app.include_router(materials.router)
 
 BODY_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 RECORDING_UPLOAD_PATH = re.compile(r"^/api/submissions/\d+/recordings$")
-MATERIAL_ASSET_UPLOAD_PATH = re.compile(r"^/api/materials/\d+/assets$")
+MATERIAL_ASSET_UPLOAD_PATH = re.compile(r"^/api/materials/[^/]+/assets$")
 MAX_MATERIAL_ASSET_BODY = 5_000_000
 
 
