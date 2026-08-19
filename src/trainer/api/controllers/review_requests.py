@@ -207,6 +207,13 @@ def review_recording_create(
                 raise ApiError("review_request_not_found", "Запрос не найден", HTTPStatus.NOT_FOUND)
             if current["status"] != "uploading":
                 raise ApiError("review_request_not_uploading", "Запрос уже отправлен", HTTPStatus.CONFLICT)
+            guarded = database.execute(
+                """UPDATE review_requests SET status='uploading'
+                   WHERE id=? AND student_id=? AND status='uploading'""",
+                (request_id, user["id"]),
+            )
+            if not guarded.rowcount:
+                raise ApiError("review_request_not_uploading", "Запрос уже отправлен", HTTPStatus.CONFLICT)
             replaced = database.execute(
                 """SELECT storage_key FROM review_request_recordings
                    WHERE item_id=? AND question_number IS ?""",

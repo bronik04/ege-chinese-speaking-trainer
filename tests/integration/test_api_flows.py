@@ -2,6 +2,7 @@ import json
 import os
 import secrets
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -12,8 +13,9 @@ from fastapi.testclient import TestClient
 import asgi
 from trainer import main as trainer_main
 from trainer.api import dependencies, routes, runtime
-from trainer.api.controllers import auth, recordings
-from trainer.api.results import FileResult
+from trainer.api.controllers import auth, recordings, review_requests
+from trainer.api.errors import ApiError
+from trainer.api.results import FileResult, RequestContext
 from trainer.api.security import request_has_same_origin
 from trainer.domain.accounts import password_hash, password_matches
 
@@ -405,6 +407,136 @@ class ApiFlowTest(unittest.TestCase):
         self.assertEqual(review_request["tasks"], [1, 2])
         self.assertEqual(set(review_request["material"]), {"1", "2"})
         self.assertEqual(sum(len(item["recordings"]) for item in review_request["items"]), 6)
+
+    def test_completion_prevents_concurrent_review_recording_replacement(self):
+        student_cookie = self.register_student("review-race")
+        status, created, _ = self.request(
+            "POST",
+            "/api/review-requests",
+            {
+                "kind": "task",
+                "variantId": "demo-2026",
+                "tasks": [2],
+                "run": {"id": "review-race", "status": "completed", "completedTasks": [2]},
+            },
+            student_cookie,
+        )
+        self.assertEqual(status, 201, created)
+        request_id = created["reviewRequest"]["id"]
+        status, initial = self.request_audio(
+            f"/api/review-requests/{request_id}/recordings?task=2&label=Первый",
+            b"original-audio",
+            student_cookie,
+        )
+        self.assertEqual(status, 201, initial)
+        with runtime.connect() as database:
+            student = dict(
+                database.execute(
+                    """SELECT id,email,display_name,role,email_verified_at FROM users
+                       WHERE email LIKE 'review-race-%' ORDER BY id DESC LIMIT 1"""
+                ).fetchone()
+            )
+            initial_row = database.execute(
+                """SELECT review_request_recordings.id,review_request_recordings.storage_key
+                   FROM review_request_recordings
+                   JOIN review_request_items ON review_request_items.id=review_request_recordings.item_id
+                   WHERE review_request_items.request_id=?""",
+                (request_id,),
+            ).fetchone()
+            initial_recording_id = initial_row["id"]
+            initial_key = initial_row["storage_key"]
+        user = {
+            "id": student["id"],
+            "email": student["email"],
+            "displayName": student["display_name"],
+            "role": student["role"],
+            "emailVerified": student["email_verified_at"] is not None,
+        }
+
+        original_connect = runtime.connect
+        status_selected = threading.Event()
+        resume_upload = threading.Event()
+        upload_outcome = {}
+
+        class InterleavedConnection:
+            def __init__(self, database):
+                self.database = database
+                self.execute_calls = 0
+
+            def __enter__(self):
+                self.database.__enter__()
+                return self
+
+            def __exit__(self, *arguments):
+                return self.database.__exit__(*arguments)
+
+            def execute(self, statement, parameters=()):
+                cursor = self.database.execute(statement, parameters)
+                self.execute_calls += 1
+                if self.execute_calls == 1:
+                    status_selected.set()
+                    if not resume_upload.wait(5):
+                        raise AssertionError("completion did not release the concurrent upload")
+                return cursor
+
+        upload_connections = 0
+
+        def interleaved_connect():
+            nonlocal upload_connections
+            database = original_connect()
+            if "review-upload" not in threading.current_thread().name:
+                return database
+            upload_connections += 1
+            return InterleavedConnection(database) if upload_connections == 2 else database
+
+        def replace_recording():
+            try:
+                upload_outcome["result"] = review_requests.review_recording_create(
+                    request_id,
+                    {"task": "2", "question": None, "label": "Замена"},
+                    b"replacement-audio",
+                    "audio/webm",
+                    user,
+                    RequestContext(client_ip="127.0.0.1", user_agent="race-test"),
+                )
+            except Exception as error:
+                upload_outcome["error"] = error
+
+        with patch.object(runtime, "connect", interleaved_connect):
+            upload_thread = threading.Thread(target=replace_recording, name="review-upload")
+            upload_thread.start()
+            self.assertTrue(status_selected.wait(5), "upload did not reach the guarded transition")
+            try:
+                status, completed, _ = self.request(
+                    "POST", f"/api/review-requests/{request_id}/complete", {}, student_cookie
+                )
+                self.assertEqual(status, 200, completed)
+            finally:
+                resume_upload.set()
+            upload_thread.join(5)
+        self.assertFalse(upload_thread.is_alive())
+
+        with runtime.connect() as database:
+            request_status = database.execute(
+                "SELECT status FROM review_requests WHERE id=?", (request_id,)
+            ).fetchone()["status"]
+            stored = database.execute(
+                """SELECT review_request_recordings.id,review_request_recordings.storage_key
+                   FROM review_request_recordings
+                   JOIN review_request_items ON review_request_items.id=review_request_recordings.item_id
+                   WHERE review_request_items.request_id=?""",
+                (request_id,),
+            ).fetchone()
+        self.assertEqual(request_status, "queued")
+        self.assertEqual((stored["id"], stored["storage_key"]), (initial_recording_id, initial_key))
+        self.assertEqual((runtime.AUDIO_DIR / initial_key).read_bytes(), b"original-audio")
+        self.assertEqual(
+            list((runtime.AUDIO_DIR / f"review-requests/{request_id}").glob("*")),
+            [runtime.AUDIO_DIR / initial_key],
+        )
+        self.assertIsInstance(upload_outcome.get("error"), ApiError)
+        self.assertEqual(upload_outcome["error"].code, "review_request_not_uploading")
+        self.assertNotIn("result", upload_outcome)
 
     def test_account_deletion_persists_cleanup_job_when_immediate_cleanup_fails(self):
         # Удаление файлов идёт после коммита, поэтому отказ хранилища не должен
