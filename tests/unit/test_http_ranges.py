@@ -40,6 +40,10 @@ class ByteRangeTest(unittest.TestCase):
             with self.assertRaises(RangeNotSatisfiable):
                 parse_single_byte_range(value, size)
 
+    def test_rejects_numeric_values_too_large_for_integer_conversion(self):
+        with self.assertRaises(RangeNotSatisfiable):
+            parse_single_byte_range("bytes=" + "9" * 5000 + "-", 10)
+
 
 if __name__ == "__main__":
     unittest.main()
