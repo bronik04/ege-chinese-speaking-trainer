@@ -31,6 +31,10 @@ async def create_recording(
 
 
 @router.get("/recordings/{recording_id}")
-async def get_recording(recording_id: int, user: dict = Depends(require_authenticated)):
+async def get_recording(
+    recording_id: int,
+    request: Request,
+    user: dict = Depends(require_authenticated),
+):
     stored = await run_in_threadpool(actions.recording_get, recording_id, user)
-    return file_response(stored)
+    return file_response(stored, request.headers.get("Range"))

@@ -601,6 +601,26 @@ class ApiFlowTest(unittest.TestCase):
         self.assertTrue(headers.get("content-range", "").startswith("bytes 0-3/"))
         self.assertEqual(len(body), 4)
 
+    def test_recording_returns_suffix_range_with_precise_headers(self):
+        recording_id, cookie = self.create_recording()
+        status, headers, body = self.request_raw(
+            f"/api/recordings/{recording_id}", cookie, headers={"Range": "bytes=-4"}
+        )
+        self.assertEqual(status, 206)
+        self.assertEqual(headers["accept-ranges"], "bytes")
+        self.assertTrue(headers["content-range"].endswith("/10"))
+        self.assertEqual(headers["content-length"], "4")
+        self.assertEqual(body, b"6789")
+
+    def test_recording_rejects_multiple_ranges_without_reading_audio(self):
+        recording_id, cookie = self.create_recording()
+        status, headers, body = self.request_raw(
+            f"/api/recordings/{recording_id}", cookie, headers={"Range": "bytes=0-1,4-5"}
+        )
+        self.assertEqual(status, 416)
+        self.assertEqual(headers["content-range"], "bytes */10")
+        self.assertEqual(body, b"")
+
 
 if __name__ == "__main__":
     unittest.main()
