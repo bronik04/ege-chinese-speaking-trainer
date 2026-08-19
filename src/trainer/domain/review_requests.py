@@ -12,7 +12,7 @@ class ReviewRequestSelection:
 
 
 def validate_review_selection(kind: object, tasks: object) -> ReviewRequestSelection:
-    if kind not in {"task", "attempt"}:
+    if not isinstance(kind, str) or kind not in {"task", "attempt"}:
         raise ValueError("Некорректный тип запроса на разбор")
     if not isinstance(tasks, list) or not tasks:
         raise ValueError("Выберите задания для разбора")

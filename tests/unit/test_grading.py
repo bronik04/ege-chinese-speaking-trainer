@@ -39,6 +39,10 @@ class ReviewRequestSelectionTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_review_selection("attempt", [])
 
+    def test_rejects_a_non_string_request_kind(self):
+        with self.assertRaises(ValueError):
+            validate_review_selection([], [2])
+
     def test_rejects_duplicate_task_selection(self):
         with self.assertRaises(ValueError):
             validate_review_selection("attempt", [1, 1])
