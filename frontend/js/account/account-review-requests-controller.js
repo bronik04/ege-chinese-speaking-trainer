@@ -27,7 +27,7 @@ export function createAccountReviewRequestsController(ctx) {
     }
   }
 
-  function showError(error, selection) {
+  function showError(error, selection, runId) {
     const message = $("reviewRequestMessage");
     message.replaceChildren(`Не удалось отправить: ${error.message}. `);
     const retry = document.createElement("button");
@@ -35,6 +35,10 @@ export function createAccountReviewRequestsController(ctx) {
     retry.className = "secondary-btn";
     retry.textContent = "Повторить отправку";
     retry.addEventListener("click", async () => {
+      if (ctx.getCompletedRun()?.id !== runId) {
+        message.textContent = "Повторить можно только для исходной попытки.";
+        return;
+      }
       try {
         await submitReviewRequest(selection);
         ctx.onReviewRequestSent?.();
@@ -50,6 +54,7 @@ export function createAccountReviewRequestsController(ctx) {
     const run = ctx.getCompletedRun();
     const completedTasks = ctx.getCompletedTasks();
     const recordings = ctx.getCompletedRecordings();
+    if (pendingRequest && pendingRequest.runId !== run?.id) pendingRequest = null;
     if (!run || !tasks.length || tasks.some(task => !completedTasks.includes(task))) {
       throw new Error("Выберите завершённое задание");
     }
@@ -68,7 +73,7 @@ export function createAccountReviewRequestsController(ctx) {
           variantId: run.variantId,
           run,
         });
-        pendingRequest = { id: payload.reviewRequest.id, kind: selection.kind, tasks };
+        pendingRequest = { id: payload.reviewRequest.id, runId: run.id, kind: selection.kind, tasks };
       }
       for (const recording of recordings.filter(item => tasks.includes(item.task))) {
         await uploadReviewRecording(pendingRequest.id, recording);
@@ -79,10 +84,15 @@ export function createAccountReviewRequestsController(ctx) {
       ctx.toast("Аудиозаписи отправлены преподавателю");
       await loadStudentReviewRequests();
     } catch (error) {
-      showError(error, selection);
+      showError(error, selection, run.id);
       throw error;
     }
   }
 
-  return { reset, loadStudentReviewRequests, submitReviewRequest };
+  return {
+    reset,
+    clearPendingReviewRequest: () => { pendingRequest = null; },
+    loadStudentReviewRequests,
+    submitReviewRequest,
+  };
 }

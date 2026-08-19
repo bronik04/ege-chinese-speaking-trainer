@@ -70,6 +70,7 @@ export function createAccountController(ctx) {
     loadStudentAssignments: assignments.loadStudentAssignments,
     loadStudentReviewRequests: reviewRequests.loadStudentReviewRequests,
     submitReviewRequest: reviewRequests.submitReviewRequest,
+    clearPendingReviewRequest: reviewRequests.clearPendingReviewRequest,
     startAssignedRun: assignments.startAssignedRun,
     renderAssignmentOptions: assignments.renderAssignmentOptions,
     createAssignment: assignments.createAssignment,

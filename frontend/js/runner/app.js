@@ -257,6 +257,11 @@ runner = createRunnerController({
   finalizeActiveRun,
   toast,
   getAccount: () => account,
+  onRunStarted: () => {
+    reviewRequestSent = false;
+    account?.clearPendingReviewRequest();
+    $("reviewRequestMessage").textContent = "";
+  },
   onRunFinished: () => {
     reviewRequestSent = false;
     renderReviewRequestChooser();

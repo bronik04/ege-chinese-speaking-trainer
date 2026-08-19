@@ -176,3 +176,47 @@ test("student retries a failed upload without creating a duplicate review reques
     await student.close();
   }
 });
+
+test("student starts a new run after a failed upload without reusing its review request", async ({ browser }) => {
+  const stamp = Date.now();
+  const student = await browser.newContext({ baseURL: "http://127.0.0.1:8091" });
+  const page = await student.newPage();
+  const createdRequests = [];
+  const recordingUrls = [];
+  let rejectUpload = true;
+  await page.route("**/api/review-requests", route => {
+    if (route.request().method() === "POST") createdRequests.push(route.request().postDataJSON());
+    return route.continue();
+  });
+  await page.route("**/api/review-requests/*/recordings?*", route => {
+    recordingUrls.push(route.request().url());
+    if (rejectUpload) {
+      rejectUpload = false;
+      return route.abort();
+    }
+    return route.continue();
+  });
+  try {
+    await installRecorder(page);
+    await page.goto("/");
+    await registerStudent(page, stamp);
+    await page.locator("#fastMode").check({ force: true });
+    await finishTask(page, 2);
+    await page.getByRole("button", { name: "Отправить одно задание" }).click();
+    await expect(page.getByRole("button", { name: "Повторить отправку" })).toBeVisible();
+
+    await page.locator("#restartBtn").click();
+    await finishTask(page, 3);
+    await page.getByRole("button", { name: "Отправить одно задание" }).click();
+    await expect(page.locator("#reviewRequestMessage")).toContainText("отправлена");
+
+    expect(createdRequests).toHaveLength(2);
+    expect(createdRequests.map(request => request.tasks)).toEqual([[2], [3]]);
+    expect(recordingUrls).toHaveLength(2);
+    expect(recordingUrls[0]).toContain("task=2");
+    expect(recordingUrls[1]).toContain("task=3");
+    expect(new URL(recordingUrls[0]).pathname).not.toBe(new URL(recordingUrls[1]).pathname);
+  } finally {
+    await student.close();
+  }
+});

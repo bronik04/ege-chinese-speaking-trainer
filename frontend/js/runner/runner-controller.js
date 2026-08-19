@@ -129,6 +129,7 @@ export function createRunnerController(ctx) {
       assignmentId: assignment?.id || null,
       startedAt: new Date().toISOString()
     };
+    ctx.onRunStarted?.(ctx.getProgress().activeRun.id);
     ctx.saveProgressLocal();
     ctx.showScreen("runner");
     renderTask();
