@@ -314,8 +314,6 @@ h1 em { color: var(--crimson); font-weight: inherit; }
 .teacher-review-request-card > header { min-height: 0; display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding: 18px 20px; border-bottom: 1px solid var(--line); }
 .teacher-review-request-card h3 { margin: 2px 0; color: var(--crimson-deep); font: 600 27px/1 var(--font-display); }
 .teacher-review-request-card header span { color: var(--ink-soft); font-size: 12px; }
-.submission-status { padding: 7px 9px; background: var(--cream); color: var(--crimson); font: 700 10px/1 var(--font-utility); text-transform: uppercase; }
-.submission-status.graded { background: var(--gold-pale); }
 .submission-audio { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; padding: 16px 20px; }
 .submission-audio label { display: grid; gap: 5px; color: var(--ink-soft); font-size: 11px; }
 .submission-audio audio { width: 100%; }
@@ -324,7 +322,6 @@ h1 em { color: var(--crimson); font-weight: inherit; }
 .review-task legend { color: var(--crimson-deep); font-weight: 700; }
 .review-task label { grid-template-columns: 1fr 64px; align-items: center; }
 .review-task label span small { color: var(--ink-soft); }
-.review-comment { margin: 14px 0; }
 body.modal-open { overflow: hidden; }
 .site-footer { position: relative; z-index: 1; margin-top: 45px; color: var(--cream); background: var(--crimson-deep); border-top: 1px solid var(--gold); }
 .site-footer-inner { width: min(1440px, calc(100% - 48px)); margin-inline: auto; padding: 30px 4vw; display: grid; grid-template-columns: 1.2fr .8fr .7fr; gap: 35px; align-items: center; }
@@ -401,13 +398,9 @@ body.modal-open { overflow: hidden; }
   .timer-ring { width: 176px; height: 176px; }
   .result-screen { padding-inline: 0; }
   .auth-dialog { padding: 30px 22px; }
-  .create-group-form, .join-group-form { grid-template-columns: 1fr; align-items: stretch; }
   .submission-filters { grid-template-columns: 1fr; }
   .teacher-materials-entry { grid-template-columns: 1fr; align-items: stretch; }
   .teacher-materials-entry .primary-btn { text-align: center; }
-  .teacher-group-card > header { align-items: flex-start; }
-  .student-table { overflow-x: auto; }
-  .student-table-head, .student-row { min-width: 650px; }
   .site-footer-inner { width: calc(100% - 24px); grid-template-columns: 1fr; gap: 24px; padding-inline: 6px; }
   .account-progress-card { align-items: flex-start; flex-direction: column; }
 }

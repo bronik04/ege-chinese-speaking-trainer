@@ -213,8 +213,8 @@ test("owner history includes the student's earlier reviews outside the queue fil
     await teacherPage.locator("#reviewStudentFilter").fill(`student-${stamp}@example.test`);
     await teacherPage.locator("#reviewTaskFilter").selectOption("3");
     await teacherPage.getByRole("button", { name: "Применить" }).click();
-    await expect(teacherPage.getByRole("button", { name: "История разборов ученика" })).toHaveCount(1);
-    await teacherPage.getByRole("button", { name: "История разборов ученика" }).click();
+    await expect(teacherPage.getByRole("button", { name: "История заявок" })).toHaveCount(1);
+    await teacherPage.getByRole("button", { name: "История заявок" }).click();
     await expect(teacherPage.locator(".attempt-history")).toContainText(" · ");
   } finally {
     await teacher.close();
