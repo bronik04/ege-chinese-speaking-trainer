@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 const originHeaders = { Origin: "http://127.0.0.1:8091", "Sec-Fetch-Site": "same-origin" };
@@ -13,6 +15,16 @@ async function post(context, url, data) {
   const response = await context.request.post(url, { headers: originHeaders, data });
   expect(response.ok(), await response.text()).toBeTruthy();
   return response.json();
+}
+
+function createSampleAudio() {
+  const audioPath = path.join(os.tmpdir(), `ege-catalog-${Date.now()}.webm`);
+  execFileSync("ffmpeg", ["-loglevel", "error", "-f", "lavfi", "-i", "anullsrc", "-t", "1", "-c:a", "libopus", "-y", audioPath]);
+  try {
+    return fs.readFileSync(audioPath);
+  } finally {
+    fs.rmSync(audioPath, { force: true });
+  }
 }
 
 async function verificationToken(email) {
@@ -124,37 +136,65 @@ test("registered user publishes a standalone task and opens it from catalog", as
   await context.close();
 });
 
-test("assigned snapshot opens after the author deletes the source material", async ({ browser }) => {
+test("direct review request preserves its material snapshot after the author deletes the source material", async ({ browser }) => {
   const teacher = await browser.newContext({ baseURL });
   const student = await browser.newContext({ baseURL });
   const author = await browser.newContext({ baseURL });
+  const stamp = Date.now();
+  const slug = `direct-review-${stamp}`;
+  const authorEmail = "catalog-author@example.test";
+  const authorRegistration = await author.request.post("/api/auth/register", { headers: originHeaders, data: {
+    email: authorEmail, password: "password123", displayName: "Direct Review Author",
+  }});
+  if (authorRegistration.status() === 201) {
+    await post(author, "/api/auth/email/confirm", { token: await verificationToken(authorEmail) });
+  } else {
+    expect(authorRegistration.status(), await authorRegistration.text()).toBe(409);
+    await post(author, "/api/auth/login", { email: authorEmail, password: "password123" });
+  }
+  await post(author, "/api/materials", {
+    slug, kind: "task", taskNumber: 2, title: "Direct review snapshot", year: 2027,
+    source: "E2E author", content: { "2": { images: ["", "", ""] } },
+  });
+  const photo = fs.readFileSync("public/assets/variants/2026/candidate-03.webp");
+  const uploaded = await author.request.post(`/api/materials/${slug}/assets`, {
+    headers: { ...originHeaders, "Content-Type": "image/webp" }, data: photo,
+  });
+  expect(uploaded.ok(), await uploaded.text()).toBeTruthy();
+  const assetUrl = (await uploaded.json()).asset.url;
+  await author.request.put(`/api/materials/${slug}`, {
+    headers: originHeaders,
+    data: {
+      slug, kind: "task", taskNumber: 2, title: "Direct review snapshot", year: 2027,
+      source: "E2E author", content: { "2": { images: [assetUrl, assetUrl, assetUrl] } },
+    },
+  });
+  await post(author, `/api/materials/${slug}/publish`, {});
   await signInAsOwner(teacher);
   await post(student, "/api/auth/register", {
-    email: "snapshot-student@example.test", password: "password123", displayName: "Snapshot Student",
+    email: `direct-review-student-${stamp}@example.test`, password: "password123", displayName: "Snapshot Student",
   });
-  const group = await post(teacher, "/api/teacher/groups", { name: "Snapshot group" });
-  await post(student, "/api/groups/join", { code: group.group.code });
-  await post(teacher, "/api/teacher/assignments", {
-    groupId: group.group.id, title: "Stable snapshot", variantId: publishedSlug, tasks: [2], dueAt: 1,
+  const review = await post(student, "/api/review-requests", {
+    kind: "task",
+    variantId: slug,
+    tasks: [2],
+    run: { id: `direct-review-${Date.now()}`, status: "completed", completedTasks: [2] },
   });
-  await post(author, "/api/auth/login", { email: "catalog-author@example.test", password: "password123" });
-  const deleted = await author.request.delete(`/api/materials/${publishedSlug}`, {
+  const recording = await student.request.post(`/api/review-requests/${review.reviewRequest.id}/recordings?task=2&label=Answer`, {
+    headers: { ...originHeaders, "Content-Type": "audio/webm" }, data: createSampleAudio(),
+  });
+  expect(recording.ok(), await recording.text()).toBeTruthy();
+  await post(student, `/api/review-requests/${review.reviewRequest.id}/complete`, {});
+  const deleted = await author.request.delete(`/api/materials/${slug}`, {
     headers: originHeaders,
     data: {},
   });
   expect(deleted.ok(), await deleted.text()).toBeTruthy();
 
-  const assignments = await (await student.request.get("/api/student/assignments")).json();
-  expect(assignments.assignments[0].material.id).toBe(publishedSlug);
-  expect(assignments.assignments[0].materialUnavailable).toBe(false);
-  const snapshotImage = assignments.assignments[0].material.tasks["2"].images[0];
-  expect(snapshotImage).toMatch(/^\/api\/assignment-assets\/\d+$/);
-  expect((await student.request.get(snapshotImage)).ok()).toBeTruthy();
-  const page = await student.newPage();
-  await page.goto("/");
-  await page.locator("[data-start-assignment]").click();
-  await expect(page.locator("#runnerScreen")).toBeVisible();
-  await expect(page.locator("#modeLabel")).toContainText("задание преподавателя");
-  await expect(page.locator("#taskBadge")).toHaveText("Задание 2");
+  const teacherRequests = await (await teacher.request.get("/api/teacher/review-requests")).json();
+  const request = teacherRequests.requests.find(item => item.id === review.reviewRequest.id);
+  expect(request.items[0].task).toBe(2);
+  expect(request.items[0].recordings).toHaveLength(1);
+  expect((await teacher.request.get(request.items[0].recordings[0].url)).ok()).toBeTruthy();
   await Promise.all([teacher.close(), student.close(), author.close()]);
 });

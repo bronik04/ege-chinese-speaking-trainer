@@ -10,13 +10,13 @@ from http import HTTPStatus
 from pathlib import Path
 
 from trainer.api import runtime
-from trainer.api.controllers import recordings as recording_actions
 from trainer.api.dependencies import owner_email_from_env
 from trainer.api.errors import ApiError, default_error_code
 from trainer.api.results import ActionResult, RequestContext
 from trainer.api.schemas import ReviewRequestCreate, ReviewScoresRequest
 from trainer.domain.grading import CRITERIA, validate_scores
 from trainer.domain.review_requests import required_recording_positions, validate_review_selection
+from trainer.infrastructure.audio import validate_duration
 from trainer.infrastructure.database.queries.review_requests import (
     review_request_detail as fetch_review_request_detail,
 )
@@ -185,7 +185,7 @@ def review_recording_create(
         file.write(body)
         temporary_path = Path(file.name)
     try:
-        duration = recording_actions.validate_duration(temporary_path, task)
+        duration = validate_duration(temporary_path, task)
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         temporary_path.unlink(missing_ok=True)
         raise ApiError(

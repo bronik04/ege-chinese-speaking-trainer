@@ -194,11 +194,13 @@ class FastApiSmokeTest(unittest.TestCase):
             },
         )
 
-    def test_openapi_exposes_request_schemas(self):
+    def test_openapi_hides_retired_assignment_routes(self):
         document = self.client.get("/openapi.json").json()
-        operation = document["paths"]["/api/teacher/assignments"]["post"]
-        schema = operation["requestBody"]["content"]["application/json"]["schema"]
-        self.assertEqual(schema["$ref"], "#/components/schemas/AssignmentRequest")
+        self.assertNotIn("/api/teacher/groups", document["paths"])
+        self.assertNotIn("/api/groups/join", document["paths"])
+        self.assertNotIn("/api/teacher/assignments", document["paths"])
+        self.assertNotIn("/api/assignments/{assignment_id}/submissions", document["paths"])
+        self.assertIn("/api/progress", document["paths"])
 
     def test_framework_http_errors_use_api_error_contract(self):
         response = self.client.put("/api/auth/me", headers={"X-Request-ID": "method-request-123"})

@@ -126,8 +126,8 @@ class ApiFlowTest(unittest.TestCase):
         dependencies.AUDIO_DIR = runtime.AUDIO_DIR
         recordings.DATA_DIR = root
         recordings.AUDIO_DIR = runtime.AUDIO_DIR
-        cls.original_validate_duration = recordings.validate_duration
-        recordings.validate_duration = lambda path, task: 1.0
+        cls.original_validate_duration = review_requests.validate_duration
+        review_requests.validate_duration = lambda path, task: 1.0
         cls.client_context = TestClient(asgi.app)
         cls.client = cls.client_context.__enter__()
         cls.origin = "http://testserver"
@@ -135,7 +135,7 @@ class ApiFlowTest(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.client_context.__exit__(None, None, None)
-        recordings.validate_duration = cls.original_validate_duration
+        review_requests.validate_duration = cls.original_validate_duration
         if cls.original_owner_email is None:
             os.environ.pop("TRAINER_OWNER_EMAIL", None)
         else:
@@ -210,11 +210,18 @@ class ApiFlowTest(unittest.TestCase):
                 """,
                 (assignment_id, student_id, 1, "uploading", "{}", None),
             ).lastrowid
-        status, payload = self.request_audio(
-            f"/api/submissions/{submission_id}/recordings?task=2&label=Range", b"0123456789", cookie
-        )
-        self.assertEqual(status, 201, payload)
-        return payload["recording"]["id"], cookie
+        relative = f"{submission_id}/archive-recording.webm"
+        runtime.AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+        (runtime.AUDIO_DIR / relative).parent.mkdir(parents=True, exist_ok=True)
+        (runtime.AUDIO_DIR / relative).write_bytes(b"0123456789")
+        with runtime.connect() as database:
+            recording_id = database.execute(
+                """INSERT INTO recordings(submission_id,task_number,question_number,label,file_name,mime_type,
+                                             size_bytes,duration_seconds,created_at)
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                (submission_id, 2, None, "Archived range recording", relative, "audio/webm", 10, 1, 1),
+            ).lastrowid
+        return recording_id, cookie
 
     @staticmethod
     def cookie_from(headers):
@@ -712,6 +719,7 @@ class ApiFlowTest(unittest.TestCase):
         self.assertIn("password_reset_completed", actions)
         self.assertIn("login_succeeded", actions)
 
+    @unittest.skip("Legacy group and assignment flow was retired in favor of direct review requests")
     def test_teacher_student_progress_flow(self):
         teacher = {
             "email": "teacher@example.test",
@@ -1028,6 +1036,34 @@ class ApiFlowTest(unittest.TestCase):
         status, _, _ = self.request("DELETE", "/api/account", {"password": teacher["password"]}, teacher_cookie)
         self.assertEqual(status, 200)
         self.assertEqual(list(runtime.ASSIGNMENT_ASSET_DIR.rglob("*.webp")), [])
+
+    def test_legacy_assignment_routes_are_not_active(self):
+        student_cookie = self.register_student("retired-routes")
+        progress = {
+            "version": 1,
+            "updatedAt": "2026-08-19T12:00:00.000Z",
+            "settings": {"fastMode": False},
+            "activeRun": None,
+            "runs": [{"id": "direct-progress", "status": "completed", "completedTasks": [1]}],
+        }
+        for path, payload in (
+            ("/api/teacher/groups", {"name": "Retired group"}),
+            ("/api/groups/join", {"code": "ABC123"}),
+            (
+                "/api/teacher/assignments",
+                {"groupId": 1, "title": "Retired assignment", "variantId": "demo-2026", "tasks": [1]},
+            ),
+            ("/api/assignments/1/submissions", {"run": {"id": "retired-run"}}),
+        ):
+            status, body, _ = self.request("POST", path, payload, student_cookie)
+            self.assertEqual(status, 404, body)
+            self.assertEqual(body["code"], "not_found")
+
+        status, written, _ = self.request("PUT", "/api/progress", {"progress": progress}, student_cookie)
+        self.assertEqual(status, 200, written)
+        status, restored, _ = self.request("GET", "/api/progress", cookie=student_cookie)
+        self.assertEqual(status, 200, restored)
+        self.assertEqual(restored["progress"], progress)
 
     def test_owner_registration_derives_teacher_role(self):
         original_owner_email = os.environ.get("TRAINER_OWNER_EMAIL")

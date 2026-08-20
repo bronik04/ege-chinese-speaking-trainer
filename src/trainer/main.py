@@ -17,7 +17,7 @@ from starlette.routing import Match
 from trainer.api.body_limit import BodyLimitMiddleware
 from trainer.api.dependencies import validate_account_configuration
 from trainer.api.errors import ApiError, api_error_handler, default_error_code, error_payload
-from trainer.api.routes import accounts, groups, materials, recordings, review_requests, work
+from trainer.api.routes import accounts, groups, materials, recordings, review_requests
 from trainer.api.runtime import MAX_AUDIO_BODY, MAX_BODY, ROOT, connect, init_database
 from trainer.api.security import request_has_same_origin
 from trainer.infrastructure.observability import (
@@ -44,7 +44,6 @@ app = FastAPI(title="Тренажёр устной части ЕГЭ по кит
 app.add_exception_handler(ApiError, api_error_handler)
 app.include_router(accounts.router)
 app.include_router(groups.router)
-app.include_router(work.router)
 app.include_router(recordings.router)
 app.include_router(review_requests.router)
 app.include_router(materials.router)
@@ -160,6 +159,21 @@ async def validation_error(_, error: RequestValidationError):
 
 @app.exception_handler(StarletteHTTPException)
 async def http_error(_, error: StarletteHTTPException):
+    retired_active_prefixes = (
+        "/api/teacher/groups",
+        "/api/groups/join",
+        "/api/student/groups",
+        "/api/teacher/dashboard",
+        "/api/student/assignments",
+        "/api/teacher/assignments",
+        "/api/assignments/",
+        "/api/submissions/",
+        "/api/assignment-assets/",
+        "/api/teacher/submissions",
+        "/api/teacher/export.",
+    )
+    if error.status_code == 405 and _.url.path.startswith(retired_active_prefixes):
+        return JSONResponse(error_payload(default_error_code(404), "Not found"), status_code=404)
     code = "method_not_allowed" if error.status_code == 405 else default_error_code(error.status_code)
     return JSONResponse(error_payload(code, str(error.detail)), status_code=error.status_code)
 

@@ -3,10 +3,6 @@ import { formatTime, stepsMarkup, taskMarkup } from "./task-view.js";
 
 const $ = (id) => document.getElementById(id);
 
-export function fastModeForRun(assignment, savedFastMode) {
-  return !assignment && Boolean(savedFastMode);
-}
-
 export function createRunnerController(ctx) {
   let mode = "exam";
   let taskQueue = [];
@@ -24,14 +20,13 @@ export function createRunnerController(ctx) {
   let recordings = [];
   let soundEnabled = true;
   let audioContext = null;
-  let activeAssignment = null;
   let completedRun = null;
   let completedTasks = [];
   let completedRecordings = [];
 
   const taskData = (task) => ctx.getVariant().tasks[String(task)];
   const durationFor = (task, kind) => {
-    if (!fastModeForRun(activeAssignment, $("fastMode").checked)) return taskData(task)[kind + "Seconds"];
+    if (!$("fastMode").checked) return taskData(task)[kind + "Seconds"];
     if (task === 1) return kind === "prep" ? 8 : 5;
     return kind === "prep" ? 8 : 10;
   };
@@ -84,7 +79,7 @@ export function createRunnerController(ctx) {
     const isLocked = phase === "idle";
     $("taskBadge").textContent = `Задание ${task}`;
     $("phaseCaption").textContent = phase === "answer" ? "Ответ" : phase === "prep" ? "Подготовка" : "До начала";
-    $("modeLabel").textContent = `${ctx.getVariant().label} · ${mode === "exam" ? "экзамен" : mode === "assignment" ? "задание преподавателя" : "тренировка"}`;
+    $("modeLabel").textContent = `${ctx.getVariant().label} · ${mode === "exam" ? "экзамен" : "тренировка"}`;
     $("taskContent").innerHTML = taskMarkup(task, taskData(task), { phase, questionIndex, selectedPhoto, photoChoiceMade });
     $("taskPaper").classList.toggle("locked", isLocked);
     $("taskContent").setAttribute("aria-hidden", String(isLocked));
@@ -99,12 +94,10 @@ export function createRunnerController(ctx) {
     renderSteps();
   }
   
-  function startRun(startMode, assignment = null) {
+  function startRun(startMode) {
     if (!ctx.getVariant()) return;
-    activeAssignment = assignment;
-    $("fastMode").disabled = Boolean(assignment);
-    mode = assignment ? "assignment" : startMode === "exam" ? "exam" : "practice";
-    taskQueue = assignment ? [...assignment.tasks] : mode === "exam" ? [1, 2, 3] : [Number(startMode)];
+    mode = startMode === "exam" ? "exam" : "practice";
+    taskQueue = mode === "exam" ? [1, 2, 3] : [Number(startMode)];
     taskIndex = 0;
     questionIndex = 0;
     selectedPhoto = 1;
@@ -125,8 +118,7 @@ export function createRunnerController(ctx) {
       completedTasks: [],
       currentTask: taskQueue[0],
       phase: "idle",
-      fastMode: fastModeForRun(assignment, $("fastMode").checked),
-      assignmentId: assignment?.id || null,
+      fastMode: Boolean($("fastMode").checked),
       startedAt: new Date().toISOString()
     };
     ctx.onRunStarted?.(ctx.getProgress().activeRun.id);
@@ -315,8 +307,6 @@ export function createRunnerController(ctx) {
     if (recorder?.state === "recording") await stopRecording(`${ctx.getVariant().label} · задание ${taskQueue[taskIndex]} · незавершённая запись`);
     ctx.finalizeActiveRun("interrupted", recordings.length);
     phase = "idle";
-    activeAssignment = null;
-    $("fastMode").disabled = false;
     ctx.showScreen("home");
   }
   
@@ -338,9 +328,5 @@ export function createRunnerController(ctx) {
     getCompletedRecordings: () => completedRecordings.map(recording => ({ ...recording })),
     getCompletedTasks: () => [...completedTasks],
     getCompletedRun: () => completedRun && { ...completedRun, tasks: [...completedRun.tasks], completedTasks: [...completedRun.completedTasks] },
-    resetAssignment: () => {
-      activeAssignment = null;
-      $("fastMode").disabled = false;
-    },
   };
 }

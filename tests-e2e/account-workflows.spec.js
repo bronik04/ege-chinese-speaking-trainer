@@ -92,10 +92,7 @@ test("student resets a password through the emailed token", async ({ browser }) 
 test("unverified owner cannot open privileged APIs", async ({ browser }) => {
   const teacher = await browser.newContext({ baseURL });
   await registerOwner(teacher, { confirm: false });
-  const response = await teacher.request.post("/api/teacher/groups", {
-    headers: originHeaders,
-    data: { name: "Blocked group" },
-  });
+  const response = await teacher.request.get("/api/teacher/review-requests");
   expect(response.status()).toBe(403);
   expect((await response.json()).code).toBe("email_verification_required");
   const deletion = await teacher.request.delete("/api/account", {
@@ -127,39 +124,27 @@ test("student deletes the account and can no longer sign in", async ({ browser }
   await login.close();
 });
 
-test("teacher resends an assignment as a separate work item", async ({ browser }) => {
+test("student and owner cabinets have no assignment controls", async ({ browser }) => {
   const stamp = Date.now();
   const teacher = await browser.newContext({ baseURL });
   const student = await browser.newContext({ baseURL });
   await registerOwner(teacher);
-  await register(student, `resend-student-${stamp}@example.test`);
+  await register(student, `controls-student-${stamp}@example.test`);
   const teacherPage = await teacher.newPage();
+  const studentPage = await student.newPage();
   await teacherPage.goto("/");
+  await studentPage.goto("/");
   await teacherPage.locator("#authButton").click();
   await teacherPage.locator("#teacherCabinetBtn").click();
+  await studentPage.locator("#authButton").click();
   await expect(teacherPage.locator("#teacherMaterialEditorLink")).toBeVisible();
   await expect(teacherPage.locator("#teacherMaterialEditorLink")).toHaveAttribute("href", "variant-editor.html");
   await expect(teacherPage.locator("select:not([data-project-select='ready'])")).toHaveCount(0);
-  await expect(teacherPage.locator("#groupName")).toHaveCSS("font-family", /Georgia/);
-  await expect(teacherPage.locator("#assignmentDue")).toHaveCSS("background-color", "rgb(251, 246, 236)");
-  const group = await post(teacher, "/api/teacher/groups", { name: "Resend E2E Group" });
-  await post(student, "/api/groups/join", { code: group.group.code });
-  const original = await post(teacher, "/api/teacher/assignments", {
-    groupId: group.group.id,
-    title: "Original assignment",
-    variantId: "demo-2026",
-    tasks: [1, 2, 3],
-    dueAt: null,
-  });
-  const repeated = await post(teacher, `/api/teacher/assignments/${original.assignment.id}/resend`, {});
-
-  const teacherItems = await (await teacher.request.get("/api/teacher/assignments")).json();
-  const studentItems = await (await student.request.get("/api/student/assignments")).json();
-  expect(repeated.assignment.id).not.toBe(original.assignment.id);
-  expect(teacherItems.assignments).toHaveLength(2);
-  expect(teacherItems.assignments.find(item => item.id === repeated.assignment.id).sourceAssignmentId)
-    .toBe(original.assignment.id);
-  expect(studentItems.assignments).toHaveLength(2);
+  for (const page of [teacherPage, studentPage]) {
+    await expect(page.locator("#groupName, #joinGroupCode, #assignmentDue, #createAssignmentBtn, #exportCsvBtn, #exportPdfBtn")).toHaveCount(0);
+    await expect(page.locator("[data-copy-code], [data-resend-assignment], [data-start-assignment]")).toHaveCount(0);
+    await expect(page.locator("text=/Код группы|Назначить|Срок|Выдать повторно|CSV|PDF/")).toHaveCount(0);
+  }
   await teacher.close();
   await student.close();
 });

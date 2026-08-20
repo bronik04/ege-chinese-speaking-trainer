@@ -309,7 +309,7 @@ $("checkMicBtn").addEventListener("click", () => ensureMicrophone(true));
 $("mainActionBtn").addEventListener("click", startPreparation);
 $("skipBtn").addEventListener("click", skipPhase);
 $("exitBtn").addEventListener("click", exitRun);
-$("restartBtn").addEventListener("click", () => { runner.resetAssignment(); showScreen("home"); });
+$("restartBtn").addEventListener("click", () => showScreen("home"));
 $("authButton").addEventListener("click", () => openModal($("authModal")));
 $("authCloseBtn").addEventListener("click", () => closeModal($("authModal")));
 $("progressCloseBtn").addEventListener("click", () => closeModal($("progressModal")));

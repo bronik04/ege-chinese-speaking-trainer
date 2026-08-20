@@ -144,7 +144,6 @@ h1 em { color: var(--crimson); font-weight: inherit; }
 .status-dot.bad { background: var(--crimson-bright); }
 .secondary-btn { border: 1px solid var(--crimson); padding: 10px 14px; background: transparent; color: var(--crimson); white-space: nowrap; font-size: 12px; }
 .secondary-btn:hover { color: var(--cream); background: var(--crimson); }
-.student-assignments { padding: 22px; border-top: 4px solid var(--gold); background: var(--cream); }
 .teacher-review-section h2 { margin: 0; color: var(--crimson-deep); font: 600 32px/1 var(--font-display); }
 .student-review-requests { padding: 22px; border-top: 4px solid var(--gold); background: var(--cream); }
 .student-review-requests h2 { margin: 0; color: var(--crimson-deep); font: 600 32px/1 var(--font-display); }
@@ -152,11 +151,6 @@ h1 em { color: var(--crimson); font-weight: inherit; }
 .review-request-card { padding: 16px; background: var(--paper); border: 1px solid var(--line); }
 .review-request-card h3 { margin: 2px 0; color: var(--crimson-deep); }
 .review-request-card span, .review-request-card small { display: block; color: var(--ink-soft); font-size: 12px; }
-.assignment-list { display: grid; gap: 10px; margin-top: 16px; }
-.assignment-card { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 16px; padding: 16px; background: var(--paper); border: 1px solid var(--line); }
-.assignment-card h3 { margin: 2px 0; color: var(--crimson-deep); }
-.assignment-card span, .assignment-card small { display: block; color: var(--ink-soft); font-size: 12px; }
-.assignment-card blockquote { margin: 9px 0 0; padding-left: 10px; border-left: 2px solid var(--gold); color: var(--ink-soft); font-size: 12px; }
 
 .runner-screen { padding-bottom: 40px; }
 .exam-steps { min-height: 66px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 20px; }
@@ -256,8 +250,8 @@ h1 em { color: var(--crimson); font-weight: inherit; }
 .auth-tabs button.active { color: var(--crimson); border-bottom-color: var(--gold); }
 #authForm, #passwordResetForm { display: grid; gap: 15px; }
 #authForm label, #passwordResetForm label, .delete-account-form label { display: grid; gap: 6px; color: var(--ink-soft); font: 700 10px/1.4 var(--font-utility); text-transform: uppercase; letter-spacing: .1em; }
-#authForm input, #authForm select, #passwordResetForm input, .delete-account-form input, .join-group-form input, .create-group-form input { width: 100%; border: 1px solid var(--line); border-radius: 0; background: var(--paper); color: var(--ink); padding: 12px; outline: none; }
-#authForm input:focus, #authForm select:focus, #passwordResetForm input:focus, .delete-account-form input:focus, .join-group-form input:focus, .create-group-form input:focus { border-color: var(--crimson); box-shadow: 0 0 0 3px rgba(139, 26, 26, .08); }
+#authForm input, #authForm select, #passwordResetForm input, .delete-account-form input { width: 100%; border: 1px solid var(--line); border-radius: 0; background: var(--paper); color: var(--ink); padding: 12px; outline: none; }
+#authForm input:focus, #authForm select:focus, #passwordResetForm input:focus, .delete-account-form input:focus { border-color: var(--crimson); box-shadow: 0 0 0 3px rgba(139, 26, 26, .08); }
 .auth-link { border: 0; border-bottom: 1px solid currentColor; background: transparent; color: var(--crimson); padding: 3px 0; margin-top: 12px; font-weight: 700; }
 .auth-message { min-height: 24px; margin: 12px 0 0; color: var(--crimson-bright); font-size: 13px; }
 .auth-user-email { margin: 12px 0 22px; color: var(--ink-soft); }
@@ -294,13 +288,8 @@ h1 em { color: var(--crimson); font-weight: inherit; }
 .history-item span, .history-item time { color: var(--ink-soft); font-size: 12px; }
 .history-empty { color: var(--ink-soft); padding: 30px 0; }
 .history-clear { margin-top: 22px; }
-.join-group-form, .create-group-form { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 10px; margin: 20px 0; }
-.join-group-form label, .create-group-form label { display: grid; gap: 6px; color: var(--ink-soft); font: 700 10px/1.4 var(--font-utility); text-transform: uppercase; letter-spacing: .1em; }
-.join-group-form input { text-transform: uppercase; letter-spacing: .18em; }
-.student-groups { display: grid; gap: 8px; margin-bottom: 24px; }
 .mini-heading { margin: 2px 0 4px; color: var(--ink-soft); font: 700 9px/1 var(--font-utility); text-transform: uppercase; letter-spacing: .12em; }
-.student-group { display: flex; justify-content: space-between; gap: 14px; padding: 10px 0; border-top: 1px solid var(--line); }
-.student-group span, .student-groups-empty { color: var(--ink-soft); font-size: 12px; }
+.student-groups-empty { color: var(--ink-soft); font-size: 12px; }
 .teacher-dialog { width: min(980px, 100%); }
 .teacher-dialog > h2 { font-size: clamp(34px, 5vw, 50px); }
 .teacher-materials-entry { margin: 22px 0 26px; padding: 20px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 24px; color: var(--cream); background: var(--crimson-deep); border-bottom: 1px solid var(--gold); }
@@ -308,22 +297,8 @@ h1 em { color: var(--crimson); font-weight: inherit; }
 .teacher-materials-entry h3 { margin: 0; color: var(--gold-pale); font: 600 30px/1 var(--font-display); }
 .teacher-materials-entry p:last-child { margin: 7px 0 0; color: var(--cream-deep); font-size: 12px; }
 .teacher-materials-entry .primary-btn { text-decoration: none; white-space: nowrap; }
-.teacher-group-card { width: 100%; min-width: 0; overflow: hidden; border: 1px solid var(--line); background: white; }
-.teacher-group-card > header { min-height: auto; padding: 18px 20px; display: flex; align-items: center; justify-content: space-between; gap: 20px; border-bottom: 1px solid var(--line); }
-.teacher-group-card h3 { margin: 0 0 3px; color: var(--crimson-deep); font: 600 25px/1.1 var(--font-display); }
 .teacher-empty span { color: var(--ink-soft); font-size: 12px; }
-.group-code { border: 1px solid var(--gold); background: var(--gold-pale); padding: 8px 12px; color: var(--crimson-deep); }
-.group-code small, .group-code b { display: block; }
-.group-code small { color: var(--ink-soft); font: 700 8px/1 var(--font-utility); text-transform: uppercase; letter-spacing: .1em; }
-.group-code b { margin-top: 5px; font: 700 16px/1 var(--font-utility); letter-spacing: .14em; }
-.student-table { width: 100%; min-width: 0; }
-.student-table-head, .student-row { display: grid; grid-template-columns: minmax(190px, 1fr) 95px 75px 150px; align-items: center; gap: 12px; padding: 11px 20px; }
-.student-table-head { color: var(--ink-soft); background: var(--cream); font: 700 8px/1.2 var(--font-utility); text-transform: uppercase; letter-spacing: .08em; }
-.student-row { border-top: 1px solid var(--line); }
-.student-row span b, .student-row span small { display: block; }
-.student-row span small, .student-row time { color: var(--ink-soft); font-size: 11px; }
-.student-row strong { color: var(--crimson); font-size: 17px; }
-.group-empty, .teacher-empty { padding: 24px 20px; }
+.teacher-empty { padding: 24px 20px; }
 .teacher-empty { display: grid; gap: 5px; border: 1px dashed var(--line); }
 .review-form label { display: grid; gap: 6px; color: var(--ink-soft); font: 700 9px/1.4 var(--font-utility); text-transform: uppercase; letter-spacing: .08em; }
 .review-form input { width: 100%; border: 1px solid var(--line); border-radius: 0; background: var(--paper); color: var(--ink); padding: 10px; }
@@ -414,7 +389,6 @@ body.modal-open { overflow: hidden; }
   .mode-card { grid-template-columns: auto 1fr; padding: 23px; }
   .mode-card .primary-btn { grid-column: 1/-1; }
   .practice-heading, .mic-row { align-items: flex-start; flex-direction: column; }
-  .assignment-card { grid-template-columns: 1fr; }
   .exam-steps { grid-template-columns: 1fr auto; }
   .step-list { order: 3; grid-column: 1/-1; width: 100%; }
   .step-pill { min-width: 0; flex: 1; }
