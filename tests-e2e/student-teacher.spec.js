@@ -143,6 +143,49 @@ test("student submits a complete attempt with every completed task", async ({ br
   }
 });
 
+test("owner scores queued review without groups, assignments, or comments", async ({ browser }) => {
+  const stamp = Date.now();
+  const teacher = await browser.newContext({ baseURL: "http://127.0.0.1:8091" });
+  const student = await browser.newContext({ baseURL: "http://127.0.0.1:8091" });
+  const studentPage = await student.newPage();
+  const teacherPage = await teacher.newPage();
+  try {
+    await signInAsOwner(teacher);
+    await installRecorder(studentPage);
+    await studentPage.goto("/");
+    await registerStudent(studentPage, stamp);
+    await studentPage.locator("#fastMode").check({ force: true });
+    await finishTask(studentPage, 2);
+    await studentPage.getByRole("button", { name: "Отправить одно задание" }).click();
+    await expect(studentPage.locator("#reviewRequestMessage")).toContainText("отправлена");
+
+    await teacherPage.goto("/");
+    await teacherPage.locator("#authButton").click();
+    await expect(teacherPage.locator("#authModal")).not.toHaveClass(/hidden/);
+    await teacherPage.getByRole("button", { name: "Открыть кабинет преподавателя" }).click();
+    await expect(teacherPage.getByRole("dialog", { name: "Очередь разбора" })).toBeVisible();
+    await teacherPage.locator("#reviewStudentFilter").fill(`student-${stamp}@example.test`);
+    await teacherPage.getByRole("button", { name: "Применить" }).click();
+    await expect(teacherPage.locator("#teacherReviewRequests")).toContainText("E2E Student");
+    await expect(teacherPage.locator("#teacherReviewRequests audio")).toHaveCount(1);
+    await teacherPage.locator('[name="task-2-content"]').fill("3");
+    await teacherPage.locator('[name="task-2-organization"]').fill("2");
+    await teacherPage.locator('[name="task-2-language"]').fill("2");
+    await teacherPage.getByRole("button", { name: "Сохранить оценку" }).click();
+    await expect(teacherPage.locator("#teacherReviewRequests")).toContainText("7/7");
+
+    await studentPage.reload();
+    await studentPage.locator("#authButton").click();
+    await expect(studentPage.locator("#studentReviewRequestsList")).toContainText("Разобрано: 7/7");
+    await expect(teacherPage.getByRole("button", { name: "Создать группу" })).toHaveCount(0);
+    await expect(teacherPage.getByRole("button", { name: "Назначить" })).toHaveCount(0);
+    await expect(teacherPage.getByLabel("Комментарий")).toHaveCount(0);
+  } finally {
+    await teacher.close();
+    await student.close();
+  }
+});
+
 test("student retries a failed upload without creating a duplicate review request", async ({ browser }) => {
   const stamp = Date.now();
   const student = await browser.newContext({ baseURL: "http://127.0.0.1:8091" });

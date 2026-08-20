@@ -6,7 +6,7 @@ import {
   studentAssignmentsMarkup,
   studentReviewRequestsMarkup,
   teacherGroupsMarkup,
-  teacherSubmissionsMarkup,
+  teacherReviewRequestsMarkup,
 } from "../../frontend/js/account/account-view.js";
 import { escapeHtml, mergeProgress } from "../../frontend/js/shared/progress.js";
 import { formatTime, stepsMarkup, taskMarkup } from "../../frontend/js/runner/task-view.js";
@@ -152,27 +152,31 @@ test("assigned run ignores the saved fast-mode preference", () => {
   assert.equal(fastModeForRun(null, true), true);
 });
 
-test("submission markup does not render transcripts", () => {
-  const markup = teacherSubmissionsMarkup([{
+test("review queue markup keeps private audio and score-only request details", () => {
+  const markup = teacherReviewRequestsMarkup([{
     id: 1,
-    groupName: "Group",
-    studentName: "Student",
-    title: "Работа",
-    status: "submitted",
-    attempt: 1,
-    late: false,
+    studentName: "<script>Student</script>",
+    studentEmail: "student@example.test",
+    kind: "task",
+    status: "reviewed",
+    submittedAt: 1_789_000_000,
     tasks: [1],
-    review: null,
-    recordings: [{
+    total: 4,
+    maximum: 5,
+    items: [{
+      task: 1,
+      scores: { question1: 1, question2: 1, question3: 1, question4: 1, question5: 0 },
+      recordings: [{
       id: 7,
       label: "Задание 1",
-      url: "/api/recordings/7",
-      transcript_status: "completed",
-      transcript_text: "текст",
+      url: "/api/review-recordings/7",
+      }],
     }],
   }]);
-  assert.ok(!markup.includes("Расшифровка"));
-  assert.ok(!markup.includes("текст"));
+  assert.match(markup, /&lt;script&gt;Student&lt;\/script&gt;/);
+  assert.match(markup, /\/api\/review-recordings\/7/);
+  assert.match(markup, /4\/5/);
+  assert.doesNotMatch(markup, /Группа|Срок|Назначение|textarea|Комментарий/);
 });
 
 test("audit markup translates actions and escapes network data", () => {

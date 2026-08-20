@@ -50,21 +50,26 @@ export function assignmentOptionsMarkup(groups, variants) {
   };
 }
 
-export function teacherSubmissionsMarkup(submissions) {
-  if (!submissions.length) {
-    return '<div class="teacher-empty"><b>Работ на проверку пока нет</b><span>После выполнения назначений здесь появятся аудиозаписи учеников.</span></div>';
+export function teacherReviewRequestsMarkup(requests) {
+  if (!requests.length) {
+    return '<div class="teacher-empty" role="status"><b>Заявок на разбор пока нет</b><span>Когда ученик отправит аудиозапись, она появится здесь.</span></div>';
   }
-  return submissions.map(submission => `
-    <article class="submission-card">
-      <header><div><p class="eyebrow">${escapeHtml(submission.groupName)} · попытка ${submission.attempt}</p><h3>${escapeHtml(submission.studentName)}</h3><span>${escapeHtml(submission.title)}${submission.late ? " · Сдано после срока" : ""}</span></div><b class="submission-status ${escapeHtml(submission.status)}">${submission.status === "graded" ? `${submission.review.total}/${submission.review.maximum}` : "На проверке"}</b></header>
-      <div class="submission-audio">${submission.recordings.length ? submission.recordings.map(recording => `<label><span>${escapeHtml(recording.label)}</span><audio controls preload="none" src="${escapeHtml(recording.url)}"></audio></label>`).join("") : "<p>Аудиозаписи отсутствуют.</p>"}</div>
-      <button class="auth-link" type="button" data-attempt-history="${submission.id}">История попыток</button>
-      <form class="review-form" data-review-submission="${submission.id}" data-review-tasks="${submission.tasks.join(",")}">
-        ${reviewFields(submission.tasks, submission.review?.scores)}
-        <label class="review-comment">Комментарий<textarea name="comment" maxlength="3000" rows="3">${escapeHtml(submission.review?.comment || "")}</textarea></label>
-        <button class="primary-btn" type="submit">${submission.review ? "Обновить оценку" : "Сохранить оценку"}</button>
-      </form>
-    </article>`).join("");
+  return requests.map(request => {
+    const type = request.kind === "attempt" ? "Вся попытка" : "Одно задание";
+    const scores = Object.fromEntries(request.items.map(item => [item.task, item.scores || {}]));
+    const recordings = request.items.flatMap(item => item.recordings || []);
+    const status = request.status === "reviewed" ? `${request.total}/${request.maximum}` : "На разборе";
+    return `
+      <article class="review-request-card teacher-review-request-card">
+        <header><div><p class="eyebrow">${type} · ${formatHistoryDate(request.submittedAt * 1000)}</p><h3>${escapeHtml(request.studentName)}</h3><span>${escapeHtml(request.studentEmail)} · Задания ${request.tasks.join(", ")}</span></div><b class="submission-status ${escapeHtml(request.status)}">${status}</b></header>
+        <div class="submission-audio">${recordings.length ? recordings.map(recording => `<label><span>${escapeHtml(recording.label)}</span><audio controls preload="none" src="${escapeHtml(recording.url)}"></audio></label>`).join("") : "<p>Аудиозаписи отсутствуют.</p>"}</div>
+        <button class="auth-link" type="button" data-student-review-history="${request.id}">История разборов ученика</button>
+        <form class="review-form" data-review-request="${request.id}" data-review-tasks="${request.tasks.join(",")}">
+          ${reviewFields(request.tasks, scores)}
+          <button class="primary-btn" type="submit">${request.status === "reviewed" ? "Обновить оценку" : "Сохранить оценку"}</button>
+        </form>
+      </article>`;
+  }).join("");
 }
 
 export function teacherGroupsMarkup(groups) {

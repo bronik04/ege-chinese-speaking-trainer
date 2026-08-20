@@ -159,7 +159,6 @@ async function initVariants() {
     $("variantSelect").value = preferredVariant;
     $("fastMode").checked = Boolean(progress.settings.fastMode);
     await loadVariant(preferredVariant);
-    if (account?.user?.role === "teacher") account.renderAssignmentOptions();
   } catch (error) {
     $("variantSource").textContent = "Не удалось загрузить задания";
     toast("Запустите проект через локальный сервер");
@@ -292,9 +291,8 @@ account = createAccountController({
 const {
   initAuth, setAuthMode, openModal, closeModal, submitAuth, logout, requestPasswordReset,
   submitPasswordReset, cancelPasswordReset, sendVerificationEmail,
-  loadAuditLog, deleteAccount, handleAccountLinks, joinGroup, createGroup,
-  createAssignment, submitReview, showAttemptHistory, handleAssignmentAction,
-  loadTeacherDashboard, loadTeacherSubmissions, loadTeacherAssignments,
+  loadAuditLog, deleteAccount, handleAccountLinks,
+  saveReviewScores, showStudentReviewHistory, loadTeacherReviewRequests,
 } = account;
 
 document.querySelectorAll("[data-start]").forEach(button => button.addEventListener("click", () => startRun(button.dataset.start)));
@@ -328,14 +326,18 @@ $("sendVerificationBtn").addEventListener("click", sendVerificationEmail);
 $("showAuditBtn").addEventListener("click", loadAuditLog);
 $("showDeleteAccountBtn").addEventListener("click", () => $("deleteAccountForm").classList.toggle("hidden"));
 $("deleteAccountForm").addEventListener("submit", deleteAccount);
-$("joinGroupForm").addEventListener("submit", joinGroup);
-$("createGroupForm").addEventListener("submit", createGroup);
-$("createAssignmentForm").addEventListener("submit", createAssignment);
-$("teacherSubmissions").addEventListener("submit", submitReview);
-$("teacherSubmissions").addEventListener("click", showAttemptHistory);
-$("teacherAssignments").addEventListener("click", event => handleAssignmentAction(event).catch(error => toast(error.message)));
-$("submissionFilters").addEventListener("submit", event => { event.preventDefault(); loadTeacherSubmissions(); });
-$("teacherCabinetBtn").addEventListener("click", async () => { await Promise.all([loadTeacherDashboard(), loadTeacherSubmissions(), loadTeacherAssignments()]); closeModal($("authModal")); openModal($("teacherModal")); });
+$("teacherReviewRequests").addEventListener("submit", event => {
+  const form = event.target.closest("[data-review-request]");
+  if (!form) return;
+  event.preventDefault();
+  saveReviewScores(form);
+});
+$("teacherReviewRequests").addEventListener("click", event => {
+  const button = event.target.closest("[data-student-review-history]");
+  if (button) showStudentReviewHistory(Number(button.dataset.studentReviewHistory));
+});
+$("reviewRequestFilters").addEventListener("submit", event => { event.preventDefault(); loadTeacherReviewRequests(); });
+$("teacherCabinetBtn").addEventListener("click", async () => { await loadTeacherReviewRequests(); closeModal($("authModal")); openModal($("teacherModal")); });
 $("logoutBtn").addEventListener("click", logout);
 [$("authModal"), $("progressModal"), $("teacherModal")].forEach(modal => modal.addEventListener("click", event => {
   if (event.target === modal) closeModal(modal);
