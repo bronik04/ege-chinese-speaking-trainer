@@ -27,6 +27,11 @@ def connect(path: Path) -> sqlite3.Connection:
     return connection
 
 
+def begin_immediate(database: sqlite3.Connection) -> None:
+    """Acquire SQLite's single-writer claim before reading mutable workflow state."""
+    database.execute("BEGIN IMMEDIATE")
+
+
 def initialize(data_dir: Path, audio_dir: Path, database_path: Path) -> None:
     data_dir.mkdir(parents=True, exist_ok=True)
     audio_dir.mkdir(parents=True, exist_ok=True)

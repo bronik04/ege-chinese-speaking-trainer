@@ -17,6 +17,7 @@ from trainer.api.schemas import ReviewRequestCreate, ReviewScoresRequest
 from trainer.domain.grading import CRITERIA, validate_scores
 from trainer.domain.review_requests import required_recording_positions, validate_review_selection
 from trainer.infrastructure.audio import validate_duration
+from trainer.infrastructure.database.core import begin_immediate
 from trainer.infrastructure.database.queries.review_requests import (
     review_request_detail as fetch_review_request_detail,
 )
@@ -196,6 +197,7 @@ def review_recording_create(
     try:
         write_recording(runtime.AUDIO_DIR, storage_key, temporary_path, mime_type)
         with runtime.connect() as database:
+            begin_immediate(database)
             current = database.execute(
                 """SELECT review_request_items.id,review_requests.status
                    FROM review_request_items
@@ -256,6 +258,7 @@ def review_recording_create(
 
 def review_request_complete(request_id: int, user: dict, context: RequestContext) -> ActionResult:
     with runtime.connect() as database:
+        begin_immediate(database)
         request_row = database.execute(
             "SELECT status FROM review_requests WHERE id=? AND student_id=?",
             (request_id, user["id"]),
@@ -310,6 +313,7 @@ def review_request_complete(request_id: int, user: dict, context: RequestContext
 
 def review_request_discard(request_id: int, user: dict, context: RequestContext) -> ActionResult:
     with runtime.connect() as database:
+        begin_immediate(database)
         request_row = database.execute(
             "SELECT status FROM review_requests WHERE id=? AND student_id=?",
             (request_id, user["id"]),

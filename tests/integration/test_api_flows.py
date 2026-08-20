@@ -489,6 +489,242 @@ class ApiFlowTest(unittest.TestCase):
         self.assertEqual(status, 409, conflict)
         self.assertEqual(conflict["code"], "review_request_not_uploading")
 
+    def test_discard_and_complete_cannot_both_win_after_status_was_read(self):
+        student_cookie = self.register_student("review-discard-complete-race")
+        status, created, _ = self.request(
+            "POST",
+            "/api/review-requests",
+            {
+                "kind": "task",
+                "variantId": "demo-2026",
+                "tasks": [2],
+                "run": {"id": "discard-complete-race", "status": "completed", "completedTasks": [2]},
+            },
+            student_cookie,
+        )
+        self.assertEqual(status, 201, created)
+        request_id = created["reviewRequest"]["id"]
+        status, _ = self.request_audio(
+            f"/api/review-requests/{request_id}/recordings?task=2&label=Ответ",
+            b"complete-race-audio",
+            student_cookie,
+        )
+        self.assertEqual(status, 201)
+        with runtime.connect() as database:
+            student = dict(
+                database.execute(
+                    """SELECT id,email,display_name,role,email_verified_at FROM users
+                       WHERE email LIKE 'review-discard-complete-race-%' ORDER BY id DESC LIMIT 1"""
+                ).fetchone()
+            )
+        user = {
+            "id": student["id"],
+            "email": student["email"],
+            "displayName": student["display_name"],
+            "role": student["role"],
+            "emailVerified": student["email_verified_at"] is not None,
+        }
+
+        original_connect = runtime.connect
+        delete_reached = threading.Event()
+        resume_discard = threading.Event()
+        complete_finished = threading.Event()
+        discard_outcome = {}
+        complete_outcome = {}
+        discard_connections = 0
+
+        class PausedDiscardConnection:
+            def __init__(self, database):
+                self.database = database
+
+            def __enter__(self):
+                self.database.__enter__()
+                return self
+
+            def __exit__(self, *arguments):
+                return self.database.__exit__(*arguments)
+
+            def execute(self, statement, parameters=()):
+                if statement.strip().startswith("DELETE FROM review_requests"):
+                    delete_reached.set()
+                    if not resume_discard.wait(5):
+                        raise AssertionError("discard was not released")
+                return self.database.execute(statement, parameters)
+
+        def interleaved_connect():
+            nonlocal discard_connections
+            database = original_connect()
+            if threading.current_thread().name != "review-discard":
+                return database
+            discard_connections += 1
+            return PausedDiscardConnection(database) if discard_connections == 1 else database
+
+        def discard():
+            try:
+                discard_outcome["result"] = review_requests.review_request_discard(
+                    request_id,
+                    user,
+                    RequestContext(client_ip="127.0.0.1", user_agent="discard-race-test"),
+                )
+            except Exception as error:
+                discard_outcome["error"] = error
+
+        def complete():
+            try:
+                complete_outcome["result"] = review_requests.review_request_complete(
+                    request_id,
+                    user,
+                    RequestContext(client_ip="127.0.0.1", user_agent="complete-race-test"),
+                )
+            except Exception as error:
+                complete_outcome["error"] = error
+            finally:
+                complete_finished.set()
+
+        with patch.object(runtime, "connect", interleaved_connect):
+            discard_thread = threading.Thread(target=discard, name="review-discard")
+            discard_thread.start()
+            self.assertTrue(delete_reached.wait(5), "discard did not reach its delete")
+            complete_thread = threading.Thread(target=complete, name="review-complete")
+            complete_thread.start()
+            completed_before_discard = complete_finished.wait(2)
+            resume_discard.set()
+            discard_thread.join(5)
+            complete_thread.join(5)
+
+        self.assertFalse(discard_thread.is_alive())
+        self.assertFalse(complete_thread.is_alive())
+        self.assertFalse(completed_before_discard, "complete changed status while discard owned the request")
+        self.assertIn("result", discard_outcome)
+        self.assertNotIn("result", complete_outcome)
+        self.assertIsInstance(complete_outcome.get("error"), ApiError)
+        self.assertEqual(complete_outcome["error"].code, "review_request_not_found")
+        with runtime.connect() as database:
+            self.assertIsNone(database.execute("SELECT id FROM review_requests WHERE id=?", (request_id,)).fetchone())
+
+    def test_discard_collects_keys_before_concurrent_replacement_can_commit(self):
+        student_cookie = self.register_student("review-discard-upload-race")
+        status, created, _ = self.request(
+            "POST",
+            "/api/review-requests",
+            {
+                "kind": "task",
+                "variantId": "demo-2026",
+                "tasks": [2],
+                "run": {"id": "discard-upload-race", "status": "completed", "completedTasks": [2]},
+            },
+            student_cookie,
+        )
+        self.assertEqual(status, 201, created)
+        request_id = created["reviewRequest"]["id"]
+        status, _ = self.request_audio(
+            f"/api/review-requests/{request_id}/recordings?task=2&label=Первый",
+            b"initial-race-audio",
+            student_cookie,
+        )
+        self.assertEqual(status, 201)
+        with runtime.connect() as database:
+            student = dict(
+                database.execute(
+                    """SELECT id,email,display_name,role,email_verified_at FROM users
+                       WHERE email LIKE 'review-discard-upload-race-%' ORDER BY id DESC LIMIT 1"""
+                ).fetchone()
+            )
+        user = {
+            "id": student["id"],
+            "email": student["email"],
+            "displayName": student["display_name"],
+            "role": student["role"],
+            "emailVerified": student["email_verified_at"] is not None,
+        }
+
+        original_connect = runtime.connect
+        delete_reached = threading.Event()
+        resume_discard = threading.Event()
+        upload_finished = threading.Event()
+        discard_outcome = {}
+        upload_outcome = {}
+        discard_connections = 0
+
+        class PausedDiscardConnection:
+            def __init__(self, database):
+                self.database = database
+
+            def __enter__(self):
+                self.database.__enter__()
+                return self
+
+            def __exit__(self, *arguments):
+                return self.database.__exit__(*arguments)
+
+            def execute(self, statement, parameters=()):
+                if statement.strip().startswith("DELETE FROM review_requests"):
+                    delete_reached.set()
+                    if not resume_discard.wait(5):
+                        raise AssertionError("discard was not released")
+                return self.database.execute(statement, parameters)
+
+        def interleaved_connect():
+            nonlocal discard_connections
+            database = original_connect()
+            if threading.current_thread().name != "review-discard":
+                return database
+            discard_connections += 1
+            return PausedDiscardConnection(database) if discard_connections == 1 else database
+
+        def discard():
+            try:
+                discard_outcome["result"] = review_requests.review_request_discard(
+                    request_id,
+                    user,
+                    RequestContext(client_ip="127.0.0.1", user_agent="discard-upload-race-test"),
+                )
+            except Exception as error:
+                discard_outcome["error"] = error
+
+        def replace_recording():
+            try:
+                upload_outcome["result"] = review_requests.review_recording_create(
+                    request_id,
+                    {"task": "2", "question": None, "label": "Замена"},
+                    b"replacement-race-audio",
+                    "audio/webm",
+                    user,
+                    RequestContext(client_ip="127.0.0.1", user_agent="discard-upload-race-test"),
+                )
+            except Exception as error:
+                upload_outcome["error"] = error
+            finally:
+                upload_finished.set()
+
+        with patch.object(runtime, "connect", interleaved_connect):
+            discard_thread = threading.Thread(target=discard, name="review-discard")
+            discard_thread.start()
+            self.assertTrue(delete_reached.wait(5), "discard did not reach its delete")
+            upload_thread = threading.Thread(target=replace_recording, name="review-upload")
+            upload_thread.start()
+            uploaded_before_discard = upload_finished.wait(2)
+            resume_discard.set()
+            discard_thread.join(5)
+            upload_thread.join(5)
+
+        self.assertFalse(discard_thread.is_alive())
+        self.assertFalse(upload_thread.is_alive())
+        self.assertFalse(uploaded_before_discard, "replacement committed after discard scanned storage keys")
+        self.assertIn("result", discard_outcome)
+        self.assertNotIn("result", upload_outcome)
+        self.assertIsInstance(upload_outcome.get("error"), ApiError)
+        self.assertEqual(upload_outcome["error"].code, "review_request_not_found")
+        with runtime.connect() as database:
+            review_requests.process_cleanup_jobs(
+                database,
+                audio_root=runtime.AUDIO_DIR,
+                material_root=runtime.MATERIAL_ASSET_DIR,
+                assignment_root=runtime.ASSIGNMENT_ASSET_DIR,
+            )
+            self.assertIsNone(database.execute("SELECT id FROM review_requests WHERE id=?", (request_id,)).fetchone())
+        self.assertEqual(list((runtime.AUDIO_DIR / f"review-requests/{request_id}").glob("*")), [])
+
     def test_completion_prevents_concurrent_review_recording_replacement(self):
         student_cookie = self.register_student("review-race")
         status, created, _ = self.request(
@@ -552,12 +788,12 @@ class ApiFlowTest(unittest.TestCase):
                 return self.database.__exit__(*arguments)
 
             def execute(self, statement, parameters=()):
-                cursor = self.database.execute(statement, parameters)
-                self.execute_calls += 1
-                if self.execute_calls == 1:
+                if self.execute_calls == 0 and statement.strip() == "BEGIN IMMEDIATE":
                     status_selected.set()
                     if not resume_upload.wait(5):
                         raise AssertionError("completion did not release the concurrent upload")
+                cursor = self.database.execute(statement, parameters)
+                self.execute_calls += 1
                 return cursor
 
         upload_connections = 0
