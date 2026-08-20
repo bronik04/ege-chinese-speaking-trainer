@@ -50,22 +50,26 @@ function createSampleAudio() {
   }
 }
 
-async function installRecorder(page) {
-  await page.addInitScript(audio => {
+async function installRecorder(page, { skipStops = [] } = {}) {
+  await page.addInitScript(({ audio, skipStops }) => {
+    let stopCount = 0;
     class TestMediaRecorder {
       static isTypeSupported() { return true; }
       constructor() { this.state = "inactive"; this.mimeType = "audio/webm"; }
       start() { this.state = "recording"; }
       stop() {
         this.state = "inactive";
+        stopCount += 1;
         const bytes = Uint8Array.from(atob(audio), character => character.charCodeAt(0));
-        this.ondataavailable?.({ data: new Blob([bytes], { type: this.mimeType }) });
+        if (!skipStops.includes(stopCount)) {
+          this.ondataavailable?.({ data: new Blob([bytes], { type: this.mimeType }) });
+        }
         this.onstop?.();
       }
     }
     Object.defineProperty(navigator, "mediaDevices", { value: { getUserMedia: async () => ({ active: true, getTracks: () => [] }) } });
     Object.defineProperty(window, "MediaRecorder", { value: TestMediaRecorder });
-  }, createSampleAudio());
+  }, { audio: createSampleAudio(), skipStops });
 }
 
 async function registerStudent(page, stamp) {
@@ -83,6 +87,14 @@ async function finishTask(page, task) {
   await page.locator("#mainActionBtn").click();
   await page.locator("#skipBtn").click();
   await page.locator("#skipBtn").click();
+  await expect(page.locator("#resultScreen")).not.toHaveClass(/hidden/);
+}
+
+async function finishTaskOne(page) {
+  await page.locator('[data-start="1"]').click();
+  await page.locator("#mainActionBtn").click();
+  await page.locator("#skipBtn").click();
+  for (let question = 0; question < 5; question += 1) await page.locator("#skipBtn").click();
   await expect(page.locator("#resultScreen")).not.toHaveClass(/hidden/);
 }
 
@@ -143,6 +155,58 @@ test("student submits a complete attempt with every completed task", async ({ br
   }
 });
 
+test("student cannot create an uploading request from an incompletely recorded task", async ({ browser }) => {
+  const stamp = Date.now();
+  const student = await browser.newContext({ baseURL: "http://127.0.0.1:8091" });
+  const page = await student.newPage();
+  let createdRequests = 0;
+  await page.route("**/api/review-requests", route => {
+    if (route.request().method() === "POST") createdRequests += 1;
+    return route.continue();
+  });
+  try {
+    await installRecorder(page, { skipStops: [5] });
+    await page.goto("/");
+    await registerStudent(page, stamp);
+    await page.locator("#fastMode").check({ force: true });
+    await finishTaskOne(page);
+
+    await expect(page.locator("#reviewTaskSelect option")).toHaveCount(0);
+    await expect(page.locator("#reviewRequestMessage")).toContainText("полным комплектом аудиозаписей");
+    await expect(page.getByRole("button", { name: "Отправить одно задание" })).toBeDisabled();
+    expect(createdRequests).toBe(0);
+  } finally {
+    await student.close();
+  }
+});
+
+test("whole attempt excludes tasks with an incomplete required recording set", async ({ browser }) => {
+  const stamp = Date.now();
+  const student = await browser.newContext({ baseURL: "http://127.0.0.1:8091" });
+  const page = await student.newPage();
+  const createdRequests = [];
+  await page.route("**/api/review-requests", route => {
+    if (route.request().method() === "POST") createdRequests.push(route.request().postDataJSON());
+    return route.continue();
+  });
+  try {
+    await installRecorder(page, { skipStops: [5] });
+    await page.goto("/");
+    await registerStudent(page, stamp);
+    await page.locator("#fastMode").check({ force: true });
+    await finishCompleteAttempt(page);
+
+    await expect(page.locator("#reviewTaskSelect option")).toHaveText(["Задание 2", "Задание 3"]);
+    await page.getByLabel("Всю попытку").check();
+    await page.getByRole("button", { name: "Отправить всю попытку" }).click();
+    await expect(page.locator("#reviewRequestMessage")).toContainText("отправлена");
+    expect(createdRequests).toHaveLength(1);
+    expect(createdRequests[0].tasks).toEqual([2, 3]);
+  } finally {
+    await student.close();
+  }
+});
+
 test("owner scores queued review without groups, assignments, or comments", async ({ browser }) => {
   const stamp = Date.now();
   const teacher = await browser.newContext({ baseURL: "http://127.0.0.1:8091" });
@@ -166,9 +230,22 @@ test("owner scores queued review without groups, assignments, or comments", asyn
     await teacherPage.getByRole("button", { name: "Открыть кабинет преподавателя" }).click();
     await expect(teacherPage.getByRole("dialog", { name: "Очередь разбора" })).toBeVisible();
     await teacherPage.locator("#reviewStudentFilter").fill(`student-${stamp}@example.test`);
+    const queuePayload = await (await teacher.request.get("/api/teacher/review-requests")).json();
+    const submitted = new Date(queuePayload.requests.find(item => item.studentEmail === `student-${stamp}@example.test`).submittedAt * 1000);
+    const submittedDate = [
+      submitted.getFullYear(),
+      String(submitted.getMonth() + 1).padStart(2, "0"),
+      String(submitted.getDate()).padStart(2, "0"),
+    ].join("-");
+    await teacherPage.locator("#reviewDateFilter").fill(submittedDate);
     await teacherPage.getByRole("button", { name: "Применить" }).click();
     await expect(teacherPage.locator("#teacherReviewRequests")).toContainText("E2E Student");
     await expect(teacherPage.locator("#teacherReviewRequests audio")).toHaveCount(1);
+    await teacherPage.getByRole("button", { name: "История заявок" }).click();
+    await expect(teacherPage.locator(".review-material-snapshot")).toContainText("Выберите и опишите фотографию");
+    const snapshotImage = teacherPage.locator(".review-material-snapshot img").first();
+    await expect(snapshotImage).toHaveAttribute("src", /^\/api\/review-assets\/\d+$/);
+    expect((await teacher.request.get(await snapshotImage.getAttribute("src"))).ok()).toBeTruthy();
     await teacherPage.locator('[name="task-2-content"]').fill("3");
     await teacherPage.locator('[name="task-2-organization"]').fill("2");
     await teacherPage.locator('[name="task-2-language"]').fill("2");

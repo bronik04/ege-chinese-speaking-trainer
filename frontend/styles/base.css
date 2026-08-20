@@ -305,10 +305,20 @@ h1 em { color: var(--crimson); font-weight: inherit; }
 .teacher-review-section { margin-top: 34px; padding-top: 28px; border-top: 3px solid var(--crimson); }
 .review-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .queue-count { padding: 8px 10px; background: var(--gold-pale); color: var(--crimson-deep); font-size: 12px; }
-.submission-filters { display: grid; grid-template-columns: 1.4fr 1fr 1fr auto; gap: 10px; align-items: end; margin: 16px 0 8px; }
+.submission-filters { display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr auto; gap: 10px; align-items: end; margin: 16px 0 8px; }
 .submission-filters label { display: grid; gap: 5px; color: var(--ink-soft); font: 700 9px/1.4 var(--font-utility); text-transform: uppercase; }
 .submission-filters input, .submission-filters select { width: 100%; padding: 10px; border: 1px solid var(--line); background: var(--paper); }
 .attempt-history { padding: 10px 20px 18px; background: var(--cream); color: var(--ink-soft); font-size: 12px; }
+.review-request-detail { border-top: 1px solid var(--line); }
+.review-material-snapshot { display: grid; gap: 14px; padding: 20px; background: var(--paper); }
+.review-material-task { padding: 16px; border: 1px solid var(--line); }
+.review-material-task h4 { margin: 3px 0 10px; color: var(--crimson-deep); font: 600 25px/1.1 var(--font-display); }
+.review-material-task > p:not(.eyebrow, .chinese-banner, .starter), .review-material-task li { color: var(--ink-soft); font-size: 13px; }
+.review-material-task ul { margin: 7px 0 14px; padding-left: 20px; }
+.review-material-images { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+.review-material-images figure { margin: 0; }
+.review-material-images img { width: 100%; max-height: 260px; object-fit: contain; background: var(--cream); }
+.review-material-images figcaption { margin-top: 4px; color: var(--ink-soft); font-size: 11px; }
 .teacher-submissions { display: grid; gap: 20px; margin-top: 16px; }
 .teacher-review-request-card { border: 1px solid var(--line); background: white; }
 .teacher-review-request-card > header { min-height: 0; display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding: 18px 20px; border-bottom: 1px solid var(--line); }

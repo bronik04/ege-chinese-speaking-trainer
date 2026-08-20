@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from starlette.concurrency import run_in_threadpool
 
 from trainer.api.controllers import review_requests as actions
@@ -51,6 +51,21 @@ async def complete_review_request(
     return respond(result)
 
 
+@router.delete("/review-requests/{request_id}")
+async def discard_review_request(
+    request: Request,
+    request_id: int,
+    user: dict = Depends(require_student),
+):
+    result = await run_in_threadpool(
+        actions.review_request_discard,
+        request_id,
+        user,
+        request_context(request),
+    )
+    return respond(result)
+
+
 @router.get("/student/review-requests")
 async def student_review_requests(user: dict = Depends(require_student)):
     result = await run_in_threadpool(actions.student_review_requests, user)
@@ -62,11 +77,19 @@ async def teacher_review_requests(
     student: str | None = None,
     task: str | None = None,
     status: str | None = None,
+    submitted_from: str | None = Query(default=None, alias="submittedFrom"),
+    submitted_before: str | None = Query(default=None, alias="submittedBefore"),
     _: dict = Depends(require_teacher),
 ):
     result = await run_in_threadpool(
         actions.teacher_review_requests,
-        {"student": student, "task": task, "status": status},
+        {
+            "student": student,
+            "task": task,
+            "status": status,
+            "submittedFrom": submitted_from,
+            "submittedBefore": submitted_before,
+        },
     )
     return respond(result)
 

@@ -308,6 +308,59 @@ def review_request_complete(request_id: int, user: dict, context: RequestContext
     return ActionResult({"reviewRequest": {"id": request_id, "status": "queued"}})
 
 
+def review_request_discard(request_id: int, user: dict, context: RequestContext) -> ActionResult:
+    with runtime.connect() as database:
+        request_row = database.execute(
+            "SELECT status FROM review_requests WHERE id=? AND student_id=?",
+            (request_id, user["id"]),
+        ).fetchone()
+        if not request_row:
+            raise ApiError("review_request_not_found", "Запрос не найден", HTTPStatus.NOT_FOUND)
+        if request_row["status"] != "uploading":
+            raise ApiError("review_request_not_uploading", "Запрос уже отправлен", HTTPStatus.CONFLICT)
+        audio_keys = [
+            row["storage_key"]
+            for row in database.execute(
+                """SELECT review_request_recordings.storage_key FROM review_request_recordings
+                   JOIN review_request_items ON review_request_items.id=review_request_recordings.item_id
+                   WHERE review_request_items.request_id=?""",
+                (request_id,),
+            ).fetchall()
+        ]
+        asset_keys = [
+            row["storage_key"]
+            for row in database.execute(
+                "SELECT storage_key FROM review_request_assets WHERE request_id=?", (request_id,)
+            ).fetchall()
+        ]
+        database.execute("DELETE FROM review_requests WHERE id=? AND student_id=?", (request_id, user["id"]))
+        if audio_keys or asset_keys:
+            enqueue_cleanup_job(
+                database,
+                audio_keys=audio_keys,
+                material_keys=[],
+                assignment_keys=asset_keys,
+            )
+        account_services.audit(
+            database,
+            "review_request_discarded",
+            client_ip=context.client_ip,
+            user_agent=context.user_agent,
+            user_id=user["id"],
+            email=user["email"],
+            details={"requestId": request_id},
+        )
+    with suppress(Exception):
+        with runtime.connect() as database:
+            process_cleanup_jobs(
+                database,
+                audio_root=runtime.AUDIO_DIR,
+                material_root=runtime.MATERIAL_ASSET_DIR,
+                assignment_root=runtime.ASSIGNMENT_ASSET_DIR,
+            )
+    return ActionResult({"ok": True})
+
+
 def student_review_requests(user: dict) -> ActionResult:
     with runtime.connect() as database:
         requests = fetch_student_review_requests(database, user["id"])
@@ -323,12 +376,19 @@ def teacher_review_requests(query: dict) -> ActionResult:
         task = int(query.get("task") or 0) or None
     except (TypeError, ValueError):
         task = None
+    try:
+        submitted_from = int(query.get("submittedFrom")) if query.get("submittedFrom") is not None else None
+        submitted_before = int(query.get("submittedBefore")) if query.get("submittedBefore") is not None else None
+    except (TypeError, ValueError):
+        submitted_from = submitted_before = None
     with runtime.connect() as database:
         requests = fetch_teacher_review_requests(
             database,
             student=str(query.get("student") or "").strip(),
             task=task,
             status=str(query.get("status") or "").strip(),
+            submitted_from=submitted_from,
+            submitted_before=submitted_before,
         )
     return ActionResult({"requests": requests})
 

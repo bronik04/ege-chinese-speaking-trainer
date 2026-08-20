@@ -1,8 +1,7 @@
 import { api } from "../shared/api.js";
-import { teacherReviewRequestsMarkup } from "./account-view.js";
+import { teacherReviewRequestDetailMarkup, teacherReviewRequestsMarkup } from "./account-view.js";
 import { collectReviewScores } from "../runner/review.js";
 import { pluralize } from "../shared/plural.js";
-import { formatHistoryDate } from "../shared/progress.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -24,6 +23,14 @@ export function createAccountReviewsController(ctx) {
         task: $("reviewTaskFilter").value,
         status: $("reviewStatusFilter").value,
       });
+      const selectedDate = $("reviewDateFilter").value;
+      if (selectedDate) {
+        const submittedFrom = new Date(`${selectedDate}T00:00:00`);
+        const submittedBefore = new Date(submittedFrom);
+        submittedBefore.setDate(submittedBefore.getDate() + 1);
+        params.set("submittedFrom", String(Math.floor(submittedFrom.getTime() / 1000)));
+        params.set("submittedBefore", String(Math.floor(submittedBefore.getTime() / 1000)));
+      }
       const payload = await api(`/api/teacher/review-requests?${params}`);
       requests = payload.requests || [];
       $("teacherReviewRequests").innerHTML = teacherReviewRequestsMarkup(requests);
@@ -42,16 +49,14 @@ export function createAccountReviewsController(ctx) {
     const historyPayload = await api(`/api/teacher/review-requests?${new URLSearchParams({ student: request.studentEmail })}`);
     const card = document.querySelector(`[data-student-review-history="${requestId}"]`)?.closest(".teacher-review-request-card");
     if (!card) return;
-    let panel = card.querySelector(".attempt-history");
+    let panel = card.querySelector(".review-request-detail");
     if (!panel) {
       panel = document.createElement("div");
-      panel.className = "attempt-history";
+      panel.className = "review-request-detail";
       card.append(panel);
     }
     const history = (historyPayload.requests || []).filter(item => item.studentId === request.studentId);
-    panel.textContent = history.length
-      ? history.map(item => `${formatHistoryDate(item.submittedAt * 1000)}: ${item.status === "reviewed" ? `${item.total}/${item.maximum}` : "на разборе"}`).join(" · ")
-      : "Других заявок ученика пока нет.";
+    panel.innerHTML = teacherReviewRequestDetailMarkup(request, history);
   }
 
   async function saveReviewScores(form) {

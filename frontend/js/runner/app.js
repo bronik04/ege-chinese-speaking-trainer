@@ -6,6 +6,7 @@ import {
 import { shortTime } from "./task-view.js";
 import { plural, pluralize } from "../shared/plural.js";
 import { createAccountController } from "../account/account-controller.js";
+import { fullyRecordedTasks } from "../account/account-review-requests-controller.js";
 import { enhanceProjectSelects } from "../shared/project-select.js";
 import "../shared/site-shell.js";
 
@@ -206,6 +207,7 @@ function renderReviewRequestChooser() {
   const run = runner.getCompletedRun();
   const tasks = runner.getCompletedTasks();
   const recordings = runner.getCompletedRecordings();
+  const recordedTasks = fullyRecordedTasks(tasks, recordings);
   const isStudent = account?.user?.role === "student";
   if (!run || !tasks.length) {
     panel.classList.add("hidden");
@@ -213,26 +215,28 @@ function renderReviewRequestChooser() {
   }
   panel.classList.remove("hidden");
   const taskSelect = $("reviewTaskSelect");
-  taskSelect.innerHTML = tasks.map(task => `<option value="${task}">Задание ${task}</option>`).join("");
+  taskSelect.innerHTML = recordedTasks.map(task => `<option value="${task}">Задание ${task}</option>`).join("");
   const taskChoice = document.querySelector('[name="reviewKind"][value="task"]');
   const attemptChoice = document.querySelector('[name="reviewKind"][value="attempt"]');
   const submit = $("sendReviewRequestBtn");
   const message = $("reviewRequestMessage");
   const update = () => {
     const isAttempt = attemptChoice.checked;
-    taskSelect.disabled = isAttempt;
+    taskSelect.disabled = isAttempt || !recordedTasks.length;
+    taskChoice.disabled = !recordedTasks.length;
+    attemptChoice.disabled = !recordedTasks.length;
     $("reviewTaskLabel").classList.toggle("hidden", isAttempt);
     submit.textContent = isAttempt ? "Отправить всю попытку" : "Отправить одно задание";
-    submit.disabled = reviewRequestSent || !recordings.length || !isStudent;
+    submit.disabled = reviewRequestSent || !recordedTasks.length || !isStudent;
     if (!isStudent && !reviewRequestSent) message.textContent = "Войдите как ученик, чтобы отправить запись на разбор.";
-    else if (!recordings.length && !reviewRequestSent) message.textContent = "Нет аудиозаписей для отправки.";
+    else if (!recordedTasks.length && !reviewRequestSent) message.textContent = "Нет задания с полным комплектом аудиозаписей для отправки.";
     else if (!reviewRequestSent && !message.hasChildNodes()) message.textContent = "";
   };
   taskChoice.onchange = update;
   attemptChoice.onchange = update;
   submit.onclick = async () => {
     const selection = attemptChoice.checked
-      ? { kind: "attempt", tasks: [...tasks] }
+      ? { kind: "attempt", tasks: [...recordedTasks] }
       : { kind: "task", tasks: [Number(taskSelect.value)] };
     submit.disabled = true;
     try {
@@ -293,6 +297,7 @@ const {
   submitPasswordReset, cancelPasswordReset, sendVerificationEmail,
   loadAuditLog, deleteAccount, handleAccountLinks,
   saveReviewScores, showStudentReviewHistory, loadTeacherReviewRequests,
+  discardUploadingReviewRequest,
 } = account;
 
 document.querySelectorAll("[data-start]").forEach(button => button.addEventListener("click", () => startRun(button.dataset.start)));
@@ -335,6 +340,10 @@ $("teacherReviewRequests").addEventListener("submit", event => {
 $("teacherReviewRequests").addEventListener("click", event => {
   const button = event.target.closest("[data-student-review-history]");
   if (button) showStudentReviewHistory(Number(button.dataset.studentReviewHistory));
+});
+$("studentReviewRequestsList").addEventListener("click", event => {
+  const button = event.target.closest("[data-discard-review-request]");
+  if (button) discardUploadingReviewRequest(Number(button.dataset.discardReviewRequest));
 });
 $("reviewRequestFilters").addEventListener("submit", event => { event.preventDefault(); loadTeacherReviewRequests(); });
 $("teacherCabinetBtn").addEventListener("click", async () => { await loadTeacherReviewRequests(); closeModal($("authModal")); openModal($("teacherModal")); });

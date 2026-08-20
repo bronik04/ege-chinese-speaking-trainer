@@ -88,6 +88,8 @@ def teacher_review_requests(
     student: str = "",
     task: int | None = None,
     status: str = "",
+    submitted_from: int | None = None,
+    submitted_before: int | None = None,
 ) -> list[dict]:
     filters = ["review_requests.status IN ('queued', 'reviewed')"]
     parameters: list[object] = []
@@ -103,6 +105,12 @@ def teacher_review_requests(
     if status in {"queued", "reviewed"}:
         filters.append("review_requests.status=?")
         parameters.append(status)
+    if submitted_from is not None:
+        filters.append("review_requests.submitted_at>=?")
+        parameters.append(submitted_from)
+    if submitted_before is not None:
+        filters.append("review_requests.submitted_at<?")
+        parameters.append(submitted_before)
     rows = database.execute(
         f"""
         SELECT review_requests.id,review_requests.student_id,review_requests.kind,review_requests.status,
@@ -110,8 +118,11 @@ def teacher_review_requests(
                users.display_name AS student_name,users.email AS student_email
         FROM review_requests JOIN users ON users.id=review_requests.student_id
         WHERE {" AND ".join(filters)}
-        ORDER BY CASE review_requests.status WHEN 'queued' THEN 0 ELSE 1 END,review_requests.submitted_at DESC,
-                 review_requests.id DESC
+        ORDER BY CASE review_requests.status WHEN 'queued' THEN 0 ELSE 1 END,
+                 CASE WHEN review_requests.status='queued' THEN review_requests.submitted_at END ASC,
+                 CASE WHEN review_requests.status='reviewed' THEN review_requests.submitted_at END DESC,
+                 CASE WHEN review_requests.status='queued' THEN review_requests.id END ASC,
+                 CASE WHEN review_requests.status='reviewed' THEN review_requests.id END DESC
         """,
         parameters,
     ).fetchall()

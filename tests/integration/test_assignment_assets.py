@@ -169,6 +169,81 @@ class AssignmentAssetServiceTest(unittest.TestCase):
             self.source_storage.put(source_row["storage_key"], source_file, "image/webp")
             self.assertEqual(self.target_storage.read(row["storage_key"]), b"snapshot-image")
 
+    def test_copies_official_public_images_into_an_immutable_private_review_snapshot(self):
+        public_root = self.root / "public"
+        source_file = public_root / "assets/variants/demo/candidate.webp"
+        source_file.parent.mkdir(parents=True)
+        source_file.write_bytes(b"official-snapshot")
+        material = {
+            "id": "demo",
+            "tasks": {
+                "2": {
+                    "title": "Official task",
+                    "images": [
+                        "assets/variants/demo/candidate.webp",
+                        "/assets/variants/demo/candidate.webp",
+                    ],
+                }
+            },
+        }
+
+        with closing(self.connect()) as database, database:
+            self.create_fixture(database)
+            request_id = database.execute(
+                """INSERT INTO review_requests(student_id,kind,status,variant_id,run_json)
+                   VALUES (?,?,?,?,?)""",
+                (1, "task", "uploading", "demo", "{}"),
+            ).lastrowid
+
+            snapshot = copy_review_assets(
+                database,
+                request_id,
+                material,
+                self.source_storage,
+                self.target_storage,
+                public_root=public_root,
+            )
+
+            images = snapshot["tasks"]["2"]["images"]
+            self.assertEqual(images[0], images[1])
+            self.assertRegex(images[0], r"^/api/review-assets/\d+$")
+            row = database.execute(
+                "SELECT storage_key,mime_type,size_bytes FROM review_request_assets WHERE request_id=?",
+                (request_id,),
+            ).fetchone()
+            self.assertEqual((row["mime_type"], row["size_bytes"]), ("image/webp", 17))
+            source_file.write_bytes(b"changed")
+            source_file.unlink()
+            self.assertEqual(self.target_storage.read(row["storage_key"]), b"official-snapshot")
+
+    def test_rejects_official_asset_paths_outside_the_public_root(self):
+        public_root = self.root / "public"
+        escaped_file = self.root / "secret.webp"
+        escaped_file.write_bytes(b"not-public")
+        material = {
+            "tasks": {"2": {"images": ["assets/variants/../../../secret.webp"]}},
+        }
+
+        with closing(self.connect()) as database, database:
+            self.create_fixture(database)
+            request_id = database.execute(
+                """INSERT INTO review_requests(student_id,kind,status,variant_id,run_json)
+                   VALUES (?,?,?,?,?)""",
+                (1, "task", "uploading", "demo", "{}"),
+            ).lastrowid
+
+            with self.assertRaisesRegex(ValueError, "outside the public root"):
+                copy_review_assets(
+                    database,
+                    request_id,
+                    material,
+                    self.source_storage,
+                    self.target_storage,
+                    public_root=public_root,
+                )
+
+            self.assertEqual(database.execute("SELECT COUNT(*) FROM review_request_assets").fetchone()[0], 0)
+
     def test_removes_review_rows_and_objects_when_a_later_copy_fails(self):
         failing_storage = FailingSecondPutStorage(self.root / "failing-review-assets")
         second_source = self.root / "second-source.webp"
@@ -259,6 +334,53 @@ class ReviewRequestQueryTest(unittest.TestCase):
         self.assertEqual(detail["material"]["2"], {"images": ["/api/review-assets/1"]})
         self.assertNotIn("private/audio.webm", json.dumps([student_items, teacher_items, detail]))
         self.assertNotIn("private/image.webp", json.dumps([student_items, teacher_items, detail]))
+
+    def test_teacher_queue_orders_queued_oldest_first_and_reviewed_newest_first(self):
+        with closing(self.connect()) as database, database:
+            oldest_id = database.execute(
+                """INSERT INTO review_requests(student_id,kind,status,variant_id,run_json,submitted_at)
+                   VALUES (?,?,?,?,?,?)""",
+                (self.student_id, "task", "queued", "oldest", "{}", 5),
+            ).lastrowid
+            newest_id = database.execute(
+                """INSERT INTO review_requests(student_id,kind,status,variant_id,run_json,submitted_at)
+                   VALUES (?,?,?,?,?,?)""",
+                (self.student_id, "task", "queued", "newest", "{}", 20),
+            ).lastrowid
+            older_reviewed_id = database.execute(
+                """INSERT INTO review_requests(student_id,kind,status,variant_id,run_json,submitted_at,reviewed_at)
+                   VALUES (?,?,?,?,?,?,?)""",
+                (self.student_id, "task", "reviewed", "reviewed-old", "{}", 25, 30),
+            ).lastrowid
+            newer_reviewed_id = database.execute(
+                """INSERT INTO review_requests(student_id,kind,status,variant_id,run_json,submitted_at,reviewed_at)
+                   VALUES (?,?,?,?,?,?,?)""",
+                (self.student_id, "task", "reviewed", "reviewed-new", "{}", 35, 40),
+            ).lastrowid
+
+            requests = teacher_review_requests(database)
+
+        self.assertEqual(
+            [request["id"] for request in requests],
+            [oldest_id, self.queued_id, newest_id, newer_reviewed_id, older_reviewed_id],
+        )
+
+    def test_teacher_queue_filters_by_submitted_timestamp_range(self):
+        with closing(self.connect()) as database, database:
+            included_id = database.execute(
+                """INSERT INTO review_requests(student_id,kind,status,variant_id,run_json,submitted_at)
+                   VALUES (?,?,?,?,?,?)""",
+                (self.student_id, "task", "queued", "included", "{}", 100),
+            ).lastrowid
+            database.execute(
+                """INSERT INTO review_requests(student_id,kind,status,variant_id,run_json,submitted_at)
+                   VALUES (?,?,?,?,?,?)""",
+                (self.student_id, "task", "queued", "excluded", "{}", 200),
+            )
+
+            requests = teacher_review_requests(database, submitted_from=50, submitted_before=150)
+
+        self.assertEqual([request["id"] for request in requests], [included_id])
 
 
 if __name__ == "__main__":

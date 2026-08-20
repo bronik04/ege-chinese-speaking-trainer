@@ -413,7 +413,81 @@ class ApiFlowTest(unittest.TestCase):
         self.assertEqual(review_request["status"], "queued")
         self.assertEqual(review_request["tasks"], [1, 2])
         self.assertEqual(set(review_request["material"]), {"1", "2"})
+        material_json = json.dumps(review_request["material"])
+        self.assertNotIn("assets/variants/", material_json)
+        self.assertRegex(material_json, r"/api/review-assets/\d+")
         self.assertEqual(sum(len(item["recordings"]) for item in review_request["items"]), 6)
+
+    def test_student_discards_only_own_uploading_review_and_private_blobs(self):
+        student_cookie = self.register_student("review-discard")
+        status, created, _ = self.request(
+            "POST",
+            "/api/review-requests",
+            {
+                "kind": "task",
+                "variantId": "demo-2026",
+                "tasks": [2],
+                "run": {"id": "review-discard", "status": "completed", "completedTasks": [2]},
+            },
+            student_cookie,
+        )
+        self.assertEqual(status, 201, created)
+        request_id = created["reviewRequest"]["id"]
+        status, _ = self.request_audio(
+            f"/api/review-requests/{request_id}/recordings?task=2&label=Ответ",
+            b"private-audio",
+            student_cookie,
+        )
+        self.assertEqual(status, 201)
+        with runtime.connect() as database:
+            audio_key = database.execute(
+                """SELECT review_request_recordings.storage_key FROM review_request_recordings
+                   JOIN review_request_items ON review_request_items.id=review_request_recordings.item_id
+                   WHERE review_request_items.request_id=?""",
+                (request_id,),
+            ).fetchone()["storage_key"]
+            asset_keys = [
+                row["storage_key"]
+                for row in database.execute(
+                    "SELECT storage_key FROM review_request_assets WHERE request_id=?", (request_id,)
+                ).fetchall()
+            ]
+        self.assertTrue(asset_keys)
+
+        other_student_cookie = self.register_student("review-discard-other")
+        status, hidden, _ = self.request("DELETE", f"/api/review-requests/{request_id}", cookie=other_student_cookie)
+        self.assertEqual(status, 404, hidden)
+        self.assertEqual(hidden["code"], "review_request_not_found")
+
+        status, discarded, _ = self.request("DELETE", f"/api/review-requests/{request_id}", cookie=student_cookie)
+
+        self.assertEqual(status, 200, discarded)
+        with runtime.connect() as database:
+            self.assertIsNone(database.execute("SELECT id FROM review_requests WHERE id=?", (request_id,)).fetchone())
+        self.assertFalse((runtime.AUDIO_DIR / audio_key).exists())
+        self.assertTrue(all(not (runtime.ASSIGNMENT_ASSET_DIR / key).exists() for key in asset_keys))
+
+        status, queued_created, _ = self.request(
+            "POST",
+            "/api/review-requests",
+            {
+                "kind": "task",
+                "variantId": "demo-2026",
+                "tasks": [2],
+                "run": {"id": "review-no-discard", "status": "completed", "completedTasks": [2]},
+            },
+            student_cookie,
+        )
+        queued_id = queued_created["reviewRequest"]["id"]
+        self.request_audio(
+            f"/api/review-requests/{queued_id}/recordings?task=2&label=Ответ", b"queued-audio", student_cookie
+        )
+        status, _, _ = self.request("POST", f"/api/review-requests/{queued_id}/complete", {}, student_cookie)
+        self.assertEqual(status, 200)
+
+        status, conflict, _ = self.request("DELETE", f"/api/review-requests/{queued_id}", cookie=student_cookie)
+        self.assertEqual(status, 409, conflict)
+        self.assertEqual(conflict["code"], "review_request_not_uploading")
 
     def test_completion_prevents_concurrent_review_recording_replacement(self):
         student_cookie = self.register_student("review-race")

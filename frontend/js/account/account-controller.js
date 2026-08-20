@@ -48,6 +48,7 @@ export function createAccountController(ctx) {
     refreshAccountData,
     loadStudentReviewRequests: reviewRequests.loadStudentReviewRequests,
     submitReviewRequest: reviewRequests.submitReviewRequest,
+    discardUploadingReviewRequest: reviewRequests.discardUploadingReviewRequest,
     clearPendingReviewRequest: reviewRequests.clearPendingReviewRequest,
     loadTeacherReviewRequests: reviews.loadTeacherReviewRequests,
     showStudentReviewHistory: reviews.showStudentReviewHistory,

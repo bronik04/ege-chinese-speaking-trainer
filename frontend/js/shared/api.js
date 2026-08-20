@@ -32,3 +32,7 @@ export function uploadReviewRecording(requestId, recording) {
 export function completeReviewRequest(requestId) {
   return api(`/api/review-requests/${requestId}/complete`, { method: "POST", body: "{}" });
 }
+
+export function discardReviewRequest(requestId) {
+  return api(`/api/review-requests/${requestId}`, { method: "DELETE" });
+}

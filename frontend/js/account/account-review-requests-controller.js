@@ -1,7 +1,17 @@
-import { api, completeReviewRequest, createReviewRequest, uploadReviewRecording } from "../shared/api.js";
+import {
+  api, completeReviewRequest, createReviewRequest, discardReviewRequest, uploadReviewRecording,
+} from "../shared/api.js";
 import { studentReviewRequestsMarkup } from "./account-view.js";
 
 const $ = (id) => document.getElementById(id);
+
+export function fullyRecordedTasks(tasks, recordings) {
+  const positions = new Set(recordings.map(recording => `${recording.task}:${recording.question ?? ""}`));
+  return [...new Set(tasks)].sort((left, right) => left - right).filter(task => {
+    if (task === 1) return [1, 2, 3, 4, 5].every(question => positions.has(`1:${question}`));
+    return [2, 3].includes(task) && positions.has(`${task}:`);
+  });
+}
 
 export function createAccountReviewRequestsController(ctx) {
   let pendingSubmission = null;
@@ -53,11 +63,11 @@ export function createAccountReviewRequestsController(ctx) {
     const run = ctx.getCompletedRun();
     const completedTasks = ctx.getCompletedTasks();
     const recordings = ctx.getCompletedRecordings();
+    const recordedTasks = fullyRecordedTasks(completedTasks, recordings);
     if (pendingSubmission && pendingSubmission.runId !== run?.id) pendingSubmission = null;
-    if (!run || !tasks.length || tasks.some(task => !completedTasks.includes(task))) {
-      throw new Error("Выберите завершённое задание");
+    if (!run || !tasks.length || tasks.some(task => !recordedTasks.includes(task))) {
+      throw new Error("Выберите задание с полным комплектом аудиозаписей");
     }
-    if (!recordings.length) throw new Error("Нет аудиозаписей для отправки");
     const sameSelection = pendingSubmission
       && pendingSubmission.kind === selection.kind
       && pendingSubmission.tasks.join(",") === tasks.join(",");
@@ -77,6 +87,13 @@ export function createAccountReviewRequestsController(ctx) {
     submission.running = true;
     submission.promise = sendReviewRequest(submission, selection, run, recordings);
     return submission.promise;
+  }
+
+  async function discardUploadingReviewRequest(requestId) {
+    await discardReviewRequest(requestId);
+    if (pendingSubmission?.requestId === requestId) pendingSubmission = null;
+    ctx.toast("Незавершённая загрузка удалена");
+    await loadStudentReviewRequests();
   }
 
   async function sendReviewRequest(submission, selection, run, recordings) {
@@ -113,5 +130,6 @@ export function createAccountReviewRequestsController(ctx) {
     clearPendingReviewRequest: () => { pendingSubmission = null; },
     loadStudentReviewRequests,
     submitReviewRequest,
+    discardUploadingReviewRequest,
   };
 }
