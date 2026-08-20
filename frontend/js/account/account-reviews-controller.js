@@ -39,6 +39,7 @@ export function createAccountReviewsController(ctx) {
   async function showStudentReviewHistory(requestId) {
     const payload = await api(`/api/teacher/review-requests/${requestId}`);
     const request = payload.reviewRequest;
+    const historyPayload = await api(`/api/teacher/review-requests?${new URLSearchParams({ student: request.studentEmail })}`);
     const card = document.querySelector(`[data-student-review-history="${requestId}"]`)?.closest(".teacher-review-request-card");
     if (!card) return;
     let panel = card.querySelector(".attempt-history");
@@ -47,7 +48,7 @@ export function createAccountReviewsController(ctx) {
       panel.className = "attempt-history";
       card.append(panel);
     }
-    const history = requests.filter(item => item.studentId === request.studentId);
+    const history = (historyPayload.requests || []).filter(item => item.studentId === request.studentId);
     panel.textContent = history.length
       ? history.map(item => `${formatHistoryDate(item.submittedAt * 1000)}: ${item.status === "reviewed" ? `${item.total}/${item.maximum}` : "на разборе"}`).join(" · ")
       : "Других заявок ученика пока нет.";

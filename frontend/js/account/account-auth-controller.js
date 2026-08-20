@@ -42,7 +42,7 @@ export function createAccountAuthController(ctx) {
     $("authUserName").textContent = user?.displayName || "";
     const isTeacher = user?.role === "teacher";
     $("accountRole").textContent = isTeacher ? "Преподаватель" : "Ученик";
-    $("accountTitle").textContent = isTeacher ? "Ваши ученики и группы" : "Прогресс синхронизирован";
+    $("accountTitle").textContent = isTeacher ? "Очередь разборов" : "Прогресс синхронизирован";
     $("studentAccountTools").classList.toggle("hidden", !user || isTeacher);
     $("teacherCabinetBtn").classList.toggle("hidden", !isTeacher);
     $("emailVerificationPanel").classList.toggle("hidden", !user || user.emailVerified);

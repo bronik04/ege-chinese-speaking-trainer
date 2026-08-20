@@ -162,6 +162,7 @@ test("owner scores queued review without groups, assignments, or comments", asyn
     await teacherPage.goto("/");
     await teacherPage.locator("#authButton").click();
     await expect(teacherPage.locator("#authModal")).not.toHaveClass(/hidden/);
+    await expect(teacherPage.locator("#accountTitle")).toHaveText("Очередь разборов");
     await teacherPage.getByRole("button", { name: "Открыть кабинет преподавателя" }).click();
     await expect(teacherPage.getByRole("dialog", { name: "Очередь разбора" })).toBeVisible();
     await teacherPage.locator("#reviewStudentFilter").fill(`student-${stamp}@example.test`);
@@ -180,6 +181,41 @@ test("owner scores queued review without groups, assignments, or comments", asyn
     await expect(teacherPage.getByRole("button", { name: "Создать группу" })).toHaveCount(0);
     await expect(teacherPage.getByRole("button", { name: "Назначить" })).toHaveCount(0);
     await expect(teacherPage.getByLabel("Комментарий")).toHaveCount(0);
+  } finally {
+    await teacher.close();
+    await student.close();
+  }
+});
+
+test("owner history includes the student's earlier reviews outside the queue filter", async ({ browser }) => {
+  const stamp = Date.now();
+  const teacher = await browser.newContext({ baseURL: "http://127.0.0.1:8091" });
+  const student = await browser.newContext({ baseURL: "http://127.0.0.1:8091" });
+  const studentPage = await student.newPage();
+  const teacherPage = await teacher.newPage();
+  try {
+    await signInAsOwner(teacher);
+    await installRecorder(studentPage);
+    await studentPage.goto("/");
+    await registerStudent(studentPage, stamp);
+    await studentPage.locator("#fastMode").check({ force: true });
+    await finishTask(studentPage, 2);
+    await studentPage.getByRole("button", { name: "Отправить одно задание" }).click();
+    await expect(studentPage.locator("#reviewRequestMessage")).toContainText("отправлена");
+    await studentPage.locator("#restartBtn").click();
+    await finishTask(studentPage, 3);
+    await studentPage.getByRole("button", { name: "Отправить одно задание" }).click();
+    await expect(studentPage.locator("#reviewRequestMessage")).toContainText("отправлена");
+
+    await teacherPage.goto("/");
+    await teacherPage.locator("#authButton").click();
+    await teacherPage.getByRole("button", { name: "Открыть кабинет преподавателя" }).click();
+    await teacherPage.locator("#reviewStudentFilter").fill(`student-${stamp}@example.test`);
+    await teacherPage.locator("#reviewTaskFilter").selectOption("3");
+    await teacherPage.getByRole("button", { name: "Применить" }).click();
+    await expect(teacherPage.getByRole("button", { name: "История разборов ученика" })).toHaveCount(1);
+    await teacherPage.getByRole("button", { name: "История разборов ученика" }).click();
+    await expect(teacherPage.locator(".attempt-history")).toContainText(" · ");
   } finally {
     await teacher.close();
     await student.close();
