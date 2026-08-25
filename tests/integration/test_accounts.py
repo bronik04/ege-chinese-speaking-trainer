@@ -1,10 +1,18 @@
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+from trainer.api import runtime
+from trainer.api.controllers import auth
+from trainer.api.results import RequestContext
+from trainer.api.schemas import DeleteAccountRequest
+from trainer.domain.accounts import password_hash
 from trainer.infrastructure.database.accounts import consume_rate_limit, consume_token, issue_token, record_audit
 from trainer.infrastructure.database.core import connect, initialize
 from trainer.infrastructure.mailer import send_email
+from trainer.services.storage_cleanup import CleanupSummary, process_cleanup_jobs
 
 
 class AccountSecurityTest(unittest.TestCase):
@@ -60,6 +68,86 @@ class AccountSecurityTest(unittest.TestCase):
         outbox = self.root / "outbox.log"
         self.assertTrue(outbox.is_file())
         self.assertEqual(outbox.stat().st_mode & 0o777, 0o600)
+
+    def test_account_deletion_job_removes_review_audio_and_copied_assets(self):
+        audio_root = self.root / "audio"
+        material_root = self.root / "material-assets"
+        copied_asset_root = self.root / "assignment-assets"
+        audio_key = "review-requests/1/answer.webm"
+        copied_asset_key = "review-requests/1/image.webp"
+        with connect(self.database_path) as database:
+            database.execute(
+                "UPDATE users SET password_hash=? WHERE id=?",
+                (password_hash("password123"), self.user_id),
+            )
+            request_id = database.execute(
+                """INSERT INTO review_requests(student_id,kind,status,variant_id,run_json,submitted_at)
+                   VALUES (?,?,?,?,?,?)""",
+                (self.user_id, "task", "queued", "open-2026", '{"id":"review-run"}', 1001),
+            ).lastrowid
+            item_id = database.execute(
+                """INSERT INTO review_request_items(request_id,task_number,task_snapshot_json)
+                   VALUES (?,?,?)""",
+                (request_id, 2, "{}"),
+            ).lastrowid
+            database.execute(
+                """INSERT INTO review_request_recordings(
+                       item_id,question_number,label,storage_key,mime_type,size_bytes,created_at
+                   ) VALUES (?,?,?,?,?,?,?)""",
+                (item_id, None, "Answer", audio_key, "audio/webm", 5, 1001),
+            )
+            database.execute(
+                """INSERT INTO review_request_assets(request_id,storage_key,mime_type,size_bytes,created_at)
+                   VALUES (?,?,?,?,?)""",
+                (request_id, copied_asset_key, "image/webp", 5, 1001),
+            )
+        audio_path = audio_root / audio_key
+        copied_asset_path = copied_asset_root / copied_asset_key
+        audio_path.parent.mkdir(parents=True, exist_ok=True)
+        copied_asset_path.parent.mkdir(parents=True, exist_ok=True)
+        audio_path.write_bytes(b"audio")
+        copied_asset_path.write_bytes(b"image")
+
+        user = {
+            "id": self.user_id,
+            "email": "user@example.test",
+            "displayName": "User",
+            "role": "student",
+            "emailVerified": False,
+        }
+        with (
+            patch.object(runtime, "DB_PATH", self.database_path),
+            patch.object(runtime, "AUDIO_DIR", audio_root),
+            patch.object(runtime, "MATERIAL_ASSET_DIR", material_root),
+            patch.object(runtime, "ASSIGNMENT_ASSET_DIR", copied_asset_root),
+            patch.object(auth, "process_cleanup_jobs", return_value=CleanupSummary(pending=1)),
+        ):
+            result = auth.account_delete(
+                DeleteAccountRequest(password="password123"),
+                user,
+                RequestContext(client_ip="127.0.0.1", user_agent="account-test"),
+            )
+
+        self.assertEqual(result.payload, {"ok": True})
+        with connect(self.database_path) as database:
+            self.assertIsNone(database.execute("SELECT id FROM users WHERE id=?", (self.user_id,)).fetchone())
+            self.assertEqual(database.execute("SELECT COUNT(*) FROM storage_cleanup_jobs").fetchone()[0], 1)
+        self.assertTrue(audio_path.is_file())
+        self.assertTrue(copied_asset_path.is_file())
+
+        with patch.dict(os.environ, {"TRAINER_AUDIO_STORAGE": "local"}):
+            with connect(self.database_path) as database:
+                summary = process_cleanup_jobs(
+                    database,
+                    audio_root=audio_root,
+                    material_root=material_root,
+                    assignment_root=copied_asset_root,
+                    now=1002,
+                )
+
+        self.assertEqual((summary.completed, summary.failed, summary.pending), (1, 0, 0))
+        self.assertFalse(audio_path.exists())
+        self.assertFalse(copied_asset_path.exists())
 
 
 if __name__ == "__main__":

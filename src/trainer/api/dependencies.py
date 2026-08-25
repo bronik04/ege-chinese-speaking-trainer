@@ -17,6 +17,15 @@ def account_public_url() -> str:
     return os.environ.get("TRAINER_PUBLIC_URL", "").rstrip("/") or "http://127.0.0.1:8080"
 
 
+def owner_email_from_env() -> str:
+    return os.environ.get("TRAINER_OWNER_EMAIL", "").strip().lower()
+
+
+def validate_account_configuration() -> None:
+    if os.environ.get("TRAINER_PUBLIC_URL", "").strip() and not owner_email_from_env():
+        raise RuntimeError("Для публичного развёртывания укажите TRAINER_OWNER_EMAIL владельца кабинета преподавателя")
+
+
 def session_token(request: Request) -> str | None:
     cookie = SimpleCookie(request.headers.get("Cookie", ""))
     morsel = cookie.get("trainer_session")
@@ -39,7 +48,7 @@ def _require_role(request: Request, role: str) -> dict:
     decision = authorize_role(
         user,
         role,
-        teacher_emails=os.environ.get("TRAINER_TEACHER_EMAILS", ""),
+        owner_email=owner_email_from_env(),
     )
     if not decision.allowed:
         status = 401 if decision.code == "authentication_required" else 403

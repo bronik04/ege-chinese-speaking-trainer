@@ -1,12 +1,7 @@
-import { api, completeSubmission, uploadAudio } from "../shared/api.js";
 import { createRunId } from "../shared/progress.js";
 import { formatTime, stepsMarkup, taskMarkup } from "./task-view.js";
 
 const $ = (id) => document.getElementById(id);
-
-export function fastModeForRun(assignment, savedFastMode) {
-  return !assignment && Boolean(savedFastMode);
-}
 
 export function createRunnerController(ctx) {
   let mode = "exam";
@@ -25,12 +20,13 @@ export function createRunnerController(ctx) {
   let recordings = [];
   let soundEnabled = true;
   let audioContext = null;
-  let activeAssignment = null;
-  let pendingSubmission = null;
+  let completedRun = null;
+  let completedTasks = [];
+  let completedRecordings = [];
 
   const taskData = (task) => ctx.getVariant().tasks[String(task)];
   const durationFor = (task, kind) => {
-    if (!fastModeForRun(activeAssignment, $("fastMode").checked)) return taskData(task)[kind + "Seconds"];
+    if (!$("fastMode").checked) return taskData(task)[kind + "Seconds"];
     if (task === 1) return kind === "prep" ? 8 : 5;
     return kind === "prep" ? 8 : 10;
   };
@@ -83,7 +79,7 @@ export function createRunnerController(ctx) {
     const isLocked = phase === "idle";
     $("taskBadge").textContent = `Задание ${task}`;
     $("phaseCaption").textContent = phase === "answer" ? "Ответ" : phase === "prep" ? "Подготовка" : "До начала";
-    $("modeLabel").textContent = `${ctx.getVariant().label} · ${mode === "exam" ? "экзамен" : mode === "assignment" ? "задание преподавателя" : "тренировка"}`;
+    $("modeLabel").textContent = `${ctx.getVariant().label} · ${mode === "exam" ? "экзамен" : "тренировка"}`;
     $("taskContent").innerHTML = taskMarkup(task, taskData(task), { phase, questionIndex, selectedPhoto, photoChoiceMade });
     $("taskPaper").classList.toggle("locked", isLocked);
     $("taskContent").setAttribute("aria-hidden", String(isLocked));
@@ -98,18 +94,19 @@ export function createRunnerController(ctx) {
     renderSteps();
   }
   
-  function startRun(startMode, assignment = null) {
+  function startRun(startMode) {
     if (!ctx.getVariant()) return;
-    activeAssignment = assignment;
-    $("fastMode").disabled = Boolean(assignment);
-    mode = assignment ? "assignment" : startMode === "exam" ? "exam" : "practice";
-    taskQueue = assignment ? [...assignment.tasks] : mode === "exam" ? [1, 2, 3] : [Number(startMode)];
+    mode = startMode === "exam" ? "exam" : "practice";
+    taskQueue = mode === "exam" ? [1, 2, 3] : [Number(startMode)];
     taskIndex = 0;
     questionIndex = 0;
     selectedPhoto = 1;
     photoChoiceMade = false;
     recordings.forEach(item => URL.revokeObjectURL(item.url));
     recordings = [];
+    completedRun = null;
+    completedTasks = [];
+    completedRecordings = [];
     phase = "idle";
     clearTimer();
     ctx.getProgress().activeRun = {
@@ -121,10 +118,10 @@ export function createRunnerController(ctx) {
       completedTasks: [],
       currentTask: taskQueue[0],
       phase: "idle",
-      fastMode: fastModeForRun(assignment, $("fastMode").checked),
-      assignmentId: assignment?.id || null,
+      fastMode: Boolean($("fastMode").checked),
       startedAt: new Date().toISOString()
     };
+    ctx.onRunStarted?.(ctx.getProgress().activeRun.id);
     ctx.saveProgressLocal();
     ctx.showScreen("runner");
     renderTask();
@@ -284,40 +281,14 @@ export function createRunnerController(ctx) {
     clearTimer();
     phase = "done";
     ctx.finalizeActiveRun("completed", recordings.length);
+    const run = ctx.getProgress().runs[0];
+    completedRun = run ? { ...run, tasks: [...run.tasks], completedTasks: [...run.completedTasks] } : null;
+    completedTasks = [...(run?.completedTasks || [])];
+    completedRecordings = recordings.map(recording => ({ ...recording }));
     renderRecordings();
     ctx.showScreen("result");
-    if (activeAssignment && ctx.getAccount()?.user?.role === "student") {
-      await submitAssignedRun();
-    } else {
-      $("submissionStatus").textContent = "Аудио хранится только в этой вкладке.";
-    }
-  }
-
-  async function submitAssignedRun() {
-    const status = $("submissionStatus");
-    status.textContent = "Отправляем работу преподавателю…";
-    try {
-      if (!pendingSubmission) {
-        const payload = await api(`/api/assignments/${activeAssignment.id}/submissions`, {
-          method: "POST", body: JSON.stringify({ run: ctx.getProgress().runs[0] })
-        });
-        pendingSubmission = payload.submission;
-      }
-      for (const recording of recordings) await uploadAudio(pendingSubmission.id, recording);
-      await completeSubmission(pendingSubmission.id);
-      status.textContent = `Работа отправлена · попытка ${pendingSubmission.attempt}`;
-      pendingSubmission = null;
-      ctx.toast("Работа и аудиозаписи отправлены преподавателю");
-      await ctx.getAccount().loadStudentAssignments();
-    } catch (error) {
-      status.replaceChildren(`Не удалось отправить: ${error.message}. Записи доступны ниже. `);
-      const retry = document.createElement("button");
-      retry.type = "button";
-      retry.className = "secondary-btn";
-      retry.textContent = "Повторить отправку";
-      retry.addEventListener("click", () => submitAssignedRun());
-      status.append(retry);
-    }
+    $("submissionStatus").textContent = "Аудио остаётся в этой вкладке, пока вы сами не отправите его на разбор.";
+    ctx.onRunFinished?.();
   }
   
   function renderRecordings() {
@@ -336,9 +307,6 @@ export function createRunnerController(ctx) {
     if (recorder?.state === "recording") await stopRecording(`${ctx.getVariant().label} · задание ${taskQueue[taskIndex]} · незавершённая запись`);
     ctx.finalizeActiveRun("interrupted", recordings.length);
     phase = "idle";
-    activeAssignment = null;
-    pendingSubmission = null;
-    $("fastMode").disabled = false;
     ctx.showScreen("home");
   }
   
@@ -357,10 +325,8 @@ export function createRunnerController(ctx) {
   return {
     startRun, ensureMicrophone, startPreparation, skipPhase, exitRun, beep,
     toggleSound, cleanup,
-    resetAssignment: () => {
-      activeAssignment = null;
-      pendingSubmission = null;
-      $("fastMode").disabled = false;
-    },
+    getCompletedRecordings: () => completedRecordings.map(recording => ({ ...recording })),
+    getCompletedTasks: () => [...completedTasks],
+    getCompletedRun: () => completedRun && { ...completedRun, tasks: [...completedRun.tasks], completedTasks: [...completedRun.completedTasks] },
   };
 }

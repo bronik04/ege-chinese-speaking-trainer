@@ -2,18 +2,17 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  assignmentTasksMarkup,
-  studentAssignmentsMarkup,
-  teacherGroupsMarkup,
-  teacherSubmissionsMarkup,
+  studentReviewRequestsMarkup,
+  teacherReviewRequestDetailMarkup,
+  teacherReviewRequestsMarkup,
 } from "../../frontend/js/account/account-view.js";
 import { escapeHtml, mergeProgress } from "../../frontend/js/shared/progress.js";
 import { formatTime, stepsMarkup, taskMarkup } from "../../frontend/js/runner/task-view.js";
-import { fastModeForRun } from "../../frontend/js/runner/runner-controller.js";
 import { auditMarkup } from "../../frontend/js/account/account-security.js";
-import { api, completeSubmission } from "../../frontend/js/shared/api.js";
+import { api } from "../../frontend/js/shared/api.js";
 import { catalogMarkup, filterVariants, variantKind } from "../../frontend/js/catalog/variant-catalog.js";
 import { plural, pluralize } from "../../frontend/js/shared/plural.js";
+import { fullyRecordedTasks } from "../../frontend/js/account/account-review-requests-controller.js";
 
 test("escapeHtml protects every HTML-sensitive character", () => {
   assert.equal(escapeHtml(`<script data-x="'">&`), "&lt;script data-x=&quot;&#39;&quot;&gt;&amp;");
@@ -67,39 +66,57 @@ test("mergeProgress lets the newer side clear activeRun", () => {
   assert.equal(mergeProgress(liveLocal, clearedRemote).activeRun.id, "stale-run");
 });
 
-test("account markup escapes teacher-controlled text", () => {
-  const assignments = studentAssignmentsMarkup([{
-    id: 1,
-    groupName: "<img src=x>",
-    title: "<script>alert(1)</script>",
-    tasks: [1],
-    dueAt: null,
-    latest: null,
+test("student review request markup hides queued scores and escapes the variant title", () => {
+  const queued = studentReviewRequestsMarkup([{
+    kind: "task",
+    status: "queued",
+    variantId: "<script>alert(1)</script>",
+    tasks: [2],
+    submittedAt: 1_789_000_000,
+    total: 7,
+    maximum: 7,
   }]);
-  assert.doesNotMatch(assignments, /<script>|<img src=x>/);
-  assert.match(assignments, /&lt;script&gt;/);
+  assert.match(queued, /Одно задание/);
+  assert.match(queued, /На разборе/);
+  assert.doesNotMatch(queued, /7\/7/);
+  assert.doesNotMatch(queued, /<script>/);
+  assert.match(queued, /&lt;script&gt;/);
 
-  const groups = teacherGroupsMarkup([{
-    name: "<b>group</b>",
-    code: "ABC123",
-    students: [],
+  const reviewed = studentReviewRequestsMarkup([{
+    kind: "attempt",
+    status: "reviewed",
+    variantId: "demo-2026",
+    tasks: [1, 2, 3],
+    submittedAt: 1_789_000_000,
+    total: 7,
+    maximum: 7,
   }]);
-  assert.doesNotMatch(groups, /<b>group<\/b>/);
+  assert.match(reviewed, /Вся попытка/);
+  assert.match(reviewed, /Разобрано: 7\/7/);
+
+  const uploading = studentReviewRequestsMarkup([{
+    id: 42,
+    kind: "task",
+    status: "uploading",
+    variantId: "demo-2026",
+    tasks: [1],
+    submittedAt: null,
+  }]);
+  assert.match(uploading, /Загрузка не завершена/);
+  assert.match(uploading, /data-discard-review-request="42"/);
+  assert.doesNotMatch(uploading, /На разборе/);
 });
 
-test("assignment UI marks late work and limits standalone task choices", () => {
-  const assignments = studentAssignmentsMarkup([{
-    id: 2,
-    groupName: "Group",
-    title: "Late work",
-    tasks: [2],
-    dueAt: 1,
-    latest: { status: "submitted", late: true },
-  }]);
-  assert.match(assignments, /Сдано после срока/);
-  const choices = assignmentTasksMarkup({ kind: "task", taskNumber: 2 });
-  assert.match(choices, /value="2"/);
-  assert.doesNotMatch(choices, /value="exam"|value="1"|value="3"/);
+test("fully recorded tasks require every task-specific recording position", () => {
+  const recordings = [
+    ...[1, 2, 3, 4].map(question => ({ task: 1, question })),
+    { task: 2, question: null },
+    { task: 3, question: null },
+  ];
+
+  assert.deepEqual(fullyRecordedTasks([1, 2, 3], recordings), [2, 3]);
+  assert.deepEqual(fullyRecordedTasks([1], [...recordings, { task: 1, question: 5 }]), [1]);
+  assert.deepEqual(fullyRecordedTasks([2], [{ task: 2, question: 1 }]), []);
 });
 
 test("task markup escapes JSON content and keeps runner state", () => {
@@ -117,32 +134,52 @@ test("task markup escapes JSON content and keeps runner state", () => {
   assert.match(stepsMarkup([1, 2, 3], 1), /done/);
 });
 
-test("assigned run ignores the saved fast-mode preference", () => {
-  assert.equal(fastModeForRun({ id: 14, tasks: [2] }, true), false);
-  assert.equal(fastModeForRun(null, true), true);
-});
-
-test("submission markup does not render transcripts", () => {
-  const markup = teacherSubmissionsMarkup([{
+test("review queue markup keeps private audio and score-only request details", () => {
+  const markup = teacherReviewRequestsMarkup([{
     id: 1,
-    groupName: "Group",
-    studentName: "Student",
-    title: "Работа",
-    status: "submitted",
-    attempt: 1,
-    late: false,
+    studentName: "<script>Student</script>",
+    studentEmail: "student@example.test",
+    kind: "task",
+    status: "reviewed",
+    submittedAt: 1_789_000_000,
     tasks: [1],
-    review: null,
-    recordings: [{
+    total: 4,
+    maximum: 5,
+    items: [{
+      task: 1,
+      scores: { question1: 1, question2: 1, question3: 1, question4: 1, question5: 0 },
+      recordings: [{
       id: 7,
       label: "Задание 1",
-      url: "/api/recordings/7",
-      transcript_status: "completed",
-      transcript_text: "текст",
+      url: "/api/review-recordings/7",
+      }],
     }],
   }]);
-  assert.ok(!markup.includes("Расшифровка"));
-  assert.ok(!markup.includes("текст"));
+  assert.match(markup, /&lt;script&gt;Student&lt;\/script&gt;/);
+  assert.match(markup, /\/api\/review-recordings\/7/);
+  assert.match(markup, /4\/5/);
+  assert.doesNotMatch(markup, /Группа|Срок|Назначение|textarea|Комментарий/);
+});
+
+test("teacher review detail renders escaped immutable material with private snapshot images", () => {
+  const markup = teacherReviewRequestDetailMarkup({
+    material: {
+      "2": {
+        title: "<script>Фото</script>",
+        lead: "Опишите снимок & план",
+        prompts: ["<img src=x onerror=alert(1)>", "Почему выбрали"],
+        starter: "我选择第 {n} 号照片……",
+        images: ["/api/review-assets/17", "assets/variants/source.webp"],
+      },
+    },
+  }, []);
+
+  assert.match(markup, /Материал задания 2/);
+  assert.match(markup, /&lt;script&gt;Фото&lt;\/script&gt;/);
+  assert.match(markup, /&lt;img src=x onerror=alert\(1\)&gt;/);
+  assert.match(markup, /План ответа/);
+  assert.match(markup, /src="\/api\/review-assets\/17"/);
+  assert.doesNotMatch(markup, /<script>|<img src=x|assets\/variants\/source\.webp/);
 });
 
 test("audit markup translates actions and escapes network data", () => {
@@ -173,24 +210,6 @@ test("api exposes structured server error metadata", async () => {
       assert.equal(error.requestId, "request-123");
       return true;
     });
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-test("completeSubmission finalizes the uploaded attempt", async () => {
-  const originalFetch = globalThis.fetch;
-  const calls = [];
-  globalThis.fetch = async (path, options) => {
-    calls.push([path, options]);
-    return { ok: true, json: async () => ({ submission: { id: 41, status: "submitted" } }) };
-  };
-  try {
-    const payload = await completeSubmission(41);
-    assert.equal(payload.submission.status, "submitted");
-    assert.deepEqual(calls, [["/api/submissions/41/complete", {
-      method: "POST", body: "{}", headers: { "Content-Type": "application/json" },
-    }]]);
   } finally {
     globalThis.fetch = originalFetch;
   }

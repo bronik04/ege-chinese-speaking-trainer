@@ -6,6 +6,7 @@ import {
 import { shortTime } from "./task-view.js";
 import { plural, pluralize } from "../shared/plural.js";
 import { createAccountController } from "../account/account-controller.js";
+import { fullyRecordedTasks } from "../account/account-review-requests-controller.js";
 import { enhanceProjectSelects } from "../shared/project-select.js";
 import "../shared/site-shell.js";
 
@@ -28,6 +29,7 @@ let progress = loadLocalProgress(progressStorageKey);
 const interruptedRunId = progress.activeRun?.id ?? null;
 let account = null;
 let runner = null;
+let reviewRequestSent = false;
 
 const taskData = (task) => variant.tasks[String(task)];
 
@@ -158,7 +160,6 @@ async function initVariants() {
     $("variantSelect").value = preferredVariant;
     $("fastMode").checked = Boolean(progress.settings.fastMode);
     await loadVariant(preferredVariant);
-    if (account?.user?.role === "teacher") account.renderAssignmentOptions();
   } catch (error) {
     $("variantSource").textContent = "Не удалось загрузить задания";
     toast("Запустите проект через локальный сервер");
@@ -201,6 +202,54 @@ function updateVariantUI() {
   }
 }
 
+function renderReviewRequestChooser() {
+  const panel = $("reviewRequestPanel");
+  const run = runner.getCompletedRun();
+  const tasks = runner.getCompletedTasks();
+  const recordings = runner.getCompletedRecordings();
+  const recordedTasks = fullyRecordedTasks(tasks, recordings);
+  const isStudent = account?.user?.role === "student";
+  if (!run || !tasks.length) {
+    panel.classList.add("hidden");
+    return;
+  }
+  panel.classList.remove("hidden");
+  const taskSelect = $("reviewTaskSelect");
+  taskSelect.innerHTML = recordedTasks.map(task => `<option value="${task}">Задание ${task}</option>`).join("");
+  const taskChoice = document.querySelector('[name="reviewKind"][value="task"]');
+  const attemptChoice = document.querySelector('[name="reviewKind"][value="attempt"]');
+  const submit = $("sendReviewRequestBtn");
+  const message = $("reviewRequestMessage");
+  const update = () => {
+    const isAttempt = attemptChoice.checked;
+    taskSelect.disabled = isAttempt || !recordedTasks.length;
+    taskChoice.disabled = !recordedTasks.length;
+    attemptChoice.disabled = !recordedTasks.length;
+    $("reviewTaskLabel").classList.toggle("hidden", isAttempt);
+    submit.textContent = isAttempt ? "Отправить всю попытку" : "Отправить одно задание";
+    submit.disabled = reviewRequestSent || !recordedTasks.length || !isStudent;
+    if (!isStudent && !reviewRequestSent) message.textContent = "Войдите как ученик, чтобы отправить запись на разбор.";
+    else if (!recordedTasks.length && !reviewRequestSent) message.textContent = "Нет задания с полным комплектом аудиозаписей для отправки.";
+    else if (!reviewRequestSent && !message.hasChildNodes()) message.textContent = "";
+  };
+  taskChoice.onchange = update;
+  attemptChoice.onchange = update;
+  submit.onclick = async () => {
+    const selection = attemptChoice.checked
+      ? { kind: "attempt", tasks: [...recordedTasks] }
+      : { kind: "task", tasks: [Number(taskSelect.value)] };
+    submit.disabled = true;
+    try {
+      if (await account.submitReviewRequest(selection)) reviewRequestSent = true;
+    } catch (_) {
+      // Контроллер показывает ошибку и кнопку повтора непосредственно у выбора.
+    } finally {
+      update();
+    }
+  };
+  update();
+}
+
 runner = createRunnerController({
   getVariant: () => variant,
   getProgress: () => progress,
@@ -210,6 +259,15 @@ runner = createRunnerController({
   finalizeActiveRun,
   toast,
   getAccount: () => account,
+  onRunStarted: () => {
+    reviewRequestSent = false;
+    account?.clearPendingReviewRequest();
+    $("reviewRequestMessage").textContent = "";
+  },
+  onRunFinished: () => {
+    reviewRequestSent = false;
+    renderReviewRequestChooser();
+  },
 });
 const {
   startRun, ensureMicrophone, startPreparation, skipPhase, exitRun,
@@ -226,13 +284,20 @@ account = createAccountController({
   startRun,
   getVariantIndex: () => variantIndex,
   refreshMaterials: initVariants,
+  getCompletedRecordings: () => runner.getCompletedRecordings(),
+  getCompletedTasks: () => runner.getCompletedTasks(),
+  getCompletedRun: () => runner.getCompletedRun(),
+  onReviewRequestSent: () => {
+    reviewRequestSent = true;
+    renderReviewRequestChooser();
+  },
 });
 const {
   initAuth, setAuthMode, openModal, closeModal, submitAuth, logout, requestPasswordReset,
   submitPasswordReset, cancelPasswordReset, sendVerificationEmail,
-  loadAuditLog, deleteAccount, handleAccountLinks, joinGroup, createGroup,
-  createAssignment, submitReview, showAttemptHistory, handleAssignmentAction,
-  loadTeacherDashboard, loadTeacherSubmissions, loadTeacherAssignments,
+  loadAuditLog, deleteAccount, handleAccountLinks,
+  saveReviewScores, showStudentReviewHistory, loadTeacherReviewRequests,
+  discardUploadingReviewRequest,
 } = account;
 
 document.querySelectorAll("[data-start]").forEach(button => button.addEventListener("click", () => startRun(button.dataset.start)));
@@ -249,7 +314,7 @@ $("checkMicBtn").addEventListener("click", () => ensureMicrophone(true));
 $("mainActionBtn").addEventListener("click", startPreparation);
 $("skipBtn").addEventListener("click", skipPhase);
 $("exitBtn").addEventListener("click", exitRun);
-$("restartBtn").addEventListener("click", () => { runner.resetAssignment(); showScreen("home"); });
+$("restartBtn").addEventListener("click", () => showScreen("home"));
 $("authButton").addEventListener("click", () => openModal($("authModal")));
 $("authCloseBtn").addEventListener("click", () => closeModal($("authModal")));
 $("progressCloseBtn").addEventListener("click", () => closeModal($("progressModal")));
@@ -266,14 +331,22 @@ $("sendVerificationBtn").addEventListener("click", sendVerificationEmail);
 $("showAuditBtn").addEventListener("click", loadAuditLog);
 $("showDeleteAccountBtn").addEventListener("click", () => $("deleteAccountForm").classList.toggle("hidden"));
 $("deleteAccountForm").addEventListener("submit", deleteAccount);
-$("joinGroupForm").addEventListener("submit", joinGroup);
-$("createGroupForm").addEventListener("submit", createGroup);
-$("createAssignmentForm").addEventListener("submit", createAssignment);
-$("teacherSubmissions").addEventListener("submit", submitReview);
-$("teacherSubmissions").addEventListener("click", showAttemptHistory);
-$("teacherAssignments").addEventListener("click", event => handleAssignmentAction(event).catch(error => toast(error.message)));
-$("submissionFilters").addEventListener("submit", event => { event.preventDefault(); loadTeacherSubmissions(); });
-$("teacherCabinetBtn").addEventListener("click", async () => { await Promise.all([loadTeacherDashboard(), loadTeacherSubmissions(), loadTeacherAssignments()]); closeModal($("authModal")); openModal($("teacherModal")); });
+$("teacherReviewRequests").addEventListener("submit", event => {
+  const form = event.target.closest("[data-review-request]");
+  if (!form) return;
+  event.preventDefault();
+  saveReviewScores(form);
+});
+$("teacherReviewRequests").addEventListener("click", event => {
+  const button = event.target.closest("[data-student-review-history]");
+  if (button) showStudentReviewHistory(Number(button.dataset.studentReviewHistory));
+});
+$("studentReviewRequestsList").addEventListener("click", event => {
+  const button = event.target.closest("[data-discard-review-request]");
+  if (button) discardUploadingReviewRequest(Number(button.dataset.discardReviewRequest));
+});
+$("reviewRequestFilters").addEventListener("submit", event => { event.preventDefault(); loadTeacherReviewRequests(); });
+$("teacherCabinetBtn").addEventListener("click", async () => { await loadTeacherReviewRequests(); closeModal($("authModal")); openModal($("teacherModal")); });
 $("logoutBtn").addEventListener("click", logout);
 [$("authModal"), $("progressModal"), $("teacherModal")].forEach(modal => modal.addEventListener("click", event => {
   if (event.target === modal) closeModal(modal);

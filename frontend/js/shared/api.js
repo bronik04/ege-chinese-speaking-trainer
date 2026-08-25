@@ -15,16 +15,24 @@ export async function api(path, options = {}) {
   return payload;
 }
 
-export function uploadAudio(submissionId, recording) {
+export function createReviewRequest(payload) {
+  return api("/api/review-requests", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function uploadReviewRecording(requestId, recording) {
   const params = new URLSearchParams({ task: recording.task, label: recording.label });
   if (recording.question) params.set("question", recording.question);
-  return api(`/api/submissions/${submissionId}/recordings?${params}`, {
+  return api(`/api/review-requests/${requestId}/recordings?${params}`, {
     method: "POST",
     headers: { "Content-Type": recording.type },
     body: recording.blob,
   });
 }
 
-export function completeSubmission(submissionId) {
-  return api(`/api/submissions/${submissionId}/complete`, { method: "POST", body: "{}" });
+export function completeReviewRequest(requestId) {
+  return api(`/api/review-requests/${requestId}/complete`, { method: "POST", body: "{}" });
+}
+
+export function discardReviewRequest(requestId) {
+  return api(`/api/review-requests/${requestId}`, { method: "DELETE" });
 }

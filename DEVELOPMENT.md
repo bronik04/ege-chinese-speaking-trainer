@@ -24,7 +24,7 @@ make run
 - `src/trainer/main.py` — FastAPI-приложение, корневой `asgi.py` — совместимая точка входа;
 - `src/trainer/api/routes/` — маршруты FastAPI;
 - `src/trainer/api/schemas.py` — Pydantic-контракты;
-- `src/trainer/api/controllers/` — авторизация, аккаунты, группы, работы, записи и материалы;
+- `src/trainer/api/controllers/` — авторизация, аккаунты, прогресс, заявки на разбор, архивные записи и материалы;
 - `src/trainer/domain/` — чистые бизнес-правила;
 - `src/trainer/services/` — прикладные сервисы материалов и транскрибации;
 - `src/trainer/infrastructure/` — БД, storage, mailer, exports и внешние adapters;
@@ -61,7 +61,7 @@ cp .env.example .env
 - `TRAINER_SECURE_COOKIE=1` — защищённые cookie в продакшене;
 - `TRAINER_LOG_LEVEL` — уровень структурированных логов;
 - `TRAINER_MAX_AUDIO_SECONDS`, `TRAINER_MAX_AUDIO_BYTES` — ограничения аудио;
-- `TRAINER_TEACHER_EMAILS` — email, которым разрешена роль преподавателя;
+- `TRAINER_OWNER_EMAIL` — единственный email владельца кабинета преподавателя;
 - `TRAINER_EDITOR_MODE` — политика авторов материалов;
 - `TRAINER_EDITOR_EMAILS` — email авторов для режима `allowlist`;
 - `DATABASE_URL` — подключение PostgreSQL;
@@ -70,6 +70,19 @@ cp .env.example .env
 В production `TRAINER_PUBLIC_URL` обязателен: ссылки подтверждения email и сброса пароля строятся только из этого
 адреса. Если переменная не задана, используется development fallback `http://127.0.0.1:8080`; заголовки `Host`,
 `Origin` и forwarded-заголовки для account links не используются.
+
+Если задан `TRAINER_PUBLIC_URL`, обязательно укажите `TRAINER_OWNER_EMAIL`: без него приложение завершит запуск с
+ошибкой конфигурации. Роль преподавателя получает только этот email после подтверждения; локальный запуск без
+`TRAINER_OWNER_EMAIL` создаёт только ученические аккаунты.
+
+### Handoff перед развёртыванием очереди заявок
+
+1. Сделайте резервную копию базы и закрытого хранилища по [runbook](docs/runbooks/backup-restore.md).
+2. Задайте `TRAINER_OWNER_EMAIL` до регистрации владельца и не меняйте адрес после регистрации.
+3. После запуска зарегистрируйте точный email владельца и подтвердите его по ссылке из письма. Неподтверждённый владелец не может открывать очередь или выставлять баллы.
+4. Убедитесь, что база обновилась до `alembic upgrade head`, затем выполните health smoke для выбранного deployment-профиля.
+
+Upgrade добавляет таблицы `review_requests`, `review_request_items`, `review_request_recordings` и `review_request_assets`, не преобразуя и не удаляя прежние группы, назначения и отправленные работы. Legacy-строки и связанные закрытые blobs остаются для архивного чтения и удаления аккаунтов, но не участвуют в новых пользовательских сценариях. Не удаляйте legacy-таблицы вручную при rollout.
 
 ## Материалы и политика авторов
 
@@ -92,13 +105,13 @@ TRAINER_EDITOR_MODE=allowlist
 TRAINER_EDITOR_EMAILS=owner@example.ru
 ```
 
-Роль преподавателя также выдаётся по allowlist. До подтверждения email группы, назначения и проверка работ заблокированы:
+Роль преподавателя выдаётся только единственному владельцу из `TRAINER_OWNER_EMAIL`. До подтверждения email просмотр очереди и оценивание заявок заблокированы:
 
 ```bash
-TRAINER_TEACHER_EMAILS=teacher@example.ru
+TRAINER_OWNER_EMAIL=teacher@example.ru
 ```
 
-Назначение хранит неизменяемый снимок материала. Удаление или переиздание исходного варианта не меняет уже выданную работу. Работы после `dueAt` принимаются, но помечаются как просроченные.
+Заявка на разбор хранит неизменяемый снимок материала. Удаление или переиздание исходного варианта не меняет уже отправленную заявку. Таблицы и blobs прежних назначений сохраняются только для архивного чтения и cleanup; новые экраны их не запрашивают.
 
 Изображения официальных вариантов находятся в `public/assets/variants/<год>/`, используют WebP и имя `candidate-XX.webp`.
 

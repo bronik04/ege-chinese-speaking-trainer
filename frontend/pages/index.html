@@ -72,9 +72,9 @@
           <div><span class="status-dot" id="micDot"></span><b id="micStatus">Микрофон ещё не проверен</b><small>Записи остаются только на этом устройстве</small></div>
           <button class="secondary-btn" id="checkMicBtn" type="button">Проверить микрофон</button>
         </div>
-        <section class="student-assignments hidden" id="studentAssignmentsPanel">
-          <div><p class="eyebrow">От преподавателя</p><h2>Мои задания</h2></div>
-          <div class="assignment-list" id="studentAssignmentsList"></div>
+        <section class="student-review-requests hidden" id="studentReviewRequestsPanel">
+          <div><p class="eyebrow">Личная история</p><h2>Мои разборы</h2></div>
+          <div class="review-request-list" id="studentReviewRequestsList"></div>
         </section>
       </div>
     </section>
@@ -116,6 +116,17 @@
         <div class="recordings-panel">
           <h2>Ваши записи</h2>
           <div id="recordingsList"></div>
+          <section class="review-request-panel hidden" id="reviewRequestPanel" aria-labelledby="reviewRequestTitle">
+            <p class="eyebrow">Разбор с преподавателем</p>
+            <h3 id="reviewRequestTitle">Отправить на разбор</h3>
+            <fieldset id="reviewRequestChoices">
+              <label><input type="radio" name="reviewKind" value="task" checked> Одно задание</label>
+              <label><input type="radio" name="reviewKind" value="attempt"> Всю попытку</label>
+            </fieldset>
+            <label id="reviewTaskLabel">Задание<select id="reviewTaskSelect"></select></label>
+            <button class="primary-btn wide" id="sendReviewRequestBtn" type="button">Отправить одно задание</button>
+            <p id="reviewRequestMessage" aria-live="polite"></p>
+          </section>
         </div>
         <aside class="checklist-panel">
           <h2>Быстрая самопроверка</h2>
@@ -151,7 +162,6 @@
         </div>
         <form id="authForm">
           <label class="register-only hidden" id="authNameLabel">Имя и фамилия<input id="authName" name="displayName" type="text" autocomplete="name" minlength="2" maxlength="80"></label>
-          <label class="register-only hidden" id="authRoleLabel">Тип аккаунта<select id="authRole" name="role"><option value="student">Ученик</option><option value="teacher">Преподаватель</option></select></label>
           <label>Email<input id="authEmail" name="email" type="email" autocomplete="email" required></label>
           <label>Пароль<input id="authPassword" name="password" type="password" autocomplete="current-password" minlength="8" maxlength="128" required></label>
           <button class="primary-btn wide" id="authSubmitBtn" type="submit">Войти</button>
@@ -183,11 +193,6 @@
         <div id="studentAccountTools">
           <div class="account-stat"><b id="accountRuns">0</b><span id="accountRunsLabel">завершённых тренировок</span></div>
           <section class="account-progress-card"><div><p class="mini-heading">Ваш прогресс</p><b id="progressSummary">Тренировок пока нет</b><small id="progressSyncStatus">Сохраняется в этом браузере</small></div><button class="text-btn" id="openProgressBtn" type="button">История →</button></section>
-          <form class="join-group-form" id="joinGroupForm">
-            <label>Код группы<input id="joinGroupCode" type="text" minlength="6" maxlength="6" placeholder="ABC123" required></label>
-            <button class="secondary-btn" type="submit">Вступить</button>
-          </form>
-          <div class="student-groups" id="studentGroups"></div>
         </div>
         <div class="account-actions">
           <button class="primary-btn wide hidden" id="teacherCabinetBtn" type="button">Открыть кабинет преподавателя</button>
@@ -199,7 +204,7 @@
           <div class="audit-list hidden" id="auditList"></div>
           <button class="auth-link danger-link" id="showDeleteAccountBtn" type="button">Удалить аккаунт</button>
           <form class="delete-account-form hidden" id="deleteAccountForm">
-            <p>Будут удалены прогресс, группы, работы и сохранённые аудиозаписи. Отменить это действие нельзя.</p>
+            <p>Будут удалены прогресс, заявки на разбор, сохранённые аудиозаписи и загруженные материалы. Отменить это действие нельзя.</p>
             <label>Текущий пароль<input id="deleteAccountPassword" type="password" autocomplete="current-password" minlength="8" maxlength="128" required></label>
             <button class="danger-btn" type="submit">Удалить аккаунт навсегда</button>
           </form>
@@ -213,44 +218,23 @@
     <section class="auth-dialog teacher-dialog" role="dialog" aria-modal="true" aria-labelledby="teacherTitle">
       <button class="modal-close" id="teacherCloseBtn" type="button" aria-label="Закрыть">×</button>
       <p class="eyebrow">Кабинет преподавателя</p>
-      <h2 id="teacherTitle">Учебные группы</h2>
-      <p class="auth-lede">Создайте группу и передайте ученикам шестизначный код.</p>
+      <h2 id="teacherTitle">Очередь разбора</h2>
+      <p class="auth-lede">Прослушивайте отправленные записи и сохраняйте баллы по критериям.</p>
       <section class="teacher-materials-entry">
         <div><p class="eyebrow">Учебные материалы</p><h3>Конструктор вариантов</h3><p>Создавайте полные варианты и отдельные задания, сохраняйте черновики и публикуйте их в каталоге.</p></div>
         <a class="primary-btn" id="teacherMaterialEditorLink" href="variant-editor.html">Добавить материал →</a>
       </section>
-      <form class="create-group-form" id="createGroupForm">
-        <label>Название группы<input id="groupName" type="text" minlength="2" maxlength="80" placeholder="11 класс · Понедельник" required></label>
-        <button class="primary-btn" type="submit">Создать группу</button>
-      </form>
-      <section class="assignment-create-panel">
-        <p class="eyebrow">Новое назначение</p>
-        <form class="create-assignment-form" id="createAssignmentForm">
-          <label>Группа<select id="assignmentGroup" required></select></label>
-          <label>Вариант<select id="assignmentVariant" required></select></label>
-          <label>Состав<select id="assignmentTasks"><option value="exam">Полный экзамен</option><option value="1">Только задание 1</option><option value="2">Только задание 2</option><option value="3">Только задание 3</option></select></label>
-          <label>Срок<input id="assignmentDue" type="datetime-local"></label>
-          <label class="assignment-title-field">Название<input id="assignmentTitle" type="text" minlength="2" maxlength="100" placeholder="Тренировка к понедельнику" required></label>
-          <button class="primary-btn" id="createAssignmentBtn" type="submit">Назначить</button>
-        </form>
-      </section>
-      <section class="teacher-assignment-section">
-        <div><p class="eyebrow">Назначения</p><h2>Выданные задания</h2></div>
-        <div class="teacher-assignments" id="teacherAssignments"></div>
-      </section>
-      <p class="auth-message" id="teacherMessage" aria-live="polite"></p>
-      <div class="teacher-groups" id="teacherGroups"></div>
       <section class="teacher-review-section">
-        <div class="review-heading"><div><p class="eyebrow">Проверка</p><h2>Работы учеников</h2></div><b class="queue-count" id="reviewQueueCount">0 на проверке</b></div>
-        <form class="submission-filters" id="submissionFilters">
-          <label>Группа<select id="submissionGroupFilter"><option value="">Все группы</option></select></label>
-          <label>Ученик<input id="submissionStudentFilter" type="search" placeholder="Имя или email"></label>
-          <label>Статус<select id="submissionStatusFilter"><option value="">Все</option><option value="submitted">На проверке</option><option value="graded">Проверено</option></select></label>
+        <div class="review-heading"><div><p class="eyebrow">Проверка</p><h2>Заявки учеников</h2></div><b class="queue-count" id="reviewQueueCount">Нет заявок на разбор</b></div>
+        <form class="submission-filters" id="reviewRequestFilters">
+          <label>Ученик<input id="reviewStudentFilter" type="search" placeholder="Имя или email"></label>
+          <label>Задание<select id="reviewTaskFilter"><option value="">Все задания</option><option value="1">Задание 1</option><option value="2">Задание 2</option><option value="3">Задание 3</option></select></label>
+          <label>Статус<select id="reviewStatusFilter"><option value="">Все</option><option value="queued">На разборе</option><option value="reviewed">Разобрано</option></select></label>
+          <label>Дата<input id="reviewDateFilter" type="date"></label>
           <button class="secondary-btn" type="submit">Применить</button>
         </form>
-        <div class="export-actions"><a id="exportCsvBtn" href="/api/teacher/export.csv">CSV</a><a id="exportPdfBtn" href="/api/teacher/export.pdf">PDF</a></div>
         <p class="auth-message" id="teacherReviewMessage" aria-live="polite"></p>
-        <div class="teacher-submissions" id="teacherSubmissions"></div>
+        <div class="teacher-submissions" id="teacherReviewRequests"></div>
       </section>
     </section>
   </div>

@@ -1,139 +1,11 @@
-from __future__ import annotations
-
-import json
-import secrets
-import subprocess
-import tempfile
-import time
-from http import HTTPStatus
-from pathlib import Path
-
+from trainer.api.dependencies import owner_email_from_env
 from trainer.api.errors import ApiError, default_error_code
-from trainer.api.results import ActionResult, FileResult, RequestContext
-from trainer.api.runtime import AUDIO_DIR, DATA_DIR, MAX_AUDIO_BODY, connect
-from trainer.infrastructure.audio import validate_duration
-from trainer.services import accounts as account_services
-from trainer.services.recordings import delete_recordings, write_recording
-from trainer.services.storage_cleanup import enqueue_cleanup_job
-
-
-def recording_create(
-    submission_id: int, query: dict, body: bytes, content_type: str, user: dict, context: RequestContext
-) -> ActionResult:
-    try:
-        task = int(query.get("task") or "")
-        question_value = query.get("question")
-        question = int(question_value) if question_value else None
-    except (TypeError, ValueError) as error:
-        raise ApiError(
-            default_error_code(HTTPStatus.BAD_REQUEST), "Некорректный номер записи", HTTPStatus.BAD_REQUEST
-        ) from error
-    label = str(query.get("label") or f"Задание {task}")[:160]
-    mime_type = content_type.split(";", 1)[0].lower()
-    extensions = {"audio/webm": "webm", "audio/mp4": "m4a", "audio/ogg": "ogg", "audio/wav": "wav"}
-    if task not in {1, 2, 3} or mime_type not in extensions:
-        raise ApiError(
-            default_error_code(HTTPStatus.UNSUPPORTED_MEDIA_TYPE),
-            "Неподдерживаемый формат аудио",
-            HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
-        )
-    if (task == 1 and question not in {1, 2, 3, 4, 5}) or (task in {2, 3} and question is not None):
-        raise ApiError(default_error_code(HTTPStatus.BAD_REQUEST), "Некорректный номер записи", HTTPStatus.BAD_REQUEST)
-    length = len(body)
-    if not 0 < length <= MAX_AUDIO_BODY:
-        raise ApiError(
-            default_error_code(HTTPStatus.REQUEST_ENTITY_TOO_LARGE),
-            "Запись превышает 15 МБ",
-            HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
-        )
-    with connect() as database:
-        row = database.execute(
-            """
-            SELECT submissions.id, submissions.status, assignments.tasks_json FROM submissions
-            JOIN assignments ON assignments.id = submissions.assignment_id
-            WHERE submissions.id = ? AND submissions.student_id = ?
-            """,
-            (submission_id, user["id"]),
-        ).fetchone()
-        if not row or task not in json.loads(row["tasks_json"]):
-            raise ApiError(
-                default_error_code(HTTPStatus.FORBIDDEN), "Запись не относится к этой попытке", HTTPStatus.FORBIDDEN
-            )
-        if row["status"] != "uploading":
-            raise ApiError("submission_not_uploading", "Работа уже отправлена", HTTPStatus.CONFLICT)
-    relative = f"{submission_id}/{secrets.token_urlsafe(18)}.{extensions[mime_type]}"
-    temporary_dir = DATA_DIR / "tmp"
-    temporary_dir.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(dir=temporary_dir, suffix=f".{extensions[mime_type]}", delete=False) as file:
-        file.write(body)
-        temporary_path = Path(file.name)
-    try:
-        duration = validate_duration(temporary_path, task)
-    except (OSError, ValueError, subprocess.SubprocessError) as error:
-        temporary_path.unlink(missing_ok=True)
-        raise ApiError(
-            default_error_code(HTTPStatus.UNPROCESSABLE_ENTITY),
-            "Некорректная или слишком длинная аудиозапись",
-            HTTPStatus.UNPROCESSABLE_ENTITY,
-        ) from error
-    try:
-        write_recording(AUDIO_DIR, relative, temporary_path, mime_type)
-        with connect() as database:
-            replaced = database.execute(
-                """
-                SELECT id, file_name FROM recordings
-                WHERE submission_id = ? AND task_number = ? AND question_number IS ?
-                """,
-                (submission_id, task, question),
-            ).fetchall()
-            if replaced:
-                database.execute(
-                    "DELETE FROM recordings WHERE submission_id = ? AND task_number = ? AND question_number IS ?",
-                    (submission_id, task, question),
-                )
-            cursor = database.execute(
-                """
-                INSERT INTO recordings(submission_id, task_number, question_number, label, file_name, mime_type,
-                                       size_bytes, duration_seconds, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    submission_id,
-                    task,
-                    question,
-                    label,
-                    relative,
-                    mime_type,
-                    len(body),
-                    duration,
-                    int(time.time()),
-                ),
-            )
-            if replaced:
-                enqueue_cleanup_job(
-                    database,
-                    audio_keys=[item["file_name"] for item in replaced],
-                    material_keys=[],
-                    assignment_keys=[],
-                )
-            account_services.audit(
-                database,
-                "recording_uploaded",
-                client_ip=context.client_ip,
-                user_agent=context.user_agent,
-                user_id=user["id"],
-                email=user["email"],
-                details={"submissionId": submission_id, "task": task, "size": len(body)},
-            )
-    except Exception:
-        delete_recordings(AUDIO_DIR, [relative])
-        raise
-    finally:
-        temporary_path.unlink(missing_ok=True)
-    return ActionResult({"recording": {"id": cursor.lastrowid}}, status=HTTPStatus.CREATED)
+from trainer.api.results import FileResult
+from trainer.api.runtime import connect
 
 
 def recording_get(recording_id: int, user: dict) -> FileResult:
+    """Read a pre-migration assignment recording without exposing it in live UI."""
     with connect() as database:
         row = database.execute(
             """
@@ -150,5 +22,47 @@ def recording_get(recording_id: int, user: dict) -> FileResult:
         or user["id"] not in {row["student_id"], row["teacher_id"]}
         or (row["status"] == "uploading" and user["id"] != row["student_id"])
     ):
-        raise ApiError(default_error_code(HTTPStatus.NOT_FOUND), "Запись не найдена", HTTPStatus.NOT_FOUND)
+        raise ApiError(default_error_code(404), "Запись не найдена", 404)
     return FileResult(key=row["file_name"], mime_type=row["mime_type"], size_bytes=row["size_bytes"])
+
+
+def _review_file_allowed(row, user: dict) -> bool:
+    if row["student_id"] == user["id"]:
+        return True
+    return bool(
+        row["status"] in {"queued", "reviewed"}
+        and user.get("role") == "teacher"
+        and user.get("emailVerified")
+        and str(user.get("email", "")).strip().lower() == owner_email_from_env()
+    )
+
+
+def review_recording_get(recording_id: int, user: dict) -> FileResult:
+    with connect() as database:
+        row = database.execute(
+            """SELECT review_request_recordings.storage_key,review_request_recordings.mime_type,
+                      review_request_recordings.size_bytes,review_requests.status,review_requests.student_id
+               FROM review_request_recordings
+               JOIN review_request_items ON review_request_items.id=review_request_recordings.item_id
+               JOIN review_requests ON review_requests.id=review_request_items.request_id
+               WHERE review_request_recordings.id=?""",
+            (recording_id,),
+        ).fetchone()
+    if not row or not _review_file_allowed(row, user):
+        raise ApiError("recording_not_found", "Запись не найдена", 404)
+    return FileResult(key=row["storage_key"], mime_type=row["mime_type"], size_bytes=row["size_bytes"])
+
+
+def review_asset_get(asset_id: int, user: dict) -> FileResult:
+    with connect() as database:
+        row = database.execute(
+            """SELECT review_request_assets.storage_key,review_request_assets.mime_type,
+                      review_request_assets.size_bytes,review_requests.status,review_requests.student_id
+               FROM review_request_assets
+               JOIN review_requests ON review_requests.id=review_request_assets.request_id
+               WHERE review_request_assets.id=?""",
+            (asset_id,),
+        ).fetchone()
+    if not row or not _review_file_allowed(row, user):
+        raise ApiError("asset_not_found", "Изображение не найдено", 404)
+    return FileResult(key=row["storage_key"], mime_type=row["mime_type"], size_bytes=row["size_bytes"])

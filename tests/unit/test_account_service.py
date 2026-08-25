@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import unittest
 
-from trainer.domain.accounts import PASSWORD_ITERATIONS, authorize_role, email_in_allowlist, validate_credentials
+from trainer.domain.accounts import (
+    PASSWORD_ITERATIONS,
+    authorize_role,
+    email_in_allowlist,
+    registration_role,
+    validate_credentials,
+)
 
 
 class AccountDomainServiceTest(unittest.TestCase):
@@ -30,10 +36,20 @@ class AccountDomainServiceTest(unittest.TestCase):
         allowed = authorize_role(
             {"role": "teacher", "email": "teacher@example.test", "emailVerified": True},
             "teacher",
-            teacher_emails="teacher@example.test",
+            owner_email="teacher@example.test",
         )
         self.assertTrue(allowed.allowed)
         self.assertIsNone(allowed.code)
+
+    def test_registration_role_uses_only_the_configured_owner_and_authorization_rechecks_it(self):
+        self.assertEqual(registration_role("OWNER@example.test", "owner@example.test"), "teacher")
+        self.assertEqual(registration_role("student@example.test", "owner@example.test"), "student")
+        decision = authorize_role(
+            {"role": "teacher", "email": "teacher@example.test", "emailVerified": True},
+            "teacher",
+            owner_email="owner@example.test",
+        )
+        self.assertEqual(decision.code, "teacher_not_allowed")
 
     def test_allowlist_is_pure_and_uses_explicit_values(self):
         self.assertTrue(email_in_allowlist("Teacher@Example.Test", "other@example.test,teacher@example.test"))

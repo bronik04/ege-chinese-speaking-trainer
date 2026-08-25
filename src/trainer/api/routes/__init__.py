@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
 from trainer.api import runtime
@@ -29,6 +31,7 @@ def file_response(
     range_header: str | None = None,
     *,
     range_header_count: int = 1,
+    storage_root: Path | None = None,
 ) -> Response:
     headers = {
         "Cache-Control": "private, no-store",
@@ -51,20 +54,21 @@ def file_response(
     # runtime.AUDIO_DIR читается как атрибут модуля, а не захватывается по
     # значению при импорте: тестовые фикстуры патчат именно runtime.AUDIO_DIR,
     # и захваченная копия осталась бы нацелена на боевой var/audio.
-    path = storage_local_path(runtime.AUDIO_DIR, stored.key)
+    root = runtime.AUDIO_DIR if storage_root is None else storage_root
+    path = storage_local_path(root, stored.key)
     if path is not None:
         return FileResponse(path, media_type=stored.mime_type, headers=headers)
 
     if byte_range is None:
         return StreamingResponse(
-            stream_recording(runtime.AUDIO_DIR, stored.key),
+            stream_recording(root, stored.key),
             media_type=stored.mime_type,
             headers={**headers, "Content-Length": str(stored.size_bytes)},
         )
 
     return StreamingResponse(
         stream_recording(
-            runtime.AUDIO_DIR,
+            root,
             stored.key,
             start=byte_range.start,
             end=byte_range.end,

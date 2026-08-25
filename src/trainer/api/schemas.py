@@ -13,7 +13,6 @@ class RegisterRequest(ApiSchema):
     email: str = Field(min_length=3, max_length=254)
     password: str = Field(min_length=8, max_length=128)
     displayName: str = Field(min_length=2, max_length=80)
-    role: Literal["student", "teacher"] = "student"
 
 
 class LoginRequest(ApiSchema):
@@ -68,6 +67,17 @@ class SubmissionRequest(ApiSchema):
 
 class SubmissionCompleteRequest(ApiSchema):
     pass
+
+
+class ReviewRequestCreate(ApiSchema):
+    kind: Literal["task", "attempt"]
+    variantId: str = Field(pattern=r"^[a-z0-9-]{3,50}$")
+    tasks: list[Literal[1, 2, 3]] = Field(min_length=1, max_length=3)
+    run: dict[str, Any]
+
+
+class ReviewScoresRequest(ApiSchema):
+    scores: dict[str, dict[str, int]]
 
 
 class ReviewRequest(ApiSchema):

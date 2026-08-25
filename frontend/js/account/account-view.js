@@ -1,66 +1,49 @@
 import { escapeHtml, formatHistoryDate } from "../shared/progress.js";
 import { reviewFields } from "../runner/review.js";
 
-export function studentGroupsMarkup(groups) {
-  if (!groups.length) return '<p class="student-groups-empty">Вы пока не состоите в учебной группе.</p>';
-  return `<p class="mini-heading">Мои группы</p>${groups.map(group =>
-    `<div class="student-group"><b>${escapeHtml(group.name)}</b><span>${escapeHtml(group.teacher_name || "Преподаватель")}</span></div>`
-  ).join("")}`;
-}
-
-export function studentAssignmentsMarkup(assignments) {
-  return assignments.map(assignment => {
-    const latest = assignment.latest;
-    const status = latest?.late
-      ? "Сдано после срока"
-      : latest?.status === "graded"
-      ? `Проверено: ${latest.total_score}/${latest.max_score}`
-      : latest ? "Отправлено на проверку" : "Не выполнено";
-    const due = assignment.dueAt ? ` · до ${formatHistoryDate(assignment.dueAt * 1000)}` : "";
-    return `<article class="assignment-card"><div><p class="eyebrow">${escapeHtml(assignment.groupName)}</p><h3>${escapeHtml(assignment.title)}</h3><span>Задания ${assignment.tasks.join(", ")}${due}</span><small>${status}</small>${latest?.comment ? `<blockquote>${escapeHtml(latest.comment)}</blockquote>` : ""}</div><button class="secondary-btn" type="button" data-start-assignment="${assignment.id}">${latest ? "Новая попытка" : "Начать"}</button></article>`;
+export function studentReviewRequestsMarkup(requests) {
+  if (!requests.length) return '<p class="student-groups-empty">Заявок на разбор пока нет.</p>';
+  return requests.map(request => {
+    const status = request.status === "reviewed"
+      ? `Разобрано: ${request.total}/${request.maximum}`
+      : request.status === "uploading" ? "Загрузка не завершена" : "На разборе";
+    const kind = request.kind === "attempt" ? "Вся попытка" : "Одно задание";
+    const discard = request.status === "uploading"
+      ? `<button class="text-btn" type="button" data-discard-review-request="${request.id}">Удалить незавершённую загрузку</button>`
+      : "";
+    return `<article class="review-request-card"><p class="eyebrow">${kind}</p><h3>${escapeHtml(request.variantId)}</h3><span>Задания ${request.tasks.join(", ")} · ${status}</span><small>${formatHistoryDate(request.submittedAt * 1000)}</small>${discard}</article>`;
   }).join("");
 }
 
-export function assignmentTasksMarkup(variant) {
-  if (variant?.kind === "task") {
-    return `<option value="${variant.taskNumber}">Только задание ${variant.taskNumber}</option>`;
-  }
-  return '<option value="exam">Полный экзамен</option><option value="1">Только задание 1</option><option value="2">Только задание 2</option><option value="3">Только задание 3</option>';
+export function teacherReviewRequestsMarkup(requests) {
+  if (!requests.length) return '<p class="teacher-empty">Заявок по выбранному фильтру нет.</p>';
+  return requests.map(request => {
+    const scores = Object.fromEntries((request.items || []).map(item => [String(item.task), item.scores || {}]));
+    const recordings = (request.items || []).flatMap(item => item.recordings || []);
+    return `<article class="teacher-review-request-card"><header><div><p class="eyebrow">${escapeHtml(request.studentName)}</p><h3>${escapeHtml(request.studentEmail)}</h3><span>${request.kind === "attempt" ? "Вся попытка" : "Одно задание"} · задания ${request.tasks.join(", ")}</span><small>${formatHistoryDate(request.submittedAt * 1000)}</small></div><b>${request.status === "reviewed" ? `${request.total}/${request.maximum}` : "На разборе"}</b></header><div class="submission-audio">${recordings.length ? recordings.map(recording => `<label><span>${escapeHtml(recording.label)}</span><audio controls preload="none" src="${escapeHtml(recording.url)}"></audio></label>`).join("") : "<p>Аудиозаписи отсутствуют.</p>"}</div><button class="text-btn" type="button" data-student-review-history="${request.id}">История заявок</button><form class="review-form" data-review-request="${request.id}" data-review-tasks="${request.tasks.join(",")}">${reviewFields(request.tasks, scores)}<button class="primary-btn" type="submit">${request.status === "reviewed" ? "Обновить оценку" : "Сохранить оценку"}</button></form></article>`;
+  }).join("");
 }
 
-export function assignmentOptionsMarkup(groups, variants) {
-  return {
-    groups: groups.length
-      ? groups.map(group => `<option value="${group.id}">${escapeHtml(group.name)}</option>`).join("")
-      : '<option value="">Сначала создайте группу</option>',
-    variants: variants.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.label)}</option>`).join(""),
-  };
+const privateReviewImage = value => /^\/api\/review-assets\/\d+$/.test(String(value || ""));
+
+function materialTaskMarkup(task, material) {
+  const list = (items, label) => Array.isArray(items) && items.length
+    ? `<div><b>${label}</b><ul>${items.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>`
+    : "";
+  const images = [material.image, ...(Array.isArray(material.images) ? material.images : [])]
+    .filter(privateReviewImage);
+  const labels = Array.isArray(material.imageLabels) ? material.imageLabels : [];
+  return `<section class="review-material-task"><p class="eyebrow">Материал задания ${task}</p><h4>${escapeHtml(material.title)}</h4>${material.situation ? `<p>${escapeHtml(material.situation)}</p>` : ""}${material.lead ? `<p>${escapeHtml(material.lead)}</p>` : ""}${material.banner ? `<p class="chinese-banner" lang="zh">${escapeHtml(material.banner)}</p>` : ""}${list(material.questions, "Что спросить")}${list(material.prompts, "План ответа")}${material.starter ? `<p class="starter" lang="zh">${escapeHtml(material.starter)}</p>` : ""}${images.length ? `<div class="review-material-images">${images.map((image, index) => `<figure><img src="${escapeHtml(image)}" alt="${escapeHtml(labels[index] || material.imageAlt || `Изображение ${index + 1}`)}">${labels[index] ? `<figcaption>${escapeHtml(labels[index])}</figcaption>` : ""}</figure>`).join("")}</div>` : ""}</section>`;
 }
 
-export function teacherSubmissionsMarkup(submissions) {
-  if (!submissions.length) {
-    return '<div class="teacher-empty"><b>Работ на проверку пока нет</b><span>После выполнения назначений здесь появятся аудиозаписи учеников.</span></div>';
-  }
-  return submissions.map(submission => `
-    <article class="submission-card">
-      <header><div><p class="eyebrow">${escapeHtml(submission.groupName)} · попытка ${submission.attempt}</p><h3>${escapeHtml(submission.studentName)}</h3><span>${escapeHtml(submission.title)}${submission.late ? " · Сдано после срока" : ""}</span></div><b class="submission-status ${escapeHtml(submission.status)}">${submission.status === "graded" ? `${submission.review.total}/${submission.review.maximum}` : "На проверке"}</b></header>
-      <div class="submission-audio">${submission.recordings.length ? submission.recordings.map(recording => `<label><span>${escapeHtml(recording.label)}</span><audio controls preload="none" src="${escapeHtml(recording.url)}"></audio></label>`).join("") : "<p>Аудиозаписи отсутствуют.</p>"}</div>
-      <button class="auth-link" type="button" data-attempt-history="${submission.id}">История попыток</button>
-      <form class="review-form" data-review-submission="${submission.id}" data-review-tasks="${submission.tasks.join(",")}">
-        ${reviewFields(submission.tasks, submission.review?.scores)}
-        <label class="review-comment">Комментарий<textarea name="comment" maxlength="3000" rows="3">${escapeHtml(submission.review?.comment || "")}</textarea></label>
-        <button class="primary-btn" type="submit">${submission.review ? "Обновить оценку" : "Сохранить оценку"}</button>
-      </form>
-    </article>`).join("");
-}
-
-export function teacherGroupsMarkup(groups) {
-  if (!groups.length) {
-    return '<div class="teacher-empty"><b>Групп пока нет</b><span>Создайте первую группу — здесь появится статистика учеников.</span></div>';
-  }
-  return groups.map(group => `
-    <article class="teacher-group-card">
-      <header><div><h3>${escapeHtml(group.name)}</h3><span>${group.students.length} ${group.students.length === 1 ? "ученик" : "учеников"}</span></div><button class="group-code" type="button" data-copy-code="${escapeHtml(group.code)}" title="Скопировать код"><small>Код группы</small><b>${escapeHtml(group.code)}</b></button></header>
-      ${group.students.length ? `<div class="student-table"><div class="student-table-head"><span>Ученик</span><span>Тренировки</span><span>Задания</span><span>Последняя активность</span></div>${group.students.map(student => `<div class="student-row"><span><b>${escapeHtml(student.name)}</b><small>${escapeHtml(student.email)}</small></span><strong>${student.completedRuns}</strong><strong>${student.completedTasks}</strong><time>${student.lastActivity ? formatHistoryDate(student.lastActivity) : "—"}</time></div>`).join("")}</div>` : '<p class="group-empty">Передайте код ученикам — после подключения они появятся здесь.</p>'}
-    </article>`).join("");
+export function teacherReviewRequestDetailMarkup(request, history) {
+  const material = request?.material && typeof request.material === "object" ? request.material : {};
+  const tasks = Object.keys(material).sort((left, right) => Number(left) - Number(right));
+  const materialMarkup = tasks.length
+    ? tasks.map(task => materialTaskMarkup(task, material[task] || {})).join("")
+    : "<p>Снимок материала недоступен.</p>";
+  const historyMarkup = history.length
+    ? history.map(item => `${escapeHtml(formatHistoryDate(item.submittedAt * 1000))}: ${item.status === "reviewed" ? `${item.total}/${item.maximum}` : "на разборе"}`).join(" · ")
+    : "Других заявок ученика пока нет.";
+  return `<div class="review-material-snapshot">${materialMarkup}</div><div class="attempt-history">${historyMarkup}</div>`;
 }

@@ -5,6 +5,7 @@ from trainer.domain.accounts.service import (
     email_in_allowlist,
     password_hash,
     password_matches,
+    registration_role,
     token_digest,
     validate_credentials,
 )
@@ -16,6 +17,7 @@ __all__ = [
     "email_in_allowlist",
     "password_hash",
     "password_matches",
+    "registration_role",
     "token_digest",
     "validate_credentials",
 ]

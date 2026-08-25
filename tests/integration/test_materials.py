@@ -61,7 +61,7 @@ class MaterialApiTest(unittest.TestCase):
         response = self.client.post(
             "/api/auth/register",
             headers=self.origin,
-            json={"email": email, "password": "password123", "displayName": "Автор", "role": "student"},
+            json={"email": email, "password": "password123", "displayName": "Автор"},
         )
         self.assertEqual(response.status_code, 201, response.text)
 
