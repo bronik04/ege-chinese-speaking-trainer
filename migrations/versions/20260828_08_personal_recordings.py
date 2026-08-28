@@ -25,7 +25,7 @@ def upgrade() -> None:
         sa.Column("run_id", sa.Text(), nullable=False),
         sa.Column("variant_id", sa.Text(), nullable=False),
         sa.Column("task_number", sa.Integer(), nullable=False),
-        sa.Column("question_number", sa.Integer(), nullable=True),
+        sa.Column("question_number", sa.Integer(), nullable=False),
         sa.Column("label", sa.Text(), nullable=False),
         sa.Column("storage_key", sa.Text(), nullable=False, unique=True),
         sa.Column("mime_type", sa.Text(), nullable=False),

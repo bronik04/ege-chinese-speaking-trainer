@@ -190,6 +190,14 @@ class SqliteMigrationTest(unittest.TestCase):
                            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (*recording[:6], "personal-recordings/1/two.webm", *recording[7:]),
                     )
+                with self.assertRaises(sqlite3.IntegrityError):
+                    database.execute(
+                        """INSERT INTO personal_recordings(
+                               student_id,run_id,variant_id,task_number,question_number,label,storage_key,
+                               mime_type,size_bytes,duration_seconds,created_at,expires_at
+                           ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (*recording[:4], None, *recording[5:6], "personal-recordings/1/null.webm", *recording[7:]),
+                    )
 
     def test_upgrade_backfills_review_recording_expiry_from_created_at(self):
         created_at = int(datetime(2026, 8, 31, tzinfo=UTC).timestamp())
@@ -410,6 +418,13 @@ class PostgresMigrationTest(unittest.TestCase):
                     )
                 )
             }
+            question_number_nullable = database.execute(
+                text(
+                    """SELECT is_nullable FROM information_schema.columns
+                       WHERE table_schema='public' AND table_name='personal_recordings'
+                       AND column_name='question_number'"""
+                )
+            ).scalar_one()
         self.assertEqual(
             columns,
             {
@@ -428,6 +443,7 @@ class PostgresMigrationTest(unittest.TestCase):
                 "expires_at",
             },
         )
+        self.assertEqual(question_number_nullable, "NO")
 
         values = {
             "email": "student@example.test",
