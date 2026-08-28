@@ -18,6 +18,7 @@ from trainer.api.errors import ApiError
 from trainer.api.results import FileResult, RequestContext
 from trainer.api.security import request_has_same_origin
 from trainer.domain.accounts import password_hash, password_matches
+from trainer.domain.recording_retention import expires_at
 
 
 class SecurityHelpersTest(unittest.TestCase):
@@ -302,6 +303,11 @@ class ApiFlowTest(unittest.TestCase):
         )
         self.assertEqual(status, 201, recording)
         recording_id = recording["recording"]["id"]
+        with runtime.connect() as database:
+            created_at, recording_expires_at = database.execute(
+                "SELECT created_at,expires_at FROM review_request_recordings WHERE id=?", (recording_id,)
+            ).fetchone()
+        self.assertEqual(recording_expires_at, expires_at(created_at))
 
         status, hidden_detail, _ = self.request(
             "GET", f"/api/teacher/review-requests/{request_id}", cookie=other_student_cookie

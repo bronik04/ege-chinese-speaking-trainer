@@ -15,6 +15,7 @@ from trainer.api.errors import ApiError, default_error_code
 from trainer.api.results import ActionResult, RequestContext
 from trainer.api.schemas import ReviewRequestCreate, ReviewScoresRequest
 from trainer.domain.grading import CRITERIA, validate_scores
+from trainer.domain.recording_retention import expires_at
 from trainer.domain.review_requests import required_recording_positions, validate_review_selection
 from trainer.infrastructure.audio import validate_duration
 from trainer.infrastructure.database.core import begin_immediate
@@ -226,11 +227,22 @@ def review_recording_create(
                     "DELETE FROM review_request_recordings WHERE item_id=? AND question_number IS ?",
                     (current["id"], question),
                 )
+            created_at = int(time.time())
             cursor = database.execute(
                 """INSERT INTO review_request_recordings
-                   (item_id,question_number,label,storage_key,mime_type,size_bytes,duration_seconds,created_at)
-                   VALUES (?,?,?,?,?,?,?,?)""",
-                (current["id"], question, label, storage_key, mime_type, len(body), duration, int(time.time())),
+                   (item_id,question_number,label,storage_key,mime_type,size_bytes,duration_seconds,created_at,expires_at)
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                (
+                    current["id"],
+                    question,
+                    label,
+                    storage_key,
+                    mime_type,
+                    len(body),
+                    duration,
+                    created_at,
+                    expires_at(created_at),
+                ),
             )
             if replaced:
                 enqueue_cleanup_job(
