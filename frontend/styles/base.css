@@ -286,6 +286,16 @@ h1 em { color: var(--crimson); font-weight: inherit; }
 .history-item b { display: block; color: var(--crimson-deep); line-height: 1.2; overflow-wrap: anywhere; }
 .history-item span { display: block; }
 .history-item span, .history-item time { color: var(--ink-soft); font-size: 12px; }
+.personal-recordings-history { margin-top: 26px; padding-top: 22px; border-top: 1px solid var(--line); }
+.personal-recordings-history h3 { margin: 6px 0 0; font: 500 25px/1.15 var(--font-display); }
+.personal-recording-item { display: grid; gap: 12px; padding: 16px 0; border-top: 1px solid var(--line); }
+.personal-recording-item:first-child { margin-top: 12px; }
+.personal-recording-item b, .personal-recording-item span, .personal-recording-item small { display: block; }
+.personal-recording-item b { color: var(--crimson-deep); overflow-wrap: anywhere; }
+.personal-recording-item span, .personal-recording-item small, .history-archive-note { color: var(--ink-soft); font-size: 12px; }
+.personal-recording-item small { margin-top: 4px; }
+.personal-recording-item audio { width: 100%; }
+.history-archive-note { margin: 16px 0 0; }
 .history-empty { color: var(--ink-soft); padding: 30px 0; }
 .history-clear { margin-top: 22px; }
 .mini-heading { margin: 2px 0 4px; color: var(--ink-soft); font: 700 9px/1 var(--font-utility); text-transform: uppercase; letter-spacing: .12em; }

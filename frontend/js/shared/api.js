@@ -36,3 +36,26 @@ export function completeReviewRequest(requestId) {
 export function discardReviewRequest(requestId) {
   return api(`/api/review-requests/${requestId}`, { method: "DELETE" });
 }
+
+export function uploadPersonalRecording(run, recording) {
+  const params = new URLSearchParams({
+    runId: run.id,
+    variantId: run.variantId,
+    taskNumber: recording.task,
+    questionNumber: recording.question || 1,
+    label: recording.label,
+  });
+  return api(`/api/personal-recordings?${params}`, {
+    method: "POST",
+    headers: { "Content-Type": recording.type },
+    body: recording.blob,
+  });
+}
+
+export function listPersonalRecordings() {
+  return api("/api/personal-recordings");
+}
+
+export function personalRecordingStreamUrl(recordingId) {
+  return `/api/personal-recordings/${encodeURIComponent(recordingId)}`;
+}

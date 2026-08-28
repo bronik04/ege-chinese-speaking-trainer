@@ -112,6 +112,45 @@ async function finishCompleteAttempt(page) {
   await expect(page.locator("#resultScreen")).not.toHaveClass(/hidden/);
 }
 
+test("personal archive", async ({ browser }) => {
+  const stamp = Date.now();
+  const guest = await browser.newContext({ baseURL: "http://127.0.0.1:8091" });
+  const student = await browser.newContext({ baseURL: "http://127.0.0.1:8091" });
+  const guestPage = await guest.newPage();
+  const studentPage = await student.newPage();
+  let guestUploads = 0;
+  let studentUploads = 0;
+  await guest.route("**/api/personal-recordings?*", route => {
+    if (route.request().method() === "POST") guestUploads += 1;
+    return route.continue();
+  });
+  await student.route("**/api/personal-recordings?*", route => {
+    if (route.request().method() === "POST") studentUploads += 1;
+    return route.continue();
+  });
+  try {
+    await installRecorder(guestPage);
+    await guestPage.goto("/");
+    await guestPage.locator("#fastMode").check({ force: true });
+    await finishTask(guestPage, 2);
+    expect(guestUploads).toBe(0);
+
+    await installRecorder(studentPage);
+    await studentPage.goto("/");
+    await registerStudent(studentPage, stamp);
+    await studentPage.locator("#fastMode").check({ force: true });
+    await finishTask(studentPage, 2);
+    await expect.poll(() => studentUploads).toBe(1);
+    await studentPage.locator("#authButton").click();
+    await studentPage.locator("#openProgressBtn").click();
+    await expect(studentPage.locator("#personalRecordingsList")).toContainText("Удалится");
+    await expect(studentPage.locator("#personalRecordingsList audio")).toHaveAttribute("src", /^\/api\/personal-recordings\/\d+$/);
+  } finally {
+    await guest.close();
+    await student.close();
+  }
+});
+
 test("student submits a single task only after an explicit review request", async ({ browser }) => {
   const stamp = Date.now();
   const teacher = await browser.newContext({ baseURL: "http://127.0.0.1:8091" });

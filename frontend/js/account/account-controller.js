@@ -2,24 +2,30 @@ import { createAccountAuthController } from "./account-auth-controller.js";
 import { createAccountReviewsController } from "./account-reviews-controller.js";
 import { createAccountReviewRequestsController } from "./account-review-requests-controller.js";
 import { createAccountSecurityController } from "./account-security-controller.js";
+import { createAccountPersonalRecordingsController } from "./account-personal-recordings-controller.js";
 
 export function createAccountController(ctx) {
   let reviews;
   let reviewRequests;
   let security;
+  let personalRecordings;
 
   const refreshAccountData = async () => {
     if (!auth.user) return;
     if (auth.user.role === "teacher") {
       await reviews.loadTeacherReviewRequests();
     } else {
-      await reviewRequests.loadStudentReviewRequests();
+      await Promise.all([
+        reviewRequests.loadStudentReviewRequests(),
+        personalRecordings.loadPersonalRecordings(),
+      ]);
     }
   };
 
   const resetAccountViews = () => {
     reviews?.reset();
     reviewRequests?.reset();
+    personalRecordings?.reset();
   };
 
   const auth = createAccountAuthController({
@@ -31,6 +37,7 @@ export function createAccountController(ctx) {
 
   reviews = createAccountReviewsController({ toast: ctx.toast, getUser: () => auth.user });
   reviewRequests = createAccountReviewRequestsController({ ...ctx, getUser: () => auth.user });
+  personalRecordings = createAccountPersonalRecordingsController({ ...ctx, getUser: () => auth.user });
   security = createAccountSecurityController({ ...ctx, auth });
 
   return {
@@ -50,6 +57,8 @@ export function createAccountController(ctx) {
     submitReviewRequest: reviewRequests.submitReviewRequest,
     discardUploadingReviewRequest: reviewRequests.discardUploadingReviewRequest,
     clearPendingReviewRequest: reviewRequests.clearPendingReviewRequest,
+    archiveCompletedRun: personalRecordings.archiveCompletedRun,
+    loadPersonalRecordings: personalRecordings.loadPersonalRecordings,
     loadTeacherReviewRequests: reviews.loadTeacherReviewRequests,
     showStudentReviewHistory: reviews.showStudentReviewHistory,
     saveReviewScores: reviews.saveReviewScores,

@@ -13,6 +13,7 @@ import { api } from "../../frontend/js/shared/api.js";
 import { catalogMarkup, filterVariants, variantKind } from "../../frontend/js/catalog/variant-catalog.js";
 import { plural, pluralize } from "../../frontend/js/shared/plural.js";
 import { fullyRecordedTasks } from "../../frontend/js/account/account-review-requests-controller.js";
+import { personalRecordingsMarkup } from "../../frontend/js/account/account-personal-recordings-controller.js";
 
 test("escapeHtml protects every HTML-sensitive character", () => {
   assert.equal(escapeHtml(`<script data-x="'">&`), "&lt;script data-x=&quot;&#39;&quot;&gt;&amp;");
@@ -117,6 +118,22 @@ test("fully recorded tasks require every task-specific recording position", () =
   assert.deepEqual(fullyRecordedTasks([1, 2, 3], recordings), [2, 3]);
   assert.deepEqual(fullyRecordedTasks([1], [...recordings, { task: 1, question: 5 }]), [1]);
   assert.deepEqual(fullyRecordedTasks([2], [{ task: 2, question: 1 }]), []);
+});
+
+test("personal recording markup escapes labels and shows the expiry date", () => {
+  const markup = personalRecordingsMarkup([{
+    id: 7,
+    label: "<answer>",
+    variantId: "<variant>",
+    taskNumber: 2,
+    expiresAt: 1_800_000_000,
+  }]);
+
+  assert.match(markup, /&lt;answer&gt;/);
+  assert.match(markup, /&lt;variant&gt;/);
+  assert.match(markup, /\/api\/personal-recordings\/7/);
+  assert.match(markup, /Удалится/);
+  assert.doesNotMatch(markup, /<answer>|<variant>/);
 });
 
 test("task markup escapes JSON content and keeps runner state", () => {

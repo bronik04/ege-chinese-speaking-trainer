@@ -127,12 +127,12 @@ function recoverInterruptedRun() {
 }
 
 function clearHistory() {
-  if (!confirm("Удалить всю историю тренировок? Это действие нельзя отменить.")) return;
+  if (!confirm("Удалить историю тренировок из этого браузера? Сохранённые аудиозаписи в личном архиве не удалятся.")) return;
   progress.runs = [];
   progress.activeRun = null;
   saveProgressLocal();
   closeModal($("progressModal"));
-  toast("История очищена");
+  toast("Локальная история очищена; личный архив сохранён");
 }
 
 function setStartButtonsEnabled(enabled) {
@@ -267,6 +267,7 @@ runner = createRunnerController({
   onRunFinished: () => {
     reviewRequestSent = false;
     renderReviewRequestChooser();
+    account?.archiveCompletedRun(runner.getCompletedRun(), runner.getCompletedRecordings());
   },
 });
 const {
@@ -287,6 +288,7 @@ account = createAccountController({
   getCompletedRecordings: () => runner.getCompletedRecordings(),
   getCompletedTasks: () => runner.getCompletedTasks(),
   getCompletedRun: () => runner.getCompletedRun(),
+  setArchiveStatus: (message) => { $("submissionStatus").textContent = message; },
   onReviewRequestSent: () => {
     reviewRequestSent = true;
     renderReviewRequestChooser();
@@ -319,7 +321,7 @@ $("authButton").addEventListener("click", () => openModal($("authModal")));
 $("authCloseBtn").addEventListener("click", () => closeModal($("authModal")));
 $("progressCloseBtn").addEventListener("click", () => closeModal($("progressModal")));
 $("teacherCloseBtn").addEventListener("click", () => closeModal($("teacherModal")));
-$("openProgressBtn").addEventListener("click", () => { renderHistory(); openModal($("progressModal")); });
+$("openProgressBtn").addEventListener("click", () => { renderHistory(); account.loadPersonalRecordings().catch(() => {}); openModal($("progressModal")); });
 $("clearHistoryBtn").addEventListener("click", clearHistory);
 $("loginTab").addEventListener("click", () => setAuthMode("login"));
 $("registerTab").addEventListener("click", () => setAuthMode("register"));
