@@ -49,7 +49,10 @@ test("student registers, signs out and signs back in through the account form", 
   const email = `ui-login-${Date.now()}@example.test`;
   await page.goto("/");
   await page.locator("#authButton").click();
+  await expect(page.locator("#registrationArchiveDisclosure")).toBeHidden();
   await page.locator("#registerTab").click();
+  await expect(page.locator("#registrationArchiveDisclosure")).toBeVisible();
+  await expect(page.locator("#registrationArchiveDisclosure")).toHaveText("Записи ответов хранятся в личном кабинете 6 месяцев, затем автоматически удаляются.");
   await page.locator("#authName").fill("UI Student");
   await page.locator("#authEmail").fill(email);
   await page.locator("#authPassword").fill("original123");
@@ -63,6 +66,7 @@ test("student registers, signs out and signs back in through the account form", 
 
   await page.locator("#authButton").click();
   await page.locator("#loginTab").click();
+  await expect(page.locator("#registrationArchiveDisclosure")).toBeHidden();
   await page.locator("#authEmail").fill(email);
   await page.locator("#authPassword").fill("original123");
   await page.locator("#authSubmitBtn").click();

@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 test("reference library filters phrases and switches exam tasks", async ({ page }) => {
   await page.goto("/reference.html");
   await expect(page.locator(".reference-tab")).toHaveCount(3);
+  await expect(page.locator(".reference-tabs")).toHaveCSS("border-radius", "16px");
   await expect(page.locator(".reference-tab").nth(0)).toHaveClass(/active/);
   await page.locator(".reference-tab").nth(1).hover();
   await expect(page.locator(".reference-tab").nth(1)).not.toHaveCSS("background-color", "rgb(92, 14, 14)");
@@ -30,10 +31,10 @@ test("reference library filters phrases and switches exam tasks", async ({ page 
   expect(Math.abs(listBox.width - cardBox.width)).toBeLessThan(2);
 });
 
-test("shared account, logo and footer are available across public pages", async ({ page }) => {
+test("shared account, wordmark and footer are available across public pages", async ({ page }) => {
   for (const path of ["/variants.html", "/reference.html", "/variant-editor.html"]) {
     await page.goto(path);
-    await expect(page.locator(".brand-logo")).toBeVisible();
+    await expect(page.locator(".brand-mark")).toHaveText("口试");
     await expect(page.locator(".account-btn")).toBeVisible();
     await expect(page.locator(".site-footer")).toBeVisible();
     await expect(page.locator('a[href="about.html"]')).toHaveCount(0);
@@ -45,12 +46,23 @@ test("shared account, logo and footer are available across public pages", async 
   await expect(page.locator("#authModal")).toBeVisible();
 });
 
-test("home uses bilingual motto and keeps account at the far right", async ({ page }) => {
+test("home uses horizontal motto and keeps account at the far right", async ({ page }) => {
   await page.goto("/");
-  await expect(page.locator(".hero-chinese")).toHaveText("熟能生巧");
+  await expect(page.locator(".hero-idiom")).toHaveText("熟能生巧");
   await expect(page.locator(".hero-copy h1")).toContainText("Мастерство приходит с практикой");
   const lastAction = await page.locator(".header-actions > :last-child").getAttribute("id");
   expect(lastAction).toBe("authButton");
+});
+
+test("account dialog follows the shared card system and closes safely", async ({ page }) => {
+  await page.goto("/");
+  await page.locator("#authButton").click();
+  await expect(page.locator("#authModal")).toBeVisible();
+  await expect(page.locator("#authModal .auth-dialog")).toHaveCSS("border-radius", "16px");
+  await expect(page.locator(".auth-tabs")).toHaveCSS("border-radius", "999px");
+  await expect(page.locator("#authSubmitBtn")).toHaveCSS("border-radius", "999px");
+  await page.locator("#authCloseBtn").click();
+  await expect(page.locator("#authModal")).toHaveClass(/hidden/);
 });
 
 test("reference link is hidden only during an active task", async ({ page }) => {
@@ -63,6 +75,9 @@ test("reference link is hidden only during an active task", async ({ page }) => 
 test("runner keeps locked task content out of the accessibility tree", async ({ page }) => {
   await page.goto("/");
   await page.locator('[data-start="1"]').click();
+  await expect(page.locator(".exam-steps")).toHaveCSS("border-radius", "16px");
+  await expect(page.locator(".task-paper")).toHaveCSS("border-radius", "16px");
+  await expect(page.locator(".timer-panel")).toHaveCSS("border-radius", "16px");
   await expect(page.locator("#runnerScreen")).not.toHaveAttribute("aria-live");
   await expect(page.locator("#taskContent")).toHaveAttribute("aria-hidden", "true");
   await expect(page.locator("#taskContent")).toHaveJSProperty("inert", true);

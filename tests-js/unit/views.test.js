@@ -248,6 +248,19 @@ test("variant catalog filters and escapes exam metadata", () => {
   assert.match(html, /&lt;script&gt;|&lt;Demo&gt;/);
 });
 
+test("restricted variant catalog offers registration without blocking the open material", () => {
+  const markup = catalogMarkup([{
+    id: "open-2026", year: 2026, label: "Открытый вариант", source: "ФИПИ", totalMinutes: 14, tasks: {},
+  }], { restricted: true });
+
+  assert.match(markup, /id="catalogAccessNotice"/);
+  assert.match(markup, /Остальные варианты доступны после регистрации/);
+  assert.match(markup, /href="index\.html\?account=1"/);
+  assert.match(markup, /href="index\.html\?variant=open-2026"/);
+  assert.doesNotMatch(catalogMarkup([], { restricted: true }), /catalogAccessNotice/);
+  assert.doesNotMatch(catalogMarkup([{ id: "open-2026", year: 2026, label: "Open", source: "ФИПИ", totalMinutes: 14, tasks: {} }]), /catalogAccessNotice/);
+});
+
 test("plural picks the Russian numeral form, including the 11-14 exception", () => {
   const forms = ["вариант", "варианта", "вариантов"];
   assert.equal(plural(1, ...forms), "вариант");

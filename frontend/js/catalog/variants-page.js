@@ -5,10 +5,11 @@ import "../shared/site-shell.js";
 const $ = (id) => document.getElementById(id);
 let variants = [];
 let activeYear = "all";
+let restricted = false;
 
 function render() {
   const filtered = filterVariants(variants, activeYear, $("variantSearch").value);
-  $("variantCatalog").innerHTML = catalogMarkup(filtered);
+  $("variantCatalog").innerHTML = catalogMarkup(filtered, { restricted });
   $("catalogStatus").textContent = filtered.length === variants.length
     ? `Доступно ${pluralize(filtered.length, "вариант", "варианта", "вариантов")}`
     : `Найдено ${filtered.length} из ${pluralize(variants.length, "варианта", "вариантов", "вариантов")}`;
@@ -18,8 +19,12 @@ function render() {
 
 async function loadVariants() {
   try {
-    const response = await fetch("/api/materials");
+    const [response, authResponse] = await Promise.all([
+      fetch("/api/materials"),
+      fetch("/api/auth/me"),
+    ]);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    restricted = !authResponse.ok;
     const payload = await response.json();
     const index = payload.materials;
     variants = await Promise.all(index.map(async item => {

@@ -13,70 +13,26 @@
   <link rel="stylesheet" href="/styles/base.css">
 </head>
 <body>
-  <div class="page-motif" aria-hidden="true" lang="zh">语</div>
   <header class="site-header">
-    <div class="header-primary">
-      <a class="brand" href="#" aria-label="На главную"><img class="brand-logo" src="/assets/logo.svg" alt="" width="48" height="48"><span><b lang="zh">口试</b><small>устная часть · китайский язык</small></span></a>
-    </div>
-    <div class="header-actions">
-      <nav class="site-nav" aria-label="Разделы сайта"><a class="header-link" id="referenceLink" href="reference.html">Справочник</a><a class="header-link" href="variants.html">Все варианты</a></nav><button class="sound-toggle" id="soundToggle" type="button" aria-pressed="true" aria-label="Выключить звук"><svg class="sound-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z"></path><path class="sound-waves" d="M16 8c1.4 1.1 1.4 6.9 0 8M19 5c3.2 2.8 3.2 11.2 0 14"></path></svg><span class="sound-track" aria-hidden="true"><span></span></span></button>
+    <a class="brand" href="/" aria-label="На главную"><span class="brand-mark" lang="zh">口试</span><span class="brand-divider" aria-hidden="true"></span><span class="brand-name"><b>Устная часть</b><small>китайский язык</small></span></a>
+    <nav class="site-nav" aria-label="Разделы сайта"><a class="header-link" href="/" aria-current="page">Тренажёр</a><a class="header-link" href="variants.html">Варианты</a><a class="header-link" id="referenceLink" href="reference.html">Справочник</a></nav>
+    <div class="header-actions"><button class="sound-toggle" id="soundToggle" type="button" aria-pressed="true" aria-label="Выключить звук"><svg class="sound-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z"></path><path class="sound-waves" d="M16 8c1.4 1.1 1.4 6.9 0 8M19 5c3.2 2.8 3.2 11.2 0 14"></path></svg></button>
       <button class="account-btn" id="authButton" type="button"><span class="account-dot"></span><span id="authButtonText">Войти</span></button>
     </div>
   </header>
 
   <main class="app-shell">
     <section id="homeScreen" class="screen home-screen">
-      <div class="hero-copy">
-        <p class="eyebrow" id="heroVariant">ЕГЭ · устная часть китайского языка</p>
-        <h1 class="hero-couplet">
-          <span class="hero-chinese" lang="zh">熟能生巧</span>
-          <span class="hero-gloss">
-            <span class="hero-reading" lang="zh-Latn">shú néng shēng qiǎo</span>
-            <span class="hero-translation">Мастерство приходит с практикой.</span>
-          </span>
-        </h1>
-        <p class="hero-text">Тренируйте устную речь в формате ЕГЭ: от подготовки и записи ответа до разбора результата и работы с преподавателем.</p>
-        <div class="facts" aria-label="Формат экзамена">
-          <span><b>3</b> задания</span>
-          <span><b id="totalMinutes">14</b> <span id="totalMinutesLabel">минут</span></span>
-          <span><b id="variantCount">7</b> <span id="variantCountLabel">вариантов</span></span>
-        </div>
-      </div>
-
-      <div class="mode-panel">
-        <label class="variant-picker" for="variantSelect">
-          <span><small>Текущий материал</small><b id="variantSource">Выберите вариант</b></span>
-          <select id="variantSelect" aria-label="Выбор варианта"></select>
-        </label>
-        <div class="mode-card exam-card">
-          <span class="mode-number" lang="zh">完整</span>
-          <div>
-            <p class="eyebrow">Полная симуляция</p>
-            <h2>Экзамен</h2>
-            <p>Все три задания подряд с официальными таймингами и одной итоговой страницей записей.</p>
-          </div>
-          <button class="primary-btn" data-start="exam" type="button" disabled>Начать экзамен <span>→</span></button>
-        </div>
-        <div class="practice-block">
-          <div class="practice-heading">
-            <div><p class="eyebrow">Точечная работа</p><h2>По заданиям</h2></div>
-            <label class="speed-switch"><input id="fastMode" type="checkbox"><span></span> Быстрый режим</label>
-          </div>
+      <div class="hero-row"><span class="hero-idiom" lang="zh">熟能生巧</span><div class="hero-copy"><h1 class="hero-title">Мастерство приходит с практикой.</h1><p class="hero-text">Полный экзамен или одно задание — с официальными таймингами, записью ответа и разбором по критериям.</p><p class="hero-meta"><span class="hero-meta-rule" aria-hidden="true"></span>3 задания · <b id="totalMinutes">14</b> <span id="totalMinutesLabel">минут</span> · <b id="variantCount">7</b> <span id="variantCountLabel">вариантов</span> и банк ФИПИ</p></div></div>
+      <div class="home-columns"><section class="material-panel"><div class="material-heading"><h2>Материалы</h2><a class="material-catalog-link" href="variants.html">Весь каталог →</a></div><div class="material-list" id="materialList"></div><p class="material-access-notice hidden" id="materialAccessNotice" role="note">Остальные варианты доступны после регистрации <a href="?account=1">Зарегистрироваться →</a></p><label class="project-select-native-label"><span id="variantSource">Выберите вариант</span><select id="variantSelect" class="project-select-native" data-project-select-mode="material-list" aria-label="Выбор варианта"></select></label></section>
+      <aside class="start-column"><div class="exam-card"><h2>Экзамен</h2><p>Три задания подряд, 14 минут, одна итоговая страница записей.</p><button class="primary-btn gold-btn" data-start="exam" type="button" disabled>Начать экзамен →</button></div><div class="practice-card"><div class="practice-heading"><b>По заданиям</b><label class="speed-switch"><input id="fastMode" type="checkbox"><span></span> быстро</label></div>
           <div class="task-grid">
-            <button class="task-card" data-start="1" type="button" disabled><b>01</b><span>Пять вопросов<small id="task1Timing">1:30 + 5 × 0:20</small></span><i>→</i></button>
-            <button class="task-card" data-start="2" type="button" disabled><b>02</b><span>Описание фото<small id="task2Timing">2:00 + до 2:00</small></span><i>→</i></button>
-            <button class="task-card" data-start="3" type="button" disabled><b>03</b><span id="task3CardTitle">Проектная работа<small id="task3Timing">3:00 + до 3:00</small></span><i>→</i></button>
-          </div>
-        </div>
-        <div class="mic-row">
-          <div><span class="status-dot" id="micDot"></span><b id="micStatus">Микрофон ещё не проверен</b><small>Записи остаются только на этом устройстве</small></div>
-          <button class="secondary-btn" id="checkMicBtn" type="button">Проверить микрофон</button>
-        </div>
+            <button class="task-card" data-start="1" type="button" disabled><span class="task-badge">1</span><span class="task-body">Пять вопросов<small id="task1Timing">1:30 + 5 × 0:20</small></span><i aria-hidden="true">→</i></button><button class="task-card" data-start="2" type="button" disabled><span class="task-badge">2</span><span class="task-body">Описание фотографии<small id="task2Timing">2:00 + до 2:00</small></span><i aria-hidden="true">→</i></button><button class="task-card" data-start="3" type="button" disabled><span class="task-badge">3</span><span class="task-body" id="task3CardTitle">Проектная работа<small id="task3Timing">3:00 + до 3:00</small></span><i aria-hidden="true">→</i></button></div><div class="mic-row"><span class="mic-state"><span class="status-dot" id="micDot"></span><b id="micStatus">Микрофон ещё не проверен</b></span><button class="text-btn" id="checkMicBtn" type="button">проверить</button></div></div>
         <section class="student-review-requests hidden" id="studentReviewRequestsPanel">
           <div><p class="eyebrow">Личная история</p><h2>Мои разборы</h2></div>
           <div class="review-request-list" id="studentReviewRequestsList"></div>
         </section>
-      </div>
+      </aside></div>
     </section>
 
     <section id="runnerScreen" class="screen runner-screen hidden">
@@ -141,14 +97,7 @@
     </section>
   </main>
 
-  <footer class="site-footer">
-    <div class="site-footer-inner">
-      <div class="footer-brand"><img src="/assets/logo.svg" alt="" width="48" height="48"><div><b lang="zh">口试</b><span>Подготовка к устной части ЕГЭ по китайскому языку</span></div></div>
-      <div class="footer-about"><p class="eyebrow">Разработка и методика</p><b>Николай Бровкин</b><span>Преподаватель китайского языка</span></div>
-      <div class="footer-links"><a href="mailto:bronik04@gmail.com">bronik04@gmail.com</a><a href="https://github.com/bronik04" target="_blank" rel="noreferrer">GitHub · bronik04</a></div>
-    </div>
-    <p class="footer-bottom">© <span data-current-year></span> <span lang="zh">口试</span> · Учебный проект</p>
-  </footer>
+  <footer class="site-footer"><span>Подготовка к устной части ЕГЭ по китайскому языку</span><span class="footer-author">Николай Бровкин · преподаватель китайского языка</span></footer>
 
   <div class="modal-backdrop hidden" id="authModal">
     <section class="auth-dialog" role="dialog" aria-modal="true" aria-labelledby="authTitle">
@@ -163,6 +112,7 @@
         </div>
         <form id="authForm">
           <label class="register-only hidden" id="authNameLabel">Имя и фамилия<input id="authName" name="displayName" type="text" autocomplete="name" minlength="2" maxlength="80"></label>
+          <p class="registration-archive-disclosure register-only hidden" id="registrationArchiveDisclosure">Записи ответов хранятся в личном кабинете 6 месяцев, затем автоматически удаляются.</p>
           <label>Email<input id="authEmail" name="email" type="email" autocomplete="email" required></label>
           <label>Пароль<input id="authPassword" name="password" type="password" autocomplete="current-password" minlength="8" maxlength="128" required></label>
           <button class="primary-btn wide" id="authSubmitBtn" type="submit">Войти</button>

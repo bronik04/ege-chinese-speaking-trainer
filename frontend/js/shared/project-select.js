@@ -102,7 +102,7 @@ function enhanceSelect(select) {
 }
 
 export function enhanceProjectSelects(root = document) {
-  root.querySelectorAll("select").forEach(enhanceSelect);
+  root.querySelectorAll("select:not([data-project-select-mode='material-list'])").forEach(enhanceSelect);
 }
 
 export function syncProjectSelects() {

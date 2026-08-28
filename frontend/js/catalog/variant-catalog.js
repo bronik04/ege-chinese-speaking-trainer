@@ -21,9 +21,12 @@ export function yearFiltersMarkup(years, activeYear = "all") {
   return buttons.map(item => `<button class="year-filter${item.value === String(activeYear) ? " active" : ""}" type="button" data-year="${item.value}" aria-pressed="${item.value === String(activeYear)}">${item.label}</button>`).join("");
 }
 
-export function catalogMarkup(variants) {
+export function catalogMarkup(variants, { restricted = false } = {}) {
   if (!variants.length) return '<p class="catalog-empty">По этому запросу вариантов пока нет.</p>';
-  return variants.map(variant => {
+  const accessNotice = restricted
+    ? '<aside class="catalog-access-notice" id="catalogAccessNotice" role="note">Остальные варианты доступны после регистрации <a href="index.html?account=1">Зарегистрироваться →</a></aside>'
+    : "";
+  return accessNotice + variants.map(variant => {
     const taskNumbers = variant.kind === "task" ? [variant.taskNumber] : [1, 2, 3];
     const tasks = taskNumbers.map(number => {
       const title = variant.tasks?.[String(number)]?.title || `Задание ${number}`;

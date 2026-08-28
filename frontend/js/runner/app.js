@@ -8,6 +8,7 @@ import { plural, pluralize } from "../shared/plural.js";
 import { createAccountController } from "../account/account-controller.js";
 import { fullyRecordedTasks } from "../account/account-review-requests-controller.js";
 import { enhanceProjectSelects } from "../shared/project-select.js";
+import { enhanceMaterialList } from "../shared/material-list.js";
 import "../shared/site-shell.js";
 
 const $ = (id) => document.getElementById(id);
@@ -148,6 +149,7 @@ async function initVariants() {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const payload = await response.json();
     variantIndex = payload.materials;
+    $("materialAccessNotice").classList.toggle("hidden", variantIndex.length !== 1);
     $("variantCount").textContent = variantIndex.length;
     $("variantCountLabel").textContent = plural(variantIndex.length, "вариант", "варианта", "вариантов");
     $("variantSelect").innerHTML = variantIndex.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.label)}${item.kind === "task" ? ` · задание ${item.taskNumber}` : ""}</option>`).join("");
@@ -373,6 +375,7 @@ setAuthMode("login");
 
 async function initialize() {
   enhanceProjectSelects();
+  enhanceMaterialList($("variantSelect"), $("materialList"));
   await initVariants();
   await handleAccountLinks();
   await initAuth();

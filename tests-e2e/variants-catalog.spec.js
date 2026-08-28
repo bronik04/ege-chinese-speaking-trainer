@@ -57,12 +57,18 @@ async function signInAsOwner(context) {
 test("guest catalog exposes only the open 2026 variant", async ({ page }) => {
   await page.goto("/variants.html");
   await expect(page.locator(".variant-card")).toHaveCount(1);
+  await expect(page.locator("#catalogAccessNotice")).toContainText("Остальные варианты доступны после регистрации");
+  await expect(page.locator(".catalog-panel")).toHaveCSS("border-radius", "16px");
+  await expect(page.locator(".year-filter").first()).toHaveCSS("border-radius", "999px");
   await expect(page.locator("#createMaterialLink")).toHaveCount(0);
   await page.locator("#variantSearch").fill("официальный");
   await expect(page.locator(".variant-card")).toHaveCount(1);
   await page.locator(".variant-open").click();
   await expect(page).toHaveURL(/variant=open-2026/);
   await expect(page.locator("#variantSelect")).toHaveValue("open-2026");
+  await expect(page.locator("#materialList [role='radio']")).toHaveCount(1);
+  await expect(page.locator("#materialList [role='radio'][aria-checked='true']")).toContainText("Официальный вариант 2026");
+  await expect(page.locator("#materialAccessNotice")).toContainText("Остальные варианты доступны после регистрации");
 });
 
 test("registered user publishes a standalone task and opens it from catalog", async ({ browser }) => {
@@ -103,6 +109,7 @@ test("registered user publishes a standalone task and opens it from catalog", as
   const page = await context.newPage();
   await page.goto("/");
   await expect(page.locator("#variantSelect option").first()).toHaveValue("open-2026");
+  await expect(page.locator("#materialAccessNotice")).toBeHidden();
   await page.locator("#soundToggle").click();
   await expect(page.locator("#soundToggle")).toHaveAttribute("aria-pressed", "false");
   await page.locator("#authButton").click();
@@ -110,6 +117,7 @@ test("registered user publishes a standalone task and opens it from catalog", as
   await expect(page.locator(".progress-row")).toHaveCount(0);
   await page.locator("#authCloseBtn").click();
   await page.goto("/variants.html");
+  await expect(page.locator("#catalogAccessNotice")).toHaveCount(0);
   await expect(page.locator("#createMaterialLink")).toHaveCount(0);
   await page.locator("#variantSearch").fill("Авторское описание");
   await expect(page.locator(".variant-card")).toHaveCount(1);
@@ -117,7 +125,7 @@ test("registered user publishes a standalone task and opens it from catalog", as
   await page.locator(".variant-open").click();
   await expect(page).toHaveURL(new RegExp(`variant=${slug}`));
   await expect(page.locator("#variantSelect")).toHaveValue(slug);
-  await expect(page.locator("#variantSelect + .project-select-trigger .project-select-value")).toHaveCSS("white-space", "nowrap");
+  await expect(page.locator(`#materialList [role='radio'][data-value='${slug}']`)).toHaveAttribute("aria-checked", "true");
 
   await page.goto("/variant-editor.html");
   await expect(page.locator("[data-account-link]")).toContainText(email);
