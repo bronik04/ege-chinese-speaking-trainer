@@ -4,7 +4,7 @@
 
 Архитектурные границы и направление миграции описаны в [docs/architecture.md](docs/architecture.md), порядок внесения изменений — в [CONTRIBUTING.md](CONTRIBUTING.md), правила безопасности — в [SECURITY.md](SECURITY.md). Обязательные ориентиры для разработчиков и AI-агентов находятся в [AGENTS.md](AGENTS.md).
 
-Эксплуатационные процедуры: [backup/restore](docs/runbooks/backup-restore.md), [transcription worker](docs/runbooks/transcription-worker.md) и [incident response](docs/runbooks/incident-response.md).
+Эксплуатационные процедуры: [backup/restore](docs/runbooks/backup-restore.md), [transcription worker](docs/runbooks/transcription-worker.md), [хранение аудиозаписей](docs/runbooks/recording-retention.md) и [incident response](docs/runbooks/incident-response.md).
 
 ## Локальный запуск
 
