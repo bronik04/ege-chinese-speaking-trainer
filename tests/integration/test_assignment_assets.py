@@ -7,6 +7,7 @@ import unittest
 from contextlib import closing
 from pathlib import Path
 
+from trainer.domain.recording_retention import expires_at
 from trainer.infrastructure.database.migrations import upgrade_sqlite_database
 from trainer.infrastructure.database.queries.review_requests import (
     review_request_detail,
@@ -299,9 +300,10 @@ class ReviewRequestQueryTest(unittest.TestCase):
                 (self.queued_id, 2, '{"images":["/api/review-assets/1"]}', '{"content":3}', 3, 7),
             ).lastrowid
             database.execute(
-                """INSERT INTO review_request_recordings(item_id,question_number,label,storage_key,mime_type,size_bytes,created_at)
-                   VALUES (?,?,?,?,?,?,?)""",
-                (item_id, None, "Ответ", "private/audio.webm", "audio/webm", 12, 10),
+                """INSERT INTO review_request_recordings
+                   (item_id,question_number,label,storage_key,mime_type,size_bytes,created_at,expires_at)
+                   VALUES (?,?,?,?,?,?,?,?)""",
+                (item_id, None, "Ответ", "private/audio.webm", "audio/webm", 12, 10, expires_at(10)),
             )
             database.execute(
                 """INSERT INTO review_request_assets(request_id,storage_key,mime_type,size_bytes,created_at)

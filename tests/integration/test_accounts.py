@@ -9,6 +9,7 @@ from trainer.api.controllers import auth
 from trainer.api.results import RequestContext
 from trainer.api.schemas import DeleteAccountRequest
 from trainer.domain.accounts import password_hash
+from trainer.domain.recording_retention import expires_at
 from trainer.infrastructure.database.accounts import consume_rate_limit, consume_token, issue_token, record_audit
 from trainer.infrastructure.database.core import connect, initialize
 from trainer.infrastructure.mailer import send_email
@@ -92,9 +93,9 @@ class AccountSecurityTest(unittest.TestCase):
             ).lastrowid
             database.execute(
                 """INSERT INTO review_request_recordings(
-                       item_id,question_number,label,storage_key,mime_type,size_bytes,created_at
-                   ) VALUES (?,?,?,?,?,?,?)""",
-                (item_id, None, "Answer", audio_key, "audio/webm", 5, 1001),
+                       item_id,question_number,label,storage_key,mime_type,size_bytes,created_at,expires_at
+                   ) VALUES (?,?,?,?,?,?,?,?)""",
+                (item_id, None, "Answer", audio_key, "audio/webm", 5, 1001, expires_at(1001)),
             )
             database.execute(
                 """INSERT INTO review_request_assets(request_id,storage_key,mime_type,size_bytes,created_at)

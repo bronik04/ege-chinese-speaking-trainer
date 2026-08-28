@@ -6,6 +6,7 @@ from contextlib import closing
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from trainer.domain.recording_retention import expires_at
 from trainer.infrastructure.database.migrations import upgrade_sqlite_database
 from trainer.infrastructure.storage import LocalAudioStorage, S3AudioStorage, storage_from_env
 from trainer.services.recordings import stream_recording
@@ -37,9 +38,9 @@ class LocalStorageTest(unittest.TestCase):
                 ).lastrowid
                 database.execute(
                     """INSERT INTO review_request_recordings
-                       (item_id,question_number,label,storage_key,mime_type,size_bytes,created_at)
-                       VALUES (?,?,?,?,?,?,?)""",
-                    (item_id, None, "Answer", "review-requests/1/audio.webm", "audio/webm", 5, 1),
+                       (item_id,question_number,label,storage_key,mime_type,size_bytes,created_at,expires_at)
+                       VALUES (?,?,?,?,?,?,?,?)""",
+                    (item_id, None, "Answer", "review-requests/1/audio.webm", "audio/webm", 5, 1, expires_at(1)),
                 )
                 database.execute(
                     """INSERT INTO review_request_assets(request_id,storage_key,mime_type,size_bytes,created_at)
