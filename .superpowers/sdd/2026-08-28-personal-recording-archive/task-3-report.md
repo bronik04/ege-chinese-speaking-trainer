@@ -16,6 +16,13 @@
 - Full verification: `make check`
   - Passed (exit 0): pre-commit hooks, JavaScript and Python unit/integration tests, coverage checks, and content validation.
 
+## Review follow-up
+
+- Added an end-to-end service-level regression: `expire_recordings` removes metadata and creates the job before a mocked storage adapter fails; the pending job retries and completes after the adapter recovers.
+- Added startup best-effort regression: an expiry sweep exception is logged and does not prevent database initialization from returning.
+- Follow-up focused verification passed: `.venv/bin/python -m unittest tests.unit.test_application_services tests.unit.test_storage_cleanup_command tests.integration.test_api_flows -v` (40 tests).
+- Follow-up full verification passed: `make check` (exit 0).
+
 ## Commit
 
 `feat: expire archived recordings after six months` (final hash is supplied with the handoff).

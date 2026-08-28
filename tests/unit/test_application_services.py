@@ -8,6 +8,7 @@ from contextlib import closing
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from trainer.api import runtime
 from trainer.infrastructure.database.migrations import upgrade_sqlite_database
 from trainer.services.accounts import delete_account_storage
 from trainer.services.assignment_assets import copy_assignment_assets_from_env, read_assignment_asset
@@ -81,7 +82,8 @@ class AccountStorageServiceTest(unittest.TestCase):
 
 
 class StorageCleanupJobServiceTest(unittest.TestCase):
-    def test_expiry_removes_archive_and_review_metadata_and_queues_unique_audio_keys(self):
+    @patch("trainer.services.storage_cleanup.storage_from_env")
+    def test_expiry_removes_metadata_before_failed_physical_delete_and_retries(self, factory):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "trainer.sqlite3"
             upgrade_sqlite_database(path)
@@ -118,6 +120,24 @@ class StorageCleanupJobServiceTest(unittest.TestCase):
                 self.assertEqual(database.execute("SELECT COUNT(*) FROM review_request_recordings").fetchone()[0], 0)
                 keys = json.loads(database.execute("SELECT audio_keys_json FROM storage_cleanup_jobs").fetchone()[0])
                 self.assertEqual(keys, ["expired.webm"])
+                factory.return_value.delete.side_effect = OSError("storage unavailable")
+                failed = process_cleanup_jobs(
+                    database,
+                    audio_root=path.parent / "audio",
+                    material_root=path.parent / "materials",
+                    assignment_root=path.parent / "assignments",
+                    now=11,
+                )
+                self.assertEqual((failed.completed, failed.failed, failed.pending), (0, 1, 1))
+                factory.return_value.delete.side_effect = None
+                retried = process_cleanup_jobs(
+                    database,
+                    audio_root=path.parent / "audio",
+                    material_root=path.parent / "materials",
+                    assignment_root=path.parent / "assignments",
+                    now=12,
+                )
+                self.assertEqual((retried.completed, retried.failed, retried.pending), (1, 0, 0))
 
     def test_expiry_respects_shared_limit_and_does_not_enqueue_empty_job(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -173,6 +193,26 @@ class StorageCleanupJobServiceTest(unittest.TestCase):
                 )
                 audio_keys, _ = account_review_storage_keys(database, student_id)
                 self.assertEqual(audio_keys, ["personal.webm"])
+
+    @patch("trainer.api.runtime.process_cleanup_jobs")
+    @patch("trainer.api.runtime.expire_recordings", side_effect=OSError("storage unavailable"))
+    @patch("trainer.api.runtime.initialize_database")
+    @patch.object(runtime.logger, "exception")
+    def test_startup_cleanup_failure_is_best_effort(self, log_error, _initialize, _expire, process):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with (
+                patch.object(runtime, "DATA_DIR", root),
+                patch.object(runtime, "AUDIO_DIR", root / "audio"),
+                patch.object(runtime, "MATERIAL_ASSET_DIR", root / "materials"),
+                patch.object(runtime, "ASSIGNMENT_ASSET_DIR", root / "assignments"),
+            ):
+                runtime.init_database()
+
+        process.assert_not_called()
+        log_error.assert_called_once_with(
+            "Storage cleanup startup attempt failed", extra={"event": "storage_cleanup_startup_failed"}
+        )
 
     @patch("trainer.services.storage_cleanup.storage_from_env")
     def test_failed_job_is_retained_and_successful_retry_removes_it(self, factory):
