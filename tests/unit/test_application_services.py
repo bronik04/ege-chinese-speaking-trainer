@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 import tempfile
 import unittest
@@ -11,7 +12,12 @@ from trainer.infrastructure.database.migrations import upgrade_sqlite_database
 from trainer.services.accounts import delete_account_storage
 from trainer.services.assignment_assets import copy_assignment_assets_from_env, read_assignment_asset
 from trainer.services.recordings import delete_recordings, read_recording, write_recording
-from trainer.services.storage_cleanup import enqueue_cleanup_job, process_cleanup_jobs
+from trainer.services.storage_cleanup import (
+    account_review_storage_keys,
+    enqueue_cleanup_job,
+    expire_recordings,
+    process_cleanup_jobs,
+)
 
 
 class RecordingStorageServiceTest(unittest.TestCase):
@@ -75,6 +81,99 @@ class AccountStorageServiceTest(unittest.TestCase):
 
 
 class StorageCleanupJobServiceTest(unittest.TestCase):
+    def test_expiry_removes_archive_and_review_metadata_and_queues_unique_audio_keys(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "trainer.sqlite3"
+            upgrade_sqlite_database(path)
+            with closing(sqlite3.connect(path)) as database:
+                database.row_factory = sqlite3.Row
+                student_id = database.execute(
+                    "INSERT INTO users(email,password_hash,display_name,role,created_at) VALUES (?,?,?,?,?)",
+                    ("student@example.test", "hash", "Student", "student", 1),
+                ).lastrowid
+                database.execute(
+                    """INSERT INTO personal_recordings(student_id,run_id,variant_id,task_number,question_number,
+                       label,storage_key,mime_type,size_bytes,duration_seconds,created_at,expires_at)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (student_id, "run", "demo", 2, 1, "Answer", "expired.webm", "audio/webm", 1, 1.0, 1, 10),
+                )
+                request_id = database.execute(
+                    "INSERT INTO review_requests(student_id,kind,status,variant_id,run_json,submitted_at) VALUES (?,?,?,?,?,?)",
+                    (student_id, "task", "queued", "demo", "{}", 1),
+                ).lastrowid
+                item_id = database.execute(
+                    "INSERT INTO review_request_items(request_id,task_number,task_snapshot_json) VALUES (?,?,?)",
+                    (request_id, 2, "{}"),
+                ).lastrowid
+                database.execute(
+                    """INSERT INTO review_request_recordings(
+                       item_id,question_number,label,storage_key,mime_type,size_bytes,created_at,expires_at)
+                       VALUES (?,?,?,?,?,?,?,?)""",
+                    (item_id, 1, "Answer", "expired.webm", "audio/webm", 1, 1, 10),
+                )
+                database.commit()
+
+                self.assertEqual(expire_recordings(database, now=10, limit=2), 2)
+                self.assertEqual(database.execute("SELECT COUNT(*) FROM personal_recordings").fetchone()[0], 0)
+                self.assertEqual(database.execute("SELECT COUNT(*) FROM review_request_recordings").fetchone()[0], 0)
+                keys = json.loads(database.execute("SELECT audio_keys_json FROM storage_cleanup_jobs").fetchone()[0])
+                self.assertEqual(keys, ["expired.webm"])
+
+    def test_expiry_respects_shared_limit_and_does_not_enqueue_empty_job(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "trainer.sqlite3"
+            upgrade_sqlite_database(path)
+            with closing(sqlite3.connect(path)) as database:
+                database.row_factory = sqlite3.Row
+                student_id = database.execute(
+                    "INSERT INTO users(email,password_hash,display_name,role,created_at) VALUES (?,?,?,?,?)",
+                    ("student@example.test", "hash", "Student", "student", 1),
+                ).lastrowid
+                for task_number in (1, 2):
+                    database.execute(
+                        """INSERT INTO personal_recordings(student_id,run_id,variant_id,task_number,question_number,
+                           label,storage_key,mime_type,size_bytes,duration_seconds,created_at,expires_at)
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (
+                            student_id,
+                            "run",
+                            "demo",
+                            task_number,
+                            1,
+                            "Answer",
+                            f"{task_number}.webm",
+                            "audio/webm",
+                            1,
+                            1.0,
+                            1,
+                            10,
+                        ),
+                    )
+                database.commit()
+                self.assertEqual(expire_recordings(database, now=9), 0)
+                self.assertEqual(database.execute("SELECT COUNT(*) FROM storage_cleanup_jobs").fetchone()[0], 0)
+                self.assertEqual(expire_recordings(database, now=10, limit=1), 1)
+                self.assertEqual(database.execute("SELECT COUNT(*) FROM personal_recordings").fetchone()[0], 1)
+
+    def test_account_audio_keys_include_personal_recordings(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "trainer.sqlite3"
+            upgrade_sqlite_database(path)
+            with closing(sqlite3.connect(path)) as database:
+                database.row_factory = sqlite3.Row
+                student_id = database.execute(
+                    "INSERT INTO users(email,password_hash,display_name,role,created_at) VALUES (?,?,?,?,?)",
+                    ("student@example.test", "hash", "Student", "student", 1),
+                ).lastrowid
+                database.execute(
+                    """INSERT INTO personal_recordings(student_id,run_id,variant_id,task_number,question_number,
+                       label,storage_key,mime_type,size_bytes,duration_seconds,created_at,expires_at)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (student_id, "run", "demo", 2, 1, "Answer", "personal.webm", "audio/webm", 1, 1.0, 1, 10),
+                )
+                audio_keys, _ = account_review_storage_keys(database, student_id)
+                self.assertEqual(audio_keys, ["personal.webm"])
+
     @patch("trainer.services.storage_cleanup.storage_from_env")
     def test_failed_job_is_retained_and_successful_retry_removes_it(self, factory):
         with tempfile.TemporaryDirectory() as directory:

@@ -5,6 +5,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from trainer.infrastructure.database.core import begin_immediate
 from trainer.infrastructure.storage import storage_from_env
 
 
@@ -35,10 +36,41 @@ def account_review_storage_keys(database, student_id: int) -> tuple[list[str], l
            WHERE review_requests.student_id=?""",
         (student_id,),
     ).fetchall()
+    personal_recordings = database.execute(
+        "SELECT storage_key FROM personal_recordings WHERE student_id=?", (student_id,)
+    ).fetchall()
     return (
-        _keys(row["storage_key"] for row in recordings),
+        _keys(row["storage_key"] for row in [*recordings, *personal_recordings]),
         _keys(row["storage_key"] for row in assets),
     )
+
+
+def expire_recordings(database, *, now: int | None = None, limit: int = 500) -> int:
+    """Remove expired audio metadata and durably queue its private blobs for deletion."""
+    moment = int(time.time()) if now is None else int(now)
+    maximum = max(0, int(limit))
+    begin_immediate(database)
+    try:
+        archive_rows = database.execute(
+            """SELECT id, storage_key FROM personal_recordings
+               WHERE expires_at<=? ORDER BY expires_at, id LIMIT ?""",
+            (moment, maximum),
+        ).fetchall()
+        review_rows = database.execute(
+            """SELECT id, storage_key FROM review_request_recordings
+               WHERE expires_at<=? ORDER BY expires_at, id LIMIT ?""",
+            (moment, maximum - len(archive_rows)),
+        ).fetchall()
+        database.executemany("DELETE FROM personal_recordings WHERE id=?", [(row["id"],) for row in archive_rows])
+        database.executemany("DELETE FROM review_request_recordings WHERE id=?", [(row["id"],) for row in review_rows])
+        keys = _keys(row["storage_key"] for row in [*archive_rows, *review_rows])
+        if keys:
+            enqueue_cleanup_job(database, audio_keys=keys, material_keys=[], assignment_keys=[], now=moment)
+        database.commit()
+    except Exception:
+        database.rollback()
+        raise
+    return len(archive_rows) + len(review_rows)
 
 
 def enqueue_cleanup_job(

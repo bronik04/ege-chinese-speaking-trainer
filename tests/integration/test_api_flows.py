@@ -958,7 +958,8 @@ class ApiFlowTest(unittest.TestCase):
         other_student_cookie = self.register_student("review-delete-other")
         with runtime.connect() as database:
             student_id = database.execute(
-                "SELECT id FROM users WHERE email LIKE 'review-delete-%' ORDER BY id DESC LIMIT 1"
+                """SELECT id FROM users WHERE email LIKE 'review-delete-%'
+                   AND email NOT LIKE 'review-delete-other-%' ORDER BY id DESC LIMIT 1"""
             ).fetchone()["id"]
             material_id = database.execute(
                 """INSERT INTO materials(slug,owner_id,kind,task_number,title,year,source,status,content_json,
@@ -1025,10 +1026,34 @@ class ApiFlowTest(unittest.TestCase):
             ).fetchone()
             review_asset_id = review_asset["id"]
             asset_key = review_asset["storage_key"]
+            personal_key = f"personal-recordings/{student_id}/account-delete.webm"
+            database.execute(
+                """INSERT INTO personal_recordings(student_id,run_id,variant_id,task_number,question_number,
+                   label,storage_key,mime_type,size_bytes,duration_seconds,created_at,expires_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    student_id,
+                    "account-delete",
+                    "demo-2026",
+                    2,
+                    1,
+                    "Личный ответ",
+                    personal_key,
+                    "audio/webm",
+                    1,
+                    1.0,
+                    1,
+                    expires_at(1),
+                ),
+            )
         review_audio_path = runtime.AUDIO_DIR / audio_key
         review_asset_path = runtime.ASSIGNMENT_ASSET_DIR / asset_key
+        personal_audio_path = runtime.AUDIO_DIR / personal_key
+        personal_audio_path.parent.mkdir(parents=True, exist_ok=True)
+        personal_audio_path.write_bytes(b"personal-audio")
         self.assertTrue(review_audio_path.is_file())
         self.assertTrue(review_asset_path.is_file())
+        self.assertTrue(personal_audio_path.is_file())
 
         status, _, _ = self.request_bytes(f"/api/review-assets/{review_asset_id}", owner_cookie)
         self.assertEqual(status, 404)
@@ -1047,10 +1072,27 @@ class ApiFlowTest(unittest.TestCase):
         status, _, _ = self.request_bytes(f"/api/review-assets/{review_asset_id}", other_student_cookie)
         self.assertEqual(status, 404)
 
-        status, deleted, _ = self.request("DELETE", "/api/account", {"password": "student123"}, student_cookie)
+        cleanup_job = {}
+        original_cleanup = auth.process_cleanup_jobs
+
+        def inspect_cleanup(database, **kwargs):
+            cleanup_job["audio"] = json.loads(
+                database.execute(
+                    "SELECT audio_keys_json FROM storage_cleanup_jobs ORDER BY id DESC LIMIT 1"
+                ).fetchone()[0]
+            )
+            return original_cleanup(database, **kwargs)
+
+        auth.process_cleanup_jobs = inspect_cleanup
+        try:
+            status, deleted, _ = self.request("DELETE", "/api/account", {"password": "student123"}, student_cookie)
+        finally:
+            auth.process_cleanup_jobs = original_cleanup
         self.assertEqual(status, 200, deleted)
+        self.assertIn(personal_key, cleanup_job["audio"])
         self.assertFalse(review_audio_path.exists())
         self.assertFalse(review_asset_path.exists())
+        self.assertFalse(personal_audio_path.exists())
 
     def test_review_recording_upload_uses_audio_body_limit(self):
         self.assertEqual(
