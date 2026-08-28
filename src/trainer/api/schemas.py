@@ -69,6 +69,14 @@ class SubmissionCompleteRequest(ApiSchema):
     pass
 
 
+class PersonalRecordingUpload(ApiSchema):
+    runId: str = Field(min_length=1, max_length=120)
+    variantId: str = Field(pattern=r"^[a-z0-9-]{3,50}$")
+    taskNumber: int = Field(ge=1, le=3)
+    questionNumber: int = Field(ge=1, le=5)
+    label: str = Field(min_length=1, max_length=160)
+
+
 class ReviewRequestCreate(ApiSchema):
     kind: Literal["task", "attempt"]
     variantId: str = Field(pattern=r"^[a-z0-9-]{3,50}$")

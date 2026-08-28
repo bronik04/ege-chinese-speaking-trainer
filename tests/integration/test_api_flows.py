@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 import asgi
 from trainer import main as trainer_main
 from trainer.api import dependencies, routes, runtime
-from trainer.api.controllers import auth, recordings, review_requests
+from trainer.api.controllers import auth, personal_recordings, recordings, review_requests
 from trainer.api.errors import ApiError
 from trainer.api.results import FileResult, RequestContext
 from trainer.api.security import request_has_same_origin
@@ -129,6 +129,8 @@ class ApiFlowTest(unittest.TestCase):
         recordings.AUDIO_DIR = runtime.AUDIO_DIR
         cls.original_validate_duration = review_requests.validate_duration
         review_requests.validate_duration = lambda path, task: 1.0
+        cls.original_personal_validate_duration = personal_recordings.validate_duration
+        personal_recordings.validate_duration = lambda path, task: 1.0
         cls.client_context = TestClient(asgi.app)
         cls.client = cls.client_context.__enter__()
         cls.origin = "http://testserver"
@@ -137,6 +139,7 @@ class ApiFlowTest(unittest.TestCase):
     def tearDownClass(cls):
         cls.client_context.__exit__(None, None, None)
         review_requests.validate_duration = cls.original_validate_duration
+        personal_recordings.validate_duration = cls.original_personal_validate_duration
         if cls.original_owner_email is None:
             os.environ.pop("TRAINER_OWNER_EMAIL", None)
         else:
@@ -365,6 +368,66 @@ class ApiFlowTest(unittest.TestCase):
         )
         self.assertEqual(status, 200, corrected)
         self.assertEqual((corrected["reviewRequest"]["total"], corrected["reviewRequest"]["maximum"]), (4, 7))
+
+    def test_personal_recordings_are_private_owner_bound_and_expire(self):
+        student_cookie = self.register_student("personal-recording")
+        other_student_cookie = self.register_student("personal-recording-other")
+        upload_path = (
+            "/api/personal-recordings?runId=run-1&variantId=demo-2026&taskNumber=2&questionNumber=1&label=Answer"
+        )
+
+        status, payload = self.request_audio(upload_path, b"0123456789", student_cookie)
+        self.assertEqual(status, 201, payload)
+        recording = payload["recording"]
+        self.assertEqual(
+            set(recording),
+            {"id", "runId", "variantId", "taskNumber", "questionNumber", "label", "createdAt", "expiresAt"},
+        )
+        recording_id = recording["id"]
+
+        status, listed, _ = self.request("GET", "/api/personal-recordings", cookie=student_cookie)
+        self.assertEqual(status, 200, listed)
+        self.assertEqual(listed["recordings"], [recording])
+        self.assertNotIn("storageKey", json.dumps(listed))
+
+        status, body, mime_type = self.request_bytes(f"/api/personal-recordings/{recording_id}", student_cookie)
+        self.assertEqual((status, body, mime_type), (200, b"0123456789", "audio/webm"))
+        self.assertEqual(self.request("GET", "/api/personal-recordings")[0], 401)
+        self.assertEqual(self.request_bytes(f"/api/personal-recordings/{recording_id}", other_student_cookie)[0], 404)
+
+        status, duplicate = self.request_audio(upload_path, b"second", student_cookie)
+        self.assertEqual(status, 409, duplicate)
+        self.assertEqual(duplicate["code"], "personal_recording_exists")
+
+        status, invalid_metadata, _ = self.request(
+            "POST",
+            "/api/personal-recordings?runId=run-2&variantId=demo-2026&taskNumber=2&label=Answer",
+            cookie=student_cookie,
+        )
+        self.assertEqual(status, 422, invalid_metadata)
+        self.client.cookies.clear()
+        invalid_mime = self.client.post(
+            "/api/personal-recordings?runId=run-2&variantId=demo-2026&taskNumber=2&questionNumber=1&label=Answer",
+            content=b"not-audio",
+            headers={
+                "Content-Type": "text/plain",
+                "Origin": self.origin,
+                "Sec-Fetch-Site": "same-origin",
+                "Cookie": student_cookie,
+            },
+        )
+        self.assertEqual(invalid_mime.status_code, 415, invalid_mime.json())
+
+        with runtime.connect() as database:
+            row = database.execute(
+                "SELECT storage_key,created_at,expires_at FROM personal_recordings WHERE id=?", (recording_id,)
+            ).fetchone()
+            database.execute("UPDATE personal_recordings SET expires_at=0 WHERE id=?", (recording_id,))
+        self.assertTrue(row["storage_key"].startswith("personal-recordings/"))
+        self.assertTrue((runtime.AUDIO_DIR / row["storage_key"]).is_file())
+        self.assertFalse((runtime.ROOT / "public" / row["storage_key"]).exists())
+        self.assertEqual(row["expires_at"], expires_at(row["created_at"]))
+        self.assertEqual(self.request_bytes(f"/api/personal-recordings/{recording_id}", student_cookie)[0], 404)
 
     def test_student_queues_complete_attempt_for_owner_review(self):
         owner_cookie = self.verified_owner_cookie()
