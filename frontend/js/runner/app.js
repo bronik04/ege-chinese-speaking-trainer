@@ -149,7 +149,6 @@ async function initVariants() {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const payload = await response.json();
     variantIndex = payload.materials;
-    $("materialAccessNotice").classList.toggle("hidden", variantIndex.length !== 1);
     $("variantCount").textContent = variantIndex.length;
     $("variantCountLabel").textContent = plural(variantIndex.length, "вариант", "варианта", "вариантов");
     $("variantSelect").innerHTML = variantIndex.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.label)}${item.kind === "task" ? ` · задание ${item.taskNumber}` : ""}</option>`).join("");
@@ -286,7 +285,10 @@ account = createAccountController({
   getVariant: () => variant,
   startRun,
   getVariantIndex: () => variantIndex,
-  refreshMaterials: initVariants,
+  refreshMaterials: async () => {
+    await initVariants();
+    $("materialAccessNotice").classList.toggle("hidden", Boolean(account?.user));
+  },
   getCompletedRecordings: () => runner.getCompletedRecordings(),
   getCompletedTasks: () => runner.getCompletedTasks(),
   getCompletedRun: () => runner.getCompletedRun(),
@@ -379,6 +381,7 @@ async function initialize() {
   await initVariants();
   await handleAccountLinks();
   await initAuth();
+  $("materialAccessNotice").classList.toggle("hidden", Boolean(account?.user));
   recoverInterruptedRun();
   renderProgress();
   const url = new URL(window.location.href);

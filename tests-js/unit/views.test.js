@@ -254,7 +254,7 @@ test("restricted variant catalog offers registration without blocking the open m
   }], { restricted: true });
 
   assert.match(markup, /id="catalogAccessNotice"/);
-  assert.match(markup, /Остальные варианты и личный архив записей доступны после регистрации\./);
+  assert.match(markup, /После регистрации доступны остальные варианты и личный архив записей/);
   assert.match(markup, /href="index\.html\?account=1"/);
   assert.match(markup, /href="index\.html\?variant=open-2026"/);
   assert.doesNotMatch(catalogMarkup([], { restricted: true }), /catalogAccessNotice/);

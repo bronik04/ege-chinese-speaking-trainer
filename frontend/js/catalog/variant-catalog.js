@@ -24,7 +24,7 @@ export function yearFiltersMarkup(years, activeYear = "all") {
 export function catalogMarkup(variants, { restricted = false } = {}) {
   if (!variants.length) return '<p class="catalog-empty">По этому запросу вариантов пока нет.</p>';
   const accessNotice = restricted
-    ? '<aside class="catalog-access-notice" id="catalogAccessNotice" role="note">Остальные варианты и личный архив записей доступны после регистрации. <a href="index.html?account=1">Зарегистрироваться →</a></aside>'
+    ? '<aside class="catalog-access-notice" id="catalogAccessNotice" role="note">После регистрации доступны остальные варианты и личный архив записей <a href="index.html?account=1">Зарегистрироваться →</a></aside>'
     : "";
   return accessNotice + variants.map(variant => {
     const taskNumbers = variant.kind === "task" ? [variant.taskNumber] : [1, 2, 3];

@@ -57,7 +57,7 @@ async function signInAsOwner(context) {
 test("guest catalog exposes only the open 2026 variant", async ({ page }) => {
   await page.goto("/variants.html");
   await expect(page.locator(".variant-card")).toHaveCount(1);
-  await expect(page.locator("#catalogAccessNotice")).toHaveText("Остальные варианты и личный архив записей доступны после регистрации. Зарегистрироваться →");
+  await expect(page.locator("#catalogAccessNotice")).toHaveText("После регистрации доступны остальные варианты и личный архив записей Зарегистрироваться →");
   await expect(page.locator(".catalog-panel")).toHaveCSS("border-radius", "16px");
   await expect(page.locator(".year-filter").first()).toHaveCSS("border-radius", "999px");
   await expect(page.locator("#createMaterialLink")).toHaveCount(0);
@@ -68,7 +68,7 @@ test("guest catalog exposes only the open 2026 variant", async ({ page }) => {
   await expect(page.locator("#variantSelect")).toHaveValue("open-2026");
   await expect(page.locator("#materialList [role='radio']")).toHaveCount(1);
   await expect(page.locator("#materialList [role='radio'][aria-checked='true']")).toContainText("Официальный вариант 2026");
-  await expect(page.locator("#materialAccessNotice")).toHaveText("Остальные варианты и личный архив записей доступны после регистрации. Зарегистрироваться →");
+  await expect(page.locator("#materialAccessNotice")).toHaveText("После регистрации доступны остальные варианты и личный архив записей Зарегистрироваться →");
 });
 
 test("registered user publishes a standalone task and opens it from catalog", async ({ browser }) => {

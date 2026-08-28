@@ -52,7 +52,7 @@ test("student registers, signs out and signs back in through the account form", 
   await expect(page.locator("#registrationArchiveDisclosure")).toBeHidden();
   await page.locator("#registerTab").click();
   await expect(page.locator("#registrationArchiveDisclosure")).toBeVisible();
-  await expect(page.locator("#registrationArchiveDisclosure")).toHaveText("Записи ответов хранятся в личном кабинете 6 месяцев, затем автоматически удаляются.");
+  await expect(page.locator("#registrationArchiveDisclosure")).toHaveText("Ответы сохраняются в личном архиве на 6 месяцев, затем удаляются автоматически.");
   await page.locator("#authName").fill("UI Student");
   await page.locator("#authEmail").fill(email);
   await page.locator("#authPassword").fill("original123");
