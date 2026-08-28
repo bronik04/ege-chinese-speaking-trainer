@@ -324,7 +324,7 @@ $("mainActionBtn").addEventListener("click", startPreparation);
 $("skipBtn").addEventListener("click", skipPhase);
 $("exitBtn").addEventListener("click", exitRun);
 $("restartBtn").addEventListener("click", () => showScreen("home"));
-$("retryArchiveBtn").addEventListener("click", () => account.retryArchive(runner.getCompletedRun()));
+$("retryArchiveBtn").addEventListener("click", () => account.retryArchive());
 $("authButton").addEventListener("click", () => openModal($("authModal")));
 $("authCloseBtn").addEventListener("click", () => closeModal($("authModal")));
 $("progressCloseBtn").addEventListener("click", () => closeModal($("progressModal")));

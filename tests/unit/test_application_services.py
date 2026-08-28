@@ -135,7 +135,7 @@ class StorageCleanupJobServiceTest(unittest.TestCase):
                     audio_root=path.parent / "audio",
                     material_root=path.parent / "materials",
                     assignment_root=path.parent / "assignments",
-                    now=12,
+                    now=3611,
                 )
                 self.assertEqual((retried.completed, retried.failed, retried.pending), (1, 0, 0))
 
@@ -173,6 +173,42 @@ class StorageCleanupJobServiceTest(unittest.TestCase):
                 self.assertEqual(expire_recordings(database, now=9), 0)
                 self.assertEqual(database.execute("SELECT COUNT(*) FROM storage_cleanup_jobs").fetchone()[0], 0)
                 self.assertEqual(expire_recordings(database, now=10, limit=1), 1)
+                self.assertEqual(database.execute("SELECT COUNT(*) FROM personal_recordings").fetchone()[0], 1)
+
+    def test_expiry_selects_oldest_rows_across_personal_and_review_tables(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "trainer.sqlite3"
+            upgrade_sqlite_database(path)
+            with closing(sqlite3.connect(path)) as database:
+                database.row_factory = sqlite3.Row
+                student_id = database.execute(
+                    "INSERT INTO users(email,password_hash,display_name,role,created_at) VALUES (?,?,?,?,?)",
+                    ("oldest@example.test", "hash", "Student", "student", 1),
+                ).lastrowid
+                database.execute(
+                    """INSERT INTO personal_recordings(student_id,run_id,variant_id,task_number,question_number,
+                       label,storage_key,mime_type,size_bytes,duration_seconds,created_at,expires_at)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (student_id, "run", "demo", 2, 1, "Personal", "personal.webm", "audio/webm", 1, 1.0, 1, 20),
+                )
+                request_id = database.execute(
+                    "INSERT INTO review_requests(student_id,kind,status,variant_id,run_json) VALUES (?,?,?,?,?)",
+                    (student_id, "task", "queued", "demo", "{}"),
+                ).lastrowid
+                item_id = database.execute(
+                    "INSERT INTO review_request_items(request_id,task_number,task_snapshot_json) VALUES (?,?,?)",
+                    (request_id, 2, "{}"),
+                ).lastrowid
+                database.execute(
+                    """INSERT INTO review_request_recordings(
+                       item_id,question_number,label,storage_key,mime_type,size_bytes,created_at,expires_at)
+                       VALUES (?,?,?,?,?,?,?,?)""",
+                    (item_id, None, "Review", "review.webm", "audio/webm", 1, 1, 10),
+                )
+                database.commit()
+
+                self.assertEqual(expire_recordings(database, now=20, limit=1), 1)
+                self.assertEqual(database.execute("SELECT COUNT(*) FROM review_request_recordings").fetchone()[0], 0)
                 self.assertEqual(database.execute("SELECT COUNT(*) FROM personal_recordings").fetchone()[0], 1)
 
     def test_account_audio_keys_include_personal_recordings(self):
@@ -249,10 +285,54 @@ class StorageCleanupJobServiceTest(unittest.TestCase):
                     assignment_root=root / "assignments",
                     now=102,
                 )
+                self.assertEqual((summary.completed, summary.failed, summary.pending), (0, 0, 1))
+                summary = process_cleanup_jobs(
+                    database,
+                    audio_root=root / "audio",
+                    material_root=root / "materials",
+                    assignment_root=root / "assignments",
+                    now=3701,
+                )
                 self.assertEqual((summary.completed, summary.failed), (1, 0))
                 self.assertIsNone(
                     database.execute("SELECT id FROM storage_cleanup_jobs WHERE id=?", (job_id,)).fetchone()
                 )
+
+    @patch("trainer.services.storage_cleanup.storage_from_env")
+    def test_cleanup_job_is_invisible_until_its_available_time(self, factory):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "trainer.sqlite3"
+            upgrade_sqlite_database(path)
+            with closing(sqlite3.connect(path)) as database:
+                database.row_factory = sqlite3.Row
+                enqueue_cleanup_job(
+                    database,
+                    audio_keys=["uploading.webm"],
+                    material_keys=[],
+                    assignment_keys=[],
+                    now=100,
+                    available_at=200,
+                )
+                deferred = process_cleanup_jobs(
+                    database,
+                    audio_root=root / "audio",
+                    material_root=root / "materials",
+                    assignment_root=root / "assignments",
+                    now=199,
+                )
+                self.assertEqual((deferred.completed, deferred.failed, deferred.pending), (0, 0, 1))
+                factory.return_value.delete.assert_not_called()
+
+                available = process_cleanup_jobs(
+                    database,
+                    audio_root=root / "audio",
+                    material_root=root / "materials",
+                    assignment_root=root / "assignments",
+                    now=200,
+                )
+                self.assertEqual((available.completed, available.failed, available.pending), (1, 0, 0))
+                factory.return_value.delete.assert_called_once_with("uploading.webm")
 
     @patch("trainer.services.accounts.storage_from_env")
     def test_account_cleanup_propagates_storage_failure(self, factory):

@@ -113,9 +113,11 @@ class SqliteMigrationTest(unittest.TestCase):
                     "last_error",
                     "created_at",
                     "updated_at",
+                    "available_at",
                 },
             )
             self.assertIn("storage_cleanup_jobs_created_idx", sqlite_schema(path)[1])
+            self.assertIn("storage_cleanup_jobs_available_idx", sqlite_schema(path)[1])
             self.assertEqual(
                 personal_recording_columns,
                 {
@@ -231,13 +233,49 @@ class SqliteMigrationTest(unittest.TestCase):
                            VALUES (?,?,?,?,?,?,?)""",
                         (item_id, 1, "Answer", "private/answer.webm", "audio/webm", 1, created_at),
                     ).lastrowid
+                    cleanup_job_id = database.execute(
+                        """INSERT INTO storage_cleanup_jobs(
+                               audio_keys_json,material_keys_json,assignment_keys_json,attempts,created_at,updated_at
+                           ) VALUES (?,?,?,?,?,?)""",
+                        ('["private/orphan.webm"]', "[]", "[]", 0, created_at, created_at),
+                    ).lastrowid
 
             upgrade_sqlite_database(path)
             with closing(sqlite3.connect(path)) as database:
                 expires_at = database.execute(
                     "SELECT expires_at FROM review_request_recordings WHERE id=?", (recording_id,)
                 ).fetchone()[0]
+                cleanup_available_at = database.execute(
+                    "SELECT available_at FROM storage_cleanup_jobs WHERE id=?", (cleanup_job_id,)
+                ).fetchone()[0]
             self.assertEqual(expires_at, expected_expiry)
+            self.assertEqual(cleanup_available_at, created_at)
+
+    def test_cleanup_scheduling_upgrades_a_database_already_at_personal_recordings_revision(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "trainer.sqlite3"
+            with closing(sqlite3.connect(path)) as database:
+                database.row_factory = sqlite3.Row
+                with database:
+                    apply_sqlite_baseline(database)
+                config = Config(str(PROJECT_ROOT / "alembic.ini"))
+                config.set_main_option("sqlalchemy.url", sqlite_url(path))
+                command.stamp(config, "20260711_03")
+                command.upgrade(config, "20260828_08")
+                with database:
+                    job_id = database.execute(
+                        """INSERT INTO storage_cleanup_jobs(
+                               audio_keys_json,material_keys_json,assignment_keys_json,attempts,created_at,updated_at
+                           ) VALUES (?,?,?,?,?,?)""",
+                        ('["private/orphan.webm"]', "[]", "[]", 0, 123, 123),
+                    ).lastrowid
+
+            upgrade_sqlite_database(path)
+            with closing(sqlite3.connect(path)) as database:
+                row = database.execute("SELECT available_at FROM storage_cleanup_jobs WHERE id=?", (job_id,)).fetchone()
+                indexes = sqlite_schema(path)[1]
+            self.assertEqual(row[0], 123)
+            self.assertIn("storage_cleanup_jobs_available_idx", indexes)
 
     def test_review_recording_allows_one_unquestioned_recording_per_item(self):
         with tempfile.TemporaryDirectory() as directory:

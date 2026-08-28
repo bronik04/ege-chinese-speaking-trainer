@@ -8,6 +8,9 @@ from pathlib import Path
 from trainer.infrastructure.database.core import begin_immediate
 from trainer.infrastructure.storage import storage_from_env
 
+UPLOAD_INTENT_GRACE_SECONDS = 60 * 60
+CLEANUP_RETRY_DELAY_SECONDS = 60 * 60
+
 
 @dataclass(frozen=True)
 class CleanupSummary:
@@ -51,16 +54,18 @@ def expire_recordings(database, *, now: int | None = None, limit: int = 500) -> 
     maximum = max(0, int(limit))
     begin_immediate(database)
     try:
-        archive_rows = database.execute(
-            """SELECT id, storage_key FROM personal_recordings
-               WHERE expires_at<=? ORDER BY expires_at, id LIMIT ?""",
-            (moment, maximum),
+        rows = database.execute(
+            """SELECT source,id,storage_key FROM (
+                   SELECT 'personal' AS source,id,storage_key,expires_at FROM personal_recordings
+                   WHERE expires_at<=?
+                   UNION ALL
+                   SELECT 'review' AS source,id,storage_key,expires_at FROM review_request_recordings
+                   WHERE expires_at<=?
+               ) ORDER BY expires_at,id,source LIMIT ?""",
+            (moment, moment, maximum),
         ).fetchall()
-        review_rows = database.execute(
-            """SELECT id, storage_key FROM review_request_recordings
-               WHERE expires_at<=? ORDER BY expires_at, id LIMIT ?""",
-            (moment, maximum - len(archive_rows)),
-        ).fetchall()
+        archive_rows = [row for row in rows if row["source"] == "personal"]
+        review_rows = [row for row in rows if row["source"] == "review"]
         database.executemany("DELETE FROM personal_recordings WHERE id=?", [(row["id"],) for row in archive_rows])
         database.executemany("DELETE FROM review_request_recordings WHERE id=?", [(row["id"],) for row in review_rows])
         keys = _keys(row["storage_key"] for row in [*archive_rows, *review_rows])
@@ -80,13 +85,15 @@ def enqueue_cleanup_job(
     material_keys,
     assignment_keys,
     now: int | None = None,
+    available_at: int | None = None,
 ) -> int:
     moment = int(time.time()) if now is None else int(now)
+    available = moment if available_at is None else int(available_at)
     cursor = database.execute(
         """
         INSERT INTO storage_cleanup_jobs(
-            audio_keys_json, material_keys_json, assignment_keys_json, attempts, created_at, updated_at
-        ) VALUES (?, ?, ?, 0, ?, ?)
+            audio_keys_json, material_keys_json, assignment_keys_json, attempts, created_at, updated_at, available_at
+        ) VALUES (?, ?, ?, 0, ?, ?, ?)
         """,
         (
             json.dumps(_keys(audio_keys)),
@@ -94,6 +101,7 @@ def enqueue_cleanup_job(
             json.dumps(_keys(assignment_keys)),
             moment,
             moment,
+            available,
         ),
     )
     return cursor.lastrowid
@@ -130,9 +138,11 @@ def process_cleanup_jobs(
     jobs = database.execute(
         """
         SELECT id, audio_keys_json, material_keys_json, assignment_keys_json
-        FROM storage_cleanup_jobs ORDER BY created_at, id LIMIT ?
+        FROM storage_cleanup_jobs
+        WHERE available_at <= ?
+        ORDER BY available_at, id LIMIT ?
         """,
-        (limit,),
+        (moment, limit),
     ).fetchall()
     completed = 0
     failed = 0
@@ -154,10 +164,15 @@ def process_cleanup_jobs(
             database.execute(
                 """
                 UPDATE storage_cleanup_jobs
-                SET attempts = attempts + 1, last_error = ?, updated_at = ?
+                SET attempts = attempts + 1, last_error = ?, updated_at = ?, available_at = ?
                 WHERE id = ?
                 """,
-                (f"{type(error).__name__}: {error}", moment, job["id"]),
+                (
+                    f"{type(error).__name__}: {error}",
+                    moment,
+                    moment + CLEANUP_RETRY_DELAY_SECONDS,
+                    job["id"],
+                ),
             )
             failed += 1
         else:

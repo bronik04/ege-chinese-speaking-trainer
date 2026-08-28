@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import time
 
 
-def _request_items(database: sqlite3.Connection, request_id: int, *, include_material: bool) -> list[dict]:
+def _request_items(database: sqlite3.Connection, request_id: int, *, include_material: bool, now: int) -> list[dict]:
     rows = database.execute(
         """SELECT id,task_number,task_snapshot_json,scores_json,total_score,max_score
            FROM review_request_items WHERE request_id=? ORDER BY task_number""",
@@ -14,8 +15,9 @@ def _request_items(database: sqlite3.Connection, request_id: int, *, include_mat
     for row in rows:
         recordings = database.execute(
             """SELECT id,question_number,label,mime_type,size_bytes,duration_seconds,created_at
-               FROM review_request_recordings WHERE item_id=? ORDER BY question_number,id""",
-            (row["id"],),
+               FROM review_request_recordings
+               WHERE item_id=? AND expires_at>? ORDER BY question_number,id""",
+            (row["id"], now),
         ).fetchall()
         item = {
             "task": row["task_number"],
@@ -45,8 +47,10 @@ def _request_assets(database: sqlite3.Connection, request_id: int) -> list[dict]
     return [{**dict(row), "url": f"/api/review-assets/{row['id']}"} for row in rows]
 
 
-def _request_payload(database: sqlite3.Connection, row, *, teacher_view: bool, include_material: bool) -> dict:
-    items = _request_items(database, row["id"], include_material=include_material)
+def _request_payload(
+    database: sqlite3.Connection, row, *, teacher_view: bool, include_material: bool, now: int
+) -> dict:
+    items = _request_items(database, row["id"], include_material=include_material, now=now)
     payload = {
         "id": row["id"],
         "kind": row["kind"],
@@ -79,7 +83,8 @@ def student_review_requests(database: sqlite3.Connection, student_id: int) -> li
            FROM review_requests WHERE student_id=? ORDER BY submitted_at DESC,id DESC""",
         (student_id,),
     ).fetchall()
-    return [_request_payload(database, row, teacher_view=False, include_material=False) for row in rows]
+    now = int(time.time())
+    return [_request_payload(database, row, teacher_view=False, include_material=False, now=now) for row in rows]
 
 
 def teacher_review_requests(
@@ -126,7 +131,8 @@ def teacher_review_requests(
         """,
         parameters,
     ).fetchall()
-    return [_request_payload(database, row, teacher_view=True, include_material=False) for row in rows]
+    now = int(time.time())
+    return [_request_payload(database, row, teacher_view=True, include_material=False, now=now) for row in rows]
 
 
 def review_request_detail(database: sqlite3.Connection, request_id: int) -> dict | None:
@@ -138,4 +144,6 @@ def review_request_detail(database: sqlite3.Connection, request_id: int) -> dict
            WHERE review_requests.id=? AND review_requests.status IN ('queued', 'reviewed')""",
         (request_id,),
     ).fetchone()
-    return _request_payload(database, row, teacher_view=True, include_material=True) if row else None
+    return (
+        _request_payload(database, row, teacher_view=True, include_material=True, now=int(time.time())) if row else None
+    )

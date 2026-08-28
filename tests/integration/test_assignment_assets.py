@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import tempfile
+import time
 import unittest
 from contextlib import closing
 from pathlib import Path
@@ -303,7 +304,16 @@ class ReviewRequestQueryTest(unittest.TestCase):
                 """INSERT INTO review_request_recordings
                    (item_id,question_number,label,storage_key,mime_type,size_bytes,created_at,expires_at)
                    VALUES (?,?,?,?,?,?,?,?)""",
-                (item_id, None, "Ответ", "private/audio.webm", "audio/webm", 12, 10, expires_at(10)),
+                (
+                    item_id,
+                    None,
+                    "Ответ",
+                    "private/audio.webm",
+                    "audio/webm",
+                    12,
+                    int(time.time()),
+                    expires_at(int(time.time())),
+                ),
             )
             database.execute(
                 """INSERT INTO review_request_assets(request_id,storage_key,mime_type,size_bytes,created_at)

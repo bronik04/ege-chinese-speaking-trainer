@@ -151,14 +151,16 @@ test("personal archive", async ({ browser }) => {
   }
 });
 
-test("personal archive retry keeps tab recordings after a transient upload failure", async ({ browser }) => {
+test("personal archive retries an older failed run when a new run finishes", async ({ browser }) => {
   const stamp = Date.now();
   const student = await browser.newContext({ baseURL: "http://127.0.0.1:8091" });
   const page = await student.newPage();
   let uploads = 0;
+  const uploadedRuns = [];
   await student.route("**/api/personal-recordings?*", route => {
     if (route.request().method() !== "POST") return route.continue();
     uploads += 1;
+    uploadedRuns.push(new URL(route.request().url()).searchParams.get("runId"));
     return uploads === 1 ? route.abort() : route.continue();
   });
   try {
@@ -168,10 +170,13 @@ test("personal archive retry keeps tab recordings after a transient upload failu
     await page.locator("#fastMode").check({ force: true });
     await finishTask(page, 2);
     await expect(page.locator("#retryArchiveBtn")).toBeVisible();
-    await page.locator("#retryArchiveBtn").click();
+    await page.locator("#restartBtn").click();
+    await finishTask(page, 3);
     await expect(page.locator("#retryArchiveBtn")).toBeHidden();
     await expect(page.locator("#submissionStatus")).toContainText("сохранены");
-    expect(uploads).toBe(2);
+    expect(uploads).toBe(3);
+    expect(uploadedRuns[0]).toBe(uploadedRuns[1]);
+    expect(uploadedRuns[2]).not.toBe(uploadedRuns[0]);
   } finally {
     await student.close();
   }

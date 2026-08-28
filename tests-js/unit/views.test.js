@@ -13,7 +13,10 @@ import { api } from "../../frontend/js/shared/api.js";
 import { catalogMarkup, filterVariants, variantKind } from "../../frontend/js/catalog/variant-catalog.js";
 import { plural, pluralize } from "../../frontend/js/shared/plural.js";
 import { fullyRecordedTasks } from "../../frontend/js/account/account-review-requests-controller.js";
-import { personalRecordingsMarkup } from "../../frontend/js/account/account-personal-recordings-controller.js";
+import {
+  createAccountPersonalRecordingsController,
+  personalRecordingsMarkup,
+} from "../../frontend/js/account/account-personal-recordings-controller.js";
 
 test("escapeHtml protects every HTML-sensitive character", () => {
   assert.equal(escapeHtml(`<script data-x="'">&`), "&lt;script data-x=&quot;&#39;&quot;&gt;&amp;");
@@ -126,6 +129,7 @@ test("personal recording markup escapes labels and shows the expiry date", () =>
     label: "<answer>",
     variantId: "<variant>",
     taskNumber: 2,
+    questionNumber: 1,
     expiresAt: 1_800_000_000,
   }]);
 
@@ -133,7 +137,123 @@ test("personal recording markup escapes labels and shows the expiry date", () =>
   assert.match(markup, /&lt;variant&gt;/);
   assert.match(markup, /\/api\/personal-recordings\/7/);
   assert.match(markup, /Удалится/);
+  assert.doesNotMatch(markup, /вопрос 1/);
   assert.doesNotMatch(markup, /<answer>|<variant>/);
+});
+
+function apiResponse(payload, status = 200) {
+  return { ok: status < 400, status, json: async () => payload };
+}
+
+test("account reset invalidates an in-flight archive before another user can receive it", async () => {
+  const originalDocument = globalThis.document;
+  const originalFetch = globalThis.fetch;
+  const nodes = { personalRecordingsList: { innerHTML: "" } };
+  let user = { id: 1, role: "student" };
+  let releaseFirstUpload;
+  const firstUpload = new Promise(resolve => { releaseFirstUpload = resolve; });
+  const postOwners = [];
+  globalThis.document = { getElementById: id => nodes[id] };
+  globalThis.fetch = async (path, options = {}) => {
+    if (options.method === "POST") {
+      postOwners.push(user?.id);
+      if (postOwners.length === 1) await firstUpload;
+      return apiResponse({ recording: { id: postOwners.length } }, 201);
+    }
+    return apiResponse({ recordings: [{ id: 99, label: "student-a", taskNumber: 2, questionNumber: 1 }] });
+  };
+  try {
+    const controller = createAccountPersonalRecordingsController({
+      getUser: () => user,
+      setArchiveStatus() {},
+    });
+    const archive = controller.archiveCompletedRun(
+      { id: "run-a", variantId: "demo-2026" },
+      [1, 2].map(question => ({ task: 1, question, label: `Q${question}`, type: "audio/webm", blob: new Blob(["x"]) })),
+    );
+    await Promise.resolve();
+    user = null;
+    controller.reset();
+    user = { id: 2, role: "student" };
+    releaseFirstUpload();
+    await archive;
+
+    assert.deepEqual(postOwners, [1]);
+    assert.equal(nodes.personalRecordingsList.innerHTML, "");
+  } finally {
+    globalThis.document = originalDocument;
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("account reset prevents a delayed recording list from exposing the previous user", async () => {
+  const originalDocument = globalThis.document;
+  const originalFetch = globalThis.fetch;
+  const nodes = { personalRecordingsList: { innerHTML: "" } };
+  let user = { id: 1, role: "student" };
+  let releaseList;
+  const delayedList = new Promise(resolve => { releaseList = resolve; });
+  globalThis.document = { getElementById: id => nodes[id] };
+  globalThis.fetch = async () => {
+    await delayedList;
+    return apiResponse({
+      recordings: [{ id: 99, label: "private-student-a", taskNumber: 2, questionNumber: 1 }],
+    });
+  };
+  try {
+    const controller = createAccountPersonalRecordingsController({
+      getUser: () => user,
+      setArchiveStatus() {},
+    });
+    const loading = controller.loadPersonalRecordings();
+    await Promise.resolve();
+    user = null;
+    controller.reset();
+    user = { id: 2, role: "student" };
+    releaseList();
+    await loading;
+
+    assert.equal(nodes.personalRecordingsList.innerHTML, "");
+  } finally {
+    globalThis.document = originalDocument;
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("starting another archive retries every older pending run", async () => {
+  const originalDocument = globalThis.document;
+  const originalFetch = globalThis.fetch;
+  const nodes = { personalRecordingsList: { innerHTML: "" } };
+  let attempts = 0;
+  const requestedRuns = [];
+  globalThis.document = { getElementById: id => nodes[id] };
+  globalThis.fetch = async (path, options = {}) => {
+    if (options.method === "POST") {
+      attempts += 1;
+      requestedRuns.push(new URL(path, "http://local").searchParams.get("runId"));
+      if (attempts === 1) throw new Error("temporary network failure");
+      return apiResponse({ recording: { id: 1 } }, 201);
+    }
+    return apiResponse({ recordings: [] });
+  };
+  try {
+    const controller = createAccountPersonalRecordingsController({
+      getUser: () => ({ id: 1, role: "student" }),
+      setArchiveStatus() {},
+    });
+    await controller.archiveCompletedRun(
+      { id: "old-run", variantId: "demo-2026" },
+      [{ task: 2, question: null, label: "Answer", type: "audio/webm", blob: new Blob(["x"]) }],
+    );
+    await controller.archiveCompletedRun(
+      { id: "new-run", variantId: "demo-2026" },
+      [{ task: 3, question: null, label: "New answer", type: "audio/webm", blob: new Blob(["y"]) }],
+    );
+    assert.deepEqual(requestedRuns, ["old-run", "old-run", "new-run"]);
+  } finally {
+    globalThis.document = originalDocument;
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("task markup escapes JSON content and keeps runner state", () => {

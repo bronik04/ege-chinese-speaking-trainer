@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 import subprocess
 import tempfile
-from contextlib import suppress
+import time
 from http import HTTPStatus
 from pathlib import Path
 
@@ -19,15 +19,9 @@ from trainer.services.personal_recordings import (
     personal_recording_file,
 )
 from trainer.services.recordings import write_recording
-from trainer.services.storage_cleanup import enqueue_cleanup_job
+from trainer.services.storage_cleanup import UPLOAD_INTENT_GRACE_SECONDS, enqueue_cleanup_job
 
 _EXTENSIONS = {"audio/webm": "webm", "audio/mp4": "m4a", "audio/ogg": "ogg", "audio/wav": "wav"}
-
-
-def _enqueue_orphan(key: str) -> None:
-    with suppress(Exception):
-        with runtime.connect() as database:
-            enqueue_cleanup_job(database, audio_keys=[key], material_keys=[], assignment_keys=[])
 
 
 def personal_recording_create(
@@ -37,6 +31,12 @@ def personal_recording_create(
     user: dict,
     _: RequestContext,
 ) -> ActionResult:
+    if payload.taskNumber in {2, 3} and payload.questionNumber != 1:
+        raise ApiError(
+            default_error_code(HTTPStatus.BAD_REQUEST),
+            "Для заданий 2 и 3 допустима только одна запись ответа",
+            HTTPStatus.BAD_REQUEST,
+        )
     mime_type = content_type.split(";", 1)[0].lower()
     extension = _EXTENSIONS.get(mime_type)
     if not extension:
@@ -54,21 +54,35 @@ def personal_recording_create(
 
     temporary_dir = runtime.DATA_DIR / "tmp"
     temporary_dir.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(dir=temporary_dir, suffix=f".{extension}", delete=False) as file:
+    with tempfile.NamedTemporaryFile(
+        dir=temporary_dir,
+        prefix="personal-recording-",
+        suffix=f".{extension}",
+        delete=False,
+    ) as file:
         file.write(body)
         temporary_path = Path(file.name)
     try:
-        duration = validate_duration(temporary_path, payload.taskNumber)
-    except (OSError, ValueError, subprocess.SubprocessError) as error:
-        temporary_path.unlink(missing_ok=True)
-        raise ApiError(
-            default_error_code(HTTPStatus.UNPROCESSABLE_ENTITY),
-            "Некорректная или слишком длинная аудиозапись",
-            HTTPStatus.UNPROCESSABLE_ENTITY,
-        ) from error
+        try:
+            duration = validate_duration(temporary_path, payload.taskNumber)
+        except (OSError, ValueError, subprocess.SubprocessError) as error:
+            raise ApiError(
+                default_error_code(HTTPStatus.UNPROCESSABLE_ENTITY),
+                "Некорректная или слишком длинная аудиозапись",
+                HTTPStatus.UNPROCESSABLE_ENTITY,
+            ) from error
 
-    storage_key = archive_key(user["id"], extension)
-    try:
+        storage_key = archive_key(user["id"], extension)
+        now = int(time.time())
+        with runtime.connect() as database:
+            cleanup_job_id = enqueue_cleanup_job(
+                database,
+                audio_keys=[storage_key],
+                material_keys=[],
+                assignment_keys=[],
+                now=now,
+                available_at=now + UPLOAD_INTENT_GRACE_SECONDS,
+            )
         write_recording(runtime.AUDIO_DIR, storage_key, temporary_path, mime_type)
         with runtime.connect() as database:
             try:
@@ -84,14 +98,12 @@ def personal_recording_create(
                     mime_type=mime_type,
                     size_bytes=len(body),
                     duration_seconds=duration,
+                    cleanup_job_id=cleanup_job_id,
                 )
             except sqlite3.IntegrityError as error:
                 raise ApiError(
                     "personal_recording_exists", "Запись для этого задания уже сохранена", HTTPStatus.CONFLICT
                 ) from error
-    except Exception:
-        _enqueue_orphan(storage_key)
-        raise
     finally:
         temporary_path.unlink(missing_ok=True)
     return ActionResult({"recording": recording}, status=HTTPStatus.CREATED)

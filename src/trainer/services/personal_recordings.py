@@ -24,6 +24,7 @@ def create_personal_recording(
     mime_type: str,
     size_bytes: int,
     duration_seconds: float,
+    cleanup_job_id: int,
     created_at: int | None = None,
 ) -> dict:
     created = int(time.time()) if created_at is None else int(created_at)
@@ -48,6 +49,7 @@ def create_personal_recording(
             expires_at(created),
         ),
     )
+    database.execute("DELETE FROM storage_cleanup_jobs WHERE id=?", (cleanup_job_id,))
     return recording_metadata(
         database.execute("SELECT * FROM personal_recordings WHERE id=?", (cursor.lastrowid,)).fetchone()
     )

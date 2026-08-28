@@ -138,12 +138,15 @@ class AccountSecurityTest(unittest.TestCase):
 
         with patch.dict(os.environ, {"TRAINER_AUDIO_STORAGE": "local"}):
             with connect(self.database_path) as database:
+                available_at = database.execute(
+                    "SELECT available_at FROM storage_cleanup_jobs ORDER BY id DESC LIMIT 1"
+                ).fetchone()[0]
                 summary = process_cleanup_jobs(
                     database,
                     audio_root=audio_root,
                     material_root=material_root,
                     assignment_root=copied_asset_root,
-                    now=1002,
+                    now=available_at,
                 )
 
         self.assertEqual((summary.completed, summary.failed, summary.pending), (1, 0, 0))

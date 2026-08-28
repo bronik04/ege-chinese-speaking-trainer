@@ -1,8 +1,10 @@
 import json
 import os
 import secrets
+import sqlite3
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -16,9 +18,12 @@ from trainer.api import dependencies, routes, runtime
 from trainer.api.controllers import auth, personal_recordings, recordings, review_requests
 from trainer.api.errors import ApiError
 from trainer.api.results import FileResult, RequestContext
+from trainer.api.schemas import PersonalRecordingUpload
 from trainer.api.security import request_has_same_origin
 from trainer.domain.accounts import password_hash, password_matches
 from trainer.domain.recording_retention import expires_at
+from trainer.infrastructure.database.queries import review_requests as review_request_queries
+from trainer.services.storage_cleanup import process_cleanup_jobs
 
 
 class SecurityHelpersTest(unittest.TestCase):
@@ -369,6 +374,22 @@ class ApiFlowTest(unittest.TestCase):
         self.assertEqual(status, 200, corrected)
         self.assertEqual((corrected["reviewRequest"]["total"], corrected["reviewRequest"]["maximum"]), (4, 7))
 
+        with runtime.connect() as database:
+            database.execute("UPDATE review_request_recordings SET expires_at=100 WHERE id=?", (recording_id,))
+        with (
+            patch.object(recordings.time, "time", return_value=100),
+            patch.object(review_request_queries.time, "time", return_value=100),
+        ):
+            self.assertEqual(self.request_bytes(f"/api/review-recordings/{recording_id}", student_cookie)[0], 404)
+            self.assertEqual(self.request_bytes(f"/api/review-recordings/{recording_id}", owner_cookie)[0], 404)
+            status, expired_history, _ = self.request("GET", "/api/student/review-requests", cookie=student_cookie)
+            expired_item = next(item for item in expired_history["requests"] if item["id"] == request_id)
+            self.assertEqual(expired_item["items"][0]["recordings"], [])
+            status, expired_detail, _ = self.request(
+                "GET", f"/api/teacher/review-requests/{request_id}", cookie=owner_cookie
+            )
+            self.assertEqual(expired_detail["reviewRequest"]["items"][0]["recordings"], [])
+
     def test_personal_recordings_are_private_owner_bound_and_expire(self):
         student_cookie = self.register_student("personal-recording")
         other_student_cookie = self.register_student("personal-recording-other")
@@ -384,6 +405,16 @@ class ApiFlowTest(unittest.TestCase):
             {"id", "runId", "variantId", "taskNumber", "questionNumber", "label", "createdAt", "expiresAt"},
         )
         recording_id = recording["id"]
+
+        with runtime.connect() as database:
+            storage_key = database.execute(
+                "SELECT storage_key FROM personal_recordings WHERE id=?", (recording_id,)
+            ).fetchone()["storage_key"]
+            cleanup_jobs = database.execute(
+                "SELECT COUNT(*) FROM storage_cleanup_jobs WHERE audio_keys_json LIKE ?",
+                (f'%"{storage_key}"%',),
+            ).fetchone()[0]
+        self.assertEqual(cleanup_jobs, 0)
 
         status, listed, _ = self.request("GET", "/api/personal-recordings", cookie=student_cookie)
         self.assertEqual(status, 200, listed)
@@ -418,6 +449,13 @@ class ApiFlowTest(unittest.TestCase):
         )
         self.assertEqual(invalid_mime.status_code, 415, invalid_mime.json())
 
+        status, invalid_position = self.request_audio(
+            "/api/personal-recordings?runId=run-3&variantId=demo-2026&taskNumber=2&questionNumber=2&label=Answer",
+            b"invalid-position",
+            student_cookie,
+        )
+        self.assertEqual(status, 400, invalid_position)
+
         with runtime.connect() as database:
             row = database.execute(
                 "SELECT storage_key,created_at,expires_at FROM personal_recordings WHERE id=?", (recording_id,)
@@ -428,6 +466,129 @@ class ApiFlowTest(unittest.TestCase):
         self.assertFalse((runtime.ROOT / "public" / row["storage_key"]).exists())
         self.assertEqual(row["expires_at"], expires_at(row["created_at"]))
         self.assertEqual(self.request_bytes(f"/api/personal-recordings/{recording_id}", student_cookie)[0], 404)
+
+    def test_personal_recording_has_durable_cleanup_intent_before_storage_write(self):
+        payload = PersonalRecordingUpload(
+            runId="durable-run",
+            variantId="demo-2026",
+            taskNumber=2,
+            questionNumber=1,
+            label="Answer",
+        )
+        user = {"id": 1, "email": "student@example.test", "role": "student"}
+        original_connect = runtime.connect
+        connect_calls = 0
+        with original_connect() as database:
+            jobs_before = database.execute("SELECT COUNT(*) FROM storage_cleanup_jobs").fetchone()[0]
+
+        def fail_second_connect():
+            nonlocal connect_calls
+            connect_calls += 1
+            if connect_calls == 2:
+                raise sqlite3.OperationalError("database unavailable after storage write")
+            return original_connect()
+
+        with (
+            patch.object(personal_recordings.runtime, "connect", side_effect=fail_second_connect),
+            patch.object(personal_recordings, "validate_duration", return_value=1.0),
+            patch.object(
+                personal_recordings,
+                "create_personal_recording",
+                side_effect=sqlite3.OperationalError("metadata insert failed"),
+            ),
+            self.assertRaises(sqlite3.OperationalError),
+        ):
+            personal_recordings.personal_recording_create(
+                payload,
+                b"durable-audio",
+                "audio/webm",
+                user,
+                RequestContext(client_ip="127.0.0.1", user_agent="test"),
+            )
+
+        with original_connect() as database:
+            jobs = database.execute("SELECT audio_keys_json FROM storage_cleanup_jobs").fetchall()
+        self.assertEqual(len(jobs), jobs_before + 1)
+        self.assertIn("personal-recordings/1/", jobs[-1]["audio_keys_json"])
+
+    def test_personal_recording_upload_intent_is_not_processed_while_metadata_is_committing(self):
+        with runtime.connect() as database:
+            user_id = database.execute(
+                "INSERT INTO users(email,password_hash,display_name,role,created_at) VALUES (?,?,?,?,?)",
+                (f"personal-cleanup-{secrets.token_hex(4)}@example.test", "hash", "Student", "student", 1),
+            ).lastrowid
+        user = {"id": user_id, "role": "student"}
+        payload = PersonalRecordingUpload(
+            runId="concurrent-cleanup-run",
+            variantId="demo-2026",
+            taskNumber=2,
+            questionNumber=1,
+            label="Answer",
+        )
+        original_write = personal_recordings.write_recording
+        cleanup_summaries = []
+
+        def write_while_cleanup_runs(root, storage_key, source, mime_type):
+            original_write(root, storage_key, source, mime_type)
+            with runtime.connect() as database:
+                cleanup_summaries.append(
+                    process_cleanup_jobs(
+                        database,
+                        audio_root=runtime.AUDIO_DIR,
+                        material_root=runtime.MATERIAL_ASSET_DIR,
+                        assignment_root=runtime.ASSIGNMENT_ASSET_DIR,
+                        now=int(time.time()),
+                    )
+                )
+
+        with (
+            patch.object(personal_recordings, "validate_duration", return_value=1.0),
+            patch.object(personal_recordings, "write_recording", side_effect=write_while_cleanup_runs),
+        ):
+            result = personal_recordings.personal_recording_create(
+                payload,
+                b"concurrent-audio",
+                "audio/webm",
+                user,
+                RequestContext(client_ip="127.0.0.1", user_agent="test"),
+            )
+
+        with runtime.connect() as database:
+            row = database.execute(
+                "SELECT storage_key FROM personal_recordings WHERE id=?", (result.payload["recording"]["id"],)
+            ).fetchone()
+            intent_count = database.execute(
+                "SELECT COUNT(*) FROM storage_cleanup_jobs WHERE audio_keys_json LIKE ?",
+                (f'%"{row["storage_key"]}"%',),
+            ).fetchone()[0]
+        self.assertEqual((cleanup_summaries[0].completed, cleanup_summaries[0].failed), (0, 0))
+        self.assertGreaterEqual(cleanup_summaries[0].pending, 1)
+        self.assertEqual(intent_count, 0)
+        self.assertTrue((runtime.AUDIO_DIR / row["storage_key"]).is_file())
+
+    def test_personal_recording_removes_temporary_file_when_cleanup_intent_fails(self):
+        payload = PersonalRecordingUpload(
+            runId="failed-intent-run",
+            variantId="demo-2026",
+            taskNumber=2,
+            questionNumber=1,
+            label="Answer",
+        )
+        temporary_directory = runtime.DATA_DIR / "tmp"
+        before = set(temporary_directory.glob("personal-recording-*"))
+        with (
+            patch.object(personal_recordings.runtime, "connect", side_effect=sqlite3.OperationalError("database down")),
+            patch.object(personal_recordings, "validate_duration", return_value=1.0),
+            self.assertRaises(sqlite3.OperationalError),
+        ):
+            personal_recordings.personal_recording_create(
+                payload,
+                b"temporary-audio",
+                "audio/webm",
+                {"id": 1, "role": "student"},
+                RequestContext(client_ip="127.0.0.1", user_agent="test"),
+            )
+        self.assertEqual(set(temporary_directory.glob("personal-recording-*")), before)
 
     def test_student_queues_complete_attempt_for_owner_review(self):
         owner_cookie = self.verified_owner_cookie()

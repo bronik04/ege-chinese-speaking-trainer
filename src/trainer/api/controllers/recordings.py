@@ -1,3 +1,5 @@
+import time
+
 from trainer.api.dependencies import owner_email_from_env
 from trainer.api.errors import ApiError, default_error_code
 from trainer.api.results import FileResult
@@ -45,8 +47,8 @@ def review_recording_get(recording_id: int, user: dict) -> FileResult:
                FROM review_request_recordings
                JOIN review_request_items ON review_request_items.id=review_request_recordings.item_id
                JOIN review_requests ON review_requests.id=review_request_items.request_id
-               WHERE review_request_recordings.id=?""",
-            (recording_id,),
+               WHERE review_request_recordings.id=? AND review_request_recordings.expires_at>?""",
+            (recording_id, int(time.time())),
         ).fetchone()
     if not row or not _review_file_allowed(row, user):
         raise ApiError("recording_not_found", "Запись не найдена", 404)
