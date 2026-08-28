@@ -7,6 +7,13 @@
 - Required verification: `make check` — passed (pre-commit checks, 14 JavaScript unit tests, 110 Python unit tests, and 93 integration tests; 2 PostgreSQL tests skipped because `TEST_DATABASE_URL` is not configured).
 - UI verification: `make test-e2e` — passed (25 Playwright scenarios).
 
+## Retry follow-up
+
+- Red: `npm exec playwright test tests-e2e/student-teacher.spec.js -- --grep 'personal archive retry'` — failed as expected because the retry control did not exist.
+- Green: `npm test && npm exec playwright test tests-e2e/student-teacher.spec.js -- --grep 'personal archive'` — passed with the transient-failure retry scenario.
+- Reverification: `make check` — passed; `make test-e2e` — passed (26 Playwright scenarios).
+- A failed upload now keeps its in-memory Blob in a per-run pending set, shows a result-screen retry control, and retries only entries not already accepted by the archive API.
+
 ## Delivered behaviour
 
 - Registered students archive every completed answer recording after a run; guests keep recordings only in the current tab and make no archive upload request.

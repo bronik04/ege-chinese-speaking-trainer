@@ -17,10 +17,10 @@ export function personalRecordingsMarkup(recordings) {
 }
 
 export function createAccountPersonalRecordingsController(ctx) {
-  const pendingArchives = new Map();
+  const archives = new Map();
 
   function reset() {
-    pendingArchives.clear();
+    archives.clear();
     $("personalRecordingsList").innerHTML = "";
   }
 
@@ -35,28 +35,45 @@ export function createAccountPersonalRecordingsController(ctx) {
     return recordings;
   }
 
-  function archiveCompletedRun(run, recordings) {
-    if (ctx.getUser()?.role !== "student" || !run || !recordings.length) return Promise.resolve();
-    if (pendingArchives.has(run.id)) return pendingArchives.get(run.id);
-    const archive = (async () => {
+  async function syncArchive(archive) {
+    if (archive.promise) return archive.promise;
+    archive.promise = (async () => {
       try {
-        for (const recording of recordings) {
+        for (const recording of [...archive.pending]) {
           try {
-            await uploadPersonalRecording(run, recording);
+            await uploadPersonalRecording(archive.run, recording);
+            archive.pending = archive.pending.filter(item => item !== recording);
           } catch (error) {
-            if (error.code !== "personal_recording_exists") throw error;
+            if (error.code === "personal_recording_exists") archive.pending = archive.pending.filter(item => item !== recording);
+            else throw error;
           }
         }
         await loadPersonalRecordings();
-        ctx.setArchiveStatus("Аудиозаписи сохранены в личном архиве.");
+        archives.delete(archive.run.id);
+        ctx.setArchiveStatus("Аудиозаписи сохранены в личном архиве.", false);
       } catch (_) {
-        pendingArchives.delete(run.id);
-        ctx.setArchiveStatus("Не удалось сохранить архив. Записи остаются в этой вкладке; попробуйте завершить тренировку позже.");
+        ctx.setArchiveStatus("Не удалось сохранить архив. Записи остаются в этой вкладке.", true);
+      } finally {
+        archive.promise = null;
       }
     })();
-    pendingArchives.set(run.id, archive);
-    return archive;
+    return archive.promise;
   }
 
-  return { archiveCompletedRun, loadPersonalRecordings, reset };
+  function archiveCompletedRun(run, recordings) {
+    if (ctx.getUser()?.role !== "student" || !run || !recordings.length) return Promise.resolve();
+    let archive = archives.get(run.id);
+    if (!archive) {
+      archive = { run, pending: [...recordings], promise: null };
+      archives.set(run.id, archive);
+    }
+    return syncArchive(archive);
+  }
+
+  function retryArchive(run) {
+    const archive = archives.get(run?.id);
+    return archive ? syncArchive(archive) : Promise.resolve();
+  }
+
+  return { archiveCompletedRun, retryArchive, loadPersonalRecordings, reset };
 }

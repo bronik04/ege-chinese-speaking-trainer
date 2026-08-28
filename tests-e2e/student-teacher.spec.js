@@ -151,6 +151,32 @@ test("personal archive", async ({ browser }) => {
   }
 });
 
+test("personal archive retry keeps tab recordings after a transient upload failure", async ({ browser }) => {
+  const stamp = Date.now();
+  const student = await browser.newContext({ baseURL: "http://127.0.0.1:8091" });
+  const page = await student.newPage();
+  let uploads = 0;
+  await student.route("**/api/personal-recordings?*", route => {
+    if (route.request().method() !== "POST") return route.continue();
+    uploads += 1;
+    return uploads === 1 ? route.abort() : route.continue();
+  });
+  try {
+    await installRecorder(page);
+    await page.goto("/");
+    await registerStudent(page, stamp);
+    await page.locator("#fastMode").check({ force: true });
+    await finishTask(page, 2);
+    await expect(page.locator("#retryArchiveBtn")).toBeVisible();
+    await page.locator("#retryArchiveBtn").click();
+    await expect(page.locator("#retryArchiveBtn")).toBeHidden();
+    await expect(page.locator("#submissionStatus")).toContainText("сохранены");
+    expect(uploads).toBe(2);
+  } finally {
+    await student.close();
+  }
+});
+
 test("student submits a single task only after an explicit review request", async ({ browser }) => {
   const stamp = Date.now();
   const teacher = await browser.newContext({ baseURL: "http://127.0.0.1:8091" });

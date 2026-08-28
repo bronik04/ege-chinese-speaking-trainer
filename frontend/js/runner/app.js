@@ -288,7 +288,10 @@ account = createAccountController({
   getCompletedRecordings: () => runner.getCompletedRecordings(),
   getCompletedTasks: () => runner.getCompletedTasks(),
   getCompletedRun: () => runner.getCompletedRun(),
-  setArchiveStatus: (message) => { $("submissionStatus").textContent = message; },
+  setArchiveStatus: (message, canRetry) => {
+    $("submissionStatus").textContent = message;
+    $("retryArchiveBtn").classList.toggle("hidden", !canRetry);
+  },
   onReviewRequestSent: () => {
     reviewRequestSent = true;
     renderReviewRequestChooser();
@@ -317,6 +320,7 @@ $("mainActionBtn").addEventListener("click", startPreparation);
 $("skipBtn").addEventListener("click", skipPhase);
 $("exitBtn").addEventListener("click", exitRun);
 $("restartBtn").addEventListener("click", () => showScreen("home"));
+$("retryArchiveBtn").addEventListener("click", () => account.retryArchive(runner.getCompletedRun()));
 $("authButton").addEventListener("click", () => openModal($("authModal")));
 $("authCloseBtn").addEventListener("click", () => closeModal($("authModal")));
 $("progressCloseBtn").addEventListener("click", () => closeModal($("progressModal")));
