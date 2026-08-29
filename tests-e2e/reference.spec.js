@@ -54,6 +54,42 @@ test("home uses horizontal motto and keeps account at the far right", async ({ p
   expect(lastAction).toBe("authButton");
 });
 
+test("home exam action uses the classic cream and gold colors", async ({ page }) => {
+  await page.goto("/");
+  const examAction = page.locator('.home-screen [data-start="exam"]');
+  await expect(examAction).toBeEnabled();
+  await expect(examAction).toHaveCSS("background-color", "rgb(244, 236, 219)");
+  await expect(examAction).toHaveCSS("background-image", "none");
+  await expect(examAction).toHaveCSS("color", "rgb(92, 14, 14)");
+  await expect(examAction).toHaveCSS("border-radius", "999px");
+
+  await examAction.hover();
+  await expect(examAction).toHaveCSS("background-color", "rgb(232, 211, 138)");
+  await expect(examAction).toHaveCSS("color", "rgb(92, 14, 14)");
+});
+
+test("primary actions share the flat cream and gold palette", async ({ page }) => {
+  await page.goto("/");
+  const homeAction = page.locator('.home-screen [data-start="exam"]');
+  await expect(homeAction).toBeEnabled();
+  await expect(homeAction).toHaveCSS("background-color", "rgb(244, 236, 219)");
+  await expect(homeAction).toHaveCSS("background-image", "none");
+  await expect(homeAction).toHaveCSS("color", "rgb(92, 14, 14)");
+
+  await page.locator('[data-start="1"]').click();
+  const runnerAction = page.locator("#mainActionBtn");
+  await expect(runnerAction).toHaveCSS("background-color", "rgb(244, 236, 219)");
+  await expect(runnerAction).toHaveCSS("background-image", "none");
+
+  await page.locator("#exitBtn").click();
+  await page.locator("#authButton").click();
+  const authAction = page.locator("#authSubmitBtn");
+  await expect(authAction).toHaveCSS("background-color", "rgb(244, 236, 219)");
+  await expect(authAction).toHaveCSS("background-image", "none");
+  await authAction.hover();
+  await expect(authAction).toHaveCSS("background-color", "rgb(232, 211, 138)");
+});
+
 test("account dialog follows the shared card system and closes safely", async ({ page }) => {
   await page.goto("/");
   await page.locator("#authButton").click();

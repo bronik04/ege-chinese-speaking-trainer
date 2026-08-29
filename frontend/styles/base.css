@@ -38,6 +38,12 @@
   --radius-sm: 8px;
   --radius-pill: 999px;
   --card-shadow: 0 2px 10px rgba(26, 10, 8, .04);
+  --action-bg: var(--cream);
+  --action-text: var(--crimson-deep);
+  --action-hover-bg: var(--gold-pale);
+  --action-active-bg: var(--crimson-deep);
+  --action-active-text: var(--cream);
+  --action-border: rgba(139, 26, 26, .18);
 }
 
 /* Главная 2A: правила стоят после базы, чтобы runner и result сохранили свой вид. */
@@ -589,4 +595,42 @@ body.modal-open { overflow: hidden; }
   #authModal { padding: 16px; }
   #authModal .auth-dialog { padding: 32px 20px 24px; }
   #authModal .auth-dialog h2 { font-size: 37px; }
+}
+
+/* Единая плоская палитра действий: геометрия каждого компонента сохраняется. */
+.primary-btn,
+.secondary-btn,
+.wide,
+.gold-btn,
+.home-screen .gold-btn,
+.runner-screen .wide,
+.result-screen .wide,
+#authModal .wide {
+  background: var(--action-bg);
+  color: var(--action-text);
+}
+
+.primary-btn:hover:not(:disabled),
+.secondary-btn:hover:not(:disabled),
+.wide:hover:not(:disabled),
+.gold-btn:hover:not(:disabled),
+.home-screen .gold-btn:hover:not(:disabled),
+.runner-screen .wide:hover:not(:disabled),
+.result-screen .wide:hover:not(:disabled),
+#authModal .wide:hover:not(:disabled) {
+  background: var(--action-hover-bg);
+  color: var(--action-text);
+  filter: none;
+}
+
+.primary-btn:active:not(:disabled),
+.secondary-btn:active:not(:disabled),
+.wide:active:not(:disabled),
+.gold-btn:active:not(:disabled),
+.home-screen .gold-btn:active:not(:disabled),
+.runner-screen .wide:active:not(:disabled),
+.result-screen .wide:active:not(:disabled),
+#authModal .wide:active:not(:disabled) {
+  background: var(--action-active-bg);
+  color: var(--action-active-text);
 }
