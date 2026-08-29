@@ -638,8 +638,8 @@ body.modal-open { overflow: hidden; }
 /* Служебные кнопки и карточки выбора используют общую цветовую систему,
    сохраняя собственные размеры, форму и глубину. */
 :is(.account-btn, .sound-toggle, .back-btn, .text-btn, .auth-link, .modal-close,
-    .task-card, .photo-choice, .project-select-trigger, .project-select-option,
-    .material-row) {
+    .task-card, .photo-choice, .step-pill, .project-select-trigger,
+    .project-select-option, .material-row, .download-link) {
   border-color: var(--action-border);
   background: var(--action-bg);
   background-image: none;
@@ -647,8 +647,8 @@ body.modal-open { overflow: hidden; }
 }
 
 :is(.account-btn, .sound-toggle, .back-btn, .text-btn, .auth-link, .modal-close,
-    .task-card, .photo-choice, .project-select-trigger, .project-select-option,
-    .material-row):hover:not(:disabled) {
+    .task-card, .photo-choice, .step-pill, .project-select-trigger,
+    .project-select-option, .material-row, .download-link):hover:not(:disabled) {
   border-color: var(--gold);
   background: var(--action-hover-bg);
   color: var(--action-text);

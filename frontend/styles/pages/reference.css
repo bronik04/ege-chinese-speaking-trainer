@@ -141,6 +141,11 @@
   box-shadow: none;
 }
 
+.reference-tab:not(.active) {
+  color: var(--action-text);
+  background: var(--action-bg);
+}
+
 .reference-tab.active > b {
   color: var(--action-active-text);
 }

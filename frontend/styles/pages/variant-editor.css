@@ -27,7 +27,7 @@
   border: 1px solid var(--hairline);
   border-radius: var(--radius-md);
   color: var(--action-text);
-  background: var(--paper);
+  background: var(--action-bg);
   text-align: left;
 }
 .my-material:hover { border-color: var(--gold); background: var(--action-hover-bg); }

@@ -150,3 +150,21 @@ test("mobile navigation and utility controls fit the viewport and a finger", asy
   await expect(page.locator(".year-filter").first()).toHaveCSS("min-height", "44px");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
 });
+
+test("interactive controls stay flat and fit a mobile viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await expect(page.locator('[data-start="exam"]')).toHaveCSS("background-image", "none");
+  await page.locator("#authButton").click();
+  await expect(page.locator("#authSubmitBtn")).toHaveCSS("background-image", "none");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
+
+  await page.goto("/reference.html");
+  await expect(page.locator(".reference-tab.active")).toHaveCSS("background-image", "none");
+  await expect(page.locator(".copy-phrase").first()).toHaveCSS("min-height", "44px");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
+
+  await page.goto("/variants.html");
+  await expect(page.locator(".year-filter.active")).toHaveCSS("background-image", "none");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
+});
