@@ -149,20 +149,37 @@ test("runner keeps locked task content out of the accessibility tree", async ({ 
 test("mobile navigation and utility controls fit the viewport and a finger", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
-  await expect(page.locator(".speed-switch")).toHaveCSS("min-height", "44px");
+  const mobileTargets = async selectors => {
+    for (const selector of selectors) {
+      const box = await page.locator(selector).first().boundingBox();
+      expect(box?.height, `${selector} should be at least 44px tall`).toBeGreaterThanOrEqual(44);
+    }
+  };
+  await page.evaluate(() => {
+    const fixture = document.createElement("div");
+    fixture.innerHTML = '<button class="secondary-btn" data-mobile-target>Дополнительное действие</button><a class="download-link" data-mobile-download href="#">Скачать</a>';
+    document.body.append(fixture);
+  });
+  await mobileTargets([".speed-switch", "#checkMicBtn", ".material-catalog-link", "[data-mobile-target]", "[data-mobile-download]"]);
   await page.locator('[data-start="1"]').click();
-  await expect(page.locator("#exitBtn")).toHaveCSS("min-height", "44px");
+  await page.locator("#mainActionBtn").click();
+  await expect(page.locator("#skipBtn")).toBeVisible();
+  await mobileTargets(["#exitBtn", "#skipBtn"]);
   await page.goto("/reference.html");
-  await expect(page.locator(".copy-phrase").first()).toHaveCSS("min-height", "44px");
-  await expect(page.locator(".header-link").first()).toHaveCSS("min-height", "44px");
+  await mobileTargets([".copy-phrase", ".header-link"]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
   await page.goto("/variants.html");
-  await expect(page.locator(".year-filter").first()).toHaveCSS("min-height", "44px");
-  await expect(page.locator("#catalogAccessNotice a")).toHaveCSS("min-height", "44px");
+  await mobileTargets([".year-filter", "#catalogAccessNotice a"]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
 });
 
 test("keyboard focus stays visible on selected and ordinary controls", async ({ page }) => {
+  await page.goto("/");
+  const fastMode = page.locator("#fastMode");
+  await fastMode.focus();
+  await expect(fastMode.locator("xpath=following-sibling::span")).toHaveCSS("outline-style", "solid");
+  await expect(fastMode.locator("xpath=following-sibling::span")).toHaveCSS("outline-color", "rgb(139, 26, 26)");
+
   await page.goto("/reference.html");
   const activeTab = page.locator(".reference-tab.active");
   await activeTab.focus();
@@ -181,6 +198,9 @@ test("interactive controls stay flat and fit a mobile viewport", async ({ page }
   await expect(page.locator('[data-start="exam"]')).toHaveCSS("background-image", "none");
   await page.locator("#authButton").click();
   await expect(page.locator("#authSubmitBtn")).toHaveCSS("background-image", "none");
+  await expect(page.locator("#authCloseBtn")).toHaveCSS("background-color", "rgb(244, 236, 219)");
+  await page.locator("#authCloseBtn").hover();
+  await expect(page.locator("#authCloseBtn")).toHaveCSS("background-color", "rgb(232, 211, 138)");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
 
   await page.goto("/reference.html");

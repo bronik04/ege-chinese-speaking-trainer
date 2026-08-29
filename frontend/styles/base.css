@@ -708,6 +708,14 @@ body.modal-open { overflow: hidden; }
   min-height: 44px;
 }
 
+#authModal .modal-close {
+  background: var(--action-bg);
+}
+
+#authModal .modal-close:hover:not(:disabled) {
+  background: var(--action-hover-bg);
+}
+
 #authModal .account-security-card .secondary-btn,
 #authModal .account-actions .secondary-btn {
   border-color: var(--action-border);
@@ -878,6 +886,17 @@ body.modal-open { overflow: hidden; }
   .review-task {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  #checkMicBtn.text-btn,
+  .runner-screen .text-btn,
+  .secondary-btn,
+  .download-link,
+  .material-catalog-link,
+  .material-access-notice a {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
 }
 
 /* Фокус не зависит от фоновых и выбранных состояний компонента. */
@@ -885,4 +904,9 @@ body.modal-open { overflow: hidden; }
   outline: 3px solid var(--crimson) !important;
   outline-offset: 3px;
   box-shadow: none !important;
+}
+
+.speed-switch input:focus-visible + span {
+  outline: 3px solid var(--crimson);
+  outline-offset: 3px;
 }
