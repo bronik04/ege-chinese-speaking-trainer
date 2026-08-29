@@ -634,3 +634,47 @@ body.modal-open { overflow: hidden; }
   background: var(--action-active-bg);
   color: var(--action-active-text);
 }
+
+/* Служебные кнопки и карточки выбора используют общую цветовую систему,
+   сохраняя собственные размеры, форму и глубину. */
+:is(.account-btn, .sound-toggle, .back-btn, .text-btn, .auth-link, .modal-close,
+    .task-card, .photo-choice, .project-select-trigger, .project-select-option,
+    .material-row) {
+  border-color: var(--action-border);
+  background: var(--action-bg);
+  background-image: none;
+  color: var(--action-text);
+}
+
+:is(.account-btn, .sound-toggle, .back-btn, .text-btn, .auth-link, .modal-close,
+    .task-card, .photo-choice, .project-select-trigger, .project-select-option,
+    .material-row):hover:not(:disabled) {
+  border-color: var(--gold);
+  background: var(--action-hover-bg);
+  color: var(--action-text);
+}
+
+:is(.photo-choice.selected, .step-pill.active,
+    .project-select-option[aria-selected="true"], .material-row.selected),
+#authModal .auth-tabs button.active {
+  background: var(--action-active-bg);
+  background-image: none;
+  color: var(--action-active-text);
+  box-shadow: none;
+}
+
+#authModal .auth-tabs button {
+  background: var(--action-bg);
+  background-image: none;
+  color: var(--action-text);
+}
+
+#authModal .auth-tabs button:hover:not(:disabled) {
+  background: var(--action-hover-bg);
+  color: var(--action-text);
+}
+
+.material-row.selected .material-copy small,
+.material-row.selected .material-action {
+  color: var(--cream-deep);
+}

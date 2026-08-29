@@ -3,3 +3,9 @@
 
 .catalog-access-notice{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 16px;border:1px solid rgba(201,162,39,.38);border-radius:var(--radius-md);background:#fffaf0;color:var(--ink-soft);font-size:14px}.catalog-access-notice a{flex:0 0 auto;min-height:38px;padding:0 14px;display:inline-flex;align-items:center;border-radius:var(--radius-pill);color:var(--crimson-deep);background:#f8f1dd;text-decoration:none}.catalog-access-notice a:hover{background:#f0e3bd}
 @media(max-width:700px){.catalog-access-notice{align-items:flex-start;flex-direction:column}.catalog-access-notice a{min-height:40px}}
+
+/* Плоские интерактивные состояния общей дизайн-системы. */
+.year-filter.active{color:var(--action-active-text);border-color:var(--action-active-bg);background:var(--action-active-bg);background-image:none;box-shadow:none}
+.year-filter:hover:not(.active){color:var(--action-text);border-color:var(--gold);background:var(--action-hover-bg)}
+.variant-open{color:var(--action-text);background:var(--action-bg);background-image:none}
+.variant-open:hover{color:var(--action-text);background:var(--action-hover-bg);filter:none}

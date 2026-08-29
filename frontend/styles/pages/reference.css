@@ -133,3 +133,34 @@
   .reference-task-head { padding: 26px 20px; }
   .reference-criteria { padding: 24px 18px; }
 }
+
+/* Плоские интерактивные состояния общей дизайн-системы. */
+.reference-tab.active {
+  color: var(--action-active-text);
+  background: var(--action-active-bg);
+  box-shadow: none;
+}
+
+.reference-tab.active > b {
+  color: var(--action-active-text);
+}
+
+.reference-tab:hover:not(.active) {
+  color: var(--action-text);
+  background: var(--action-hover-bg);
+}
+
+.reference-tab:hover:not(.active) > b {
+  color: var(--action-text);
+}
+
+.copy-phrase {
+  color: var(--action-text);
+  background: var(--action-bg);
+  background-image: none;
+}
+
+.copy-phrase:hover {
+  color: var(--action-text);
+  background: var(--action-hover-bg);
+}

@@ -5,6 +5,10 @@ test("reference library filters phrases and switches exam tasks", async ({ page 
   await expect(page.locator(".reference-tab")).toHaveCount(3);
   await expect(page.locator(".reference-tabs")).toHaveCSS("border-radius", "16px");
   await expect(page.locator(".reference-tab").nth(0)).toHaveClass(/active/);
+  const activeReferenceTab = page.locator(".reference-tab.active");
+  await expect(activeReferenceTab).toHaveCSS("background-color", "rgb(92, 14, 14)");
+  await expect(activeReferenceTab).toHaveCSS("background-image", "none");
+  await expect(activeReferenceTab).toHaveCSS("color", "rgb(244, 236, 219)");
   await page.locator(".reference-tab").nth(1).hover();
   await expect(page.locator(".reference-tab").nth(1)).not.toHaveCSS("background-color", "rgb(92, 14, 14)");
   await expect(page.locator(".reference-task-head h2")).toHaveText("Пять вопросов");
@@ -26,6 +30,11 @@ test("reference library filters phrases and switches exam tasks", async ({ page 
   await page.locator('[data-reference-task="task-3"]').click();
   const introGroup = page.locator(".reference-group").first();
   await expect(introGroup.locator(".phrase-card")).toHaveCount(1);
+  const copyButton = page.locator(".copy-phrase").first();
+  await expect(copyButton).toHaveCSS("background-color", "rgb(244, 236, 219)");
+  await expect(copyButton).toHaveCSS("background-image", "none");
+  await copyButton.hover();
+  await expect(copyButton).toHaveCSS("background-color", "rgb(232, 211, 138)");
   const listBox = await introGroup.locator(".phrase-list").boundingBox();
   const cardBox = await introGroup.locator(".phrase-card").boundingBox();
   expect(Math.abs(listBox.width - cardBox.width)).toBeLessThan(2);
@@ -52,6 +61,15 @@ test("home uses horizontal motto and keeps account at the far right", async ({ p
   await expect(page.locator(".hero-copy h1")).toContainText("Мастерство приходит с практикой");
   const lastAction = await page.locator(".header-actions > :last-child").getAttribute("id");
   expect(lastAction).toBe("authButton");
+  await expect(page.locator("#authButton")).toHaveCSS("background-color", "rgb(244, 236, 219)");
+  const taskChoice = page.locator('[data-start="1"]');
+  await expect(taskChoice).toBeEnabled();
+  await expect(taskChoice).toHaveCSS("background-color", "rgb(244, 236, 219)");
+  await taskChoice.hover();
+  await expect(taskChoice).toHaveCSS("background-color", "rgb(232, 211, 138)");
+  await page.locator("#authButton").click();
+  await expect(page.locator("#loginTab")).toHaveCSS("background-color", "rgb(92, 14, 14)");
+  await expect(page.locator("#loginTab")).toHaveCSS("background-image", "none");
 });
 
 test("home exam action uses the classic cream and gold colors", async ({ page }) => {
