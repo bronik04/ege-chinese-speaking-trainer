@@ -19,15 +19,15 @@
   <main class="app-shell editor-shell">
     <section class="editor-access" id="editorAccess"><p class="eyebrow">Проверяем доступ</p><h1>Загружаем редактор…</h1></section>
     <div class="editor-layout hidden" id="editorLayout">
-      <aside class="materials-sidebar">
+      <aside class="materials-sidebar editor-card">
         <div><p class="eyebrow">Мои материалы</p><h2>Черновики и публикации</h2></div>
         <button class="primary-btn wide" id="newMaterialBtn" type="button">Создать материал</button>
         <div class="my-materials" id="myMaterials"></div>
       </aside>
-      <section class="editor-panel">
+      <section class="editor-panel editor-card">
         <header class="editor-heading"><div><p class="eyebrow">Конструктор</p><h1 id="editorTitle">Новый материал</h1></div><span class="draft-badge" id="materialStatus">Черновик</span></header>
         <form id="materialForm">
-          <section class="editor-section">
+          <section class="editor-section editor-section-card">
             <p class="editor-section-title">01 · Тип и описание</p>
             <div class="editor-grid">
               <label>Тип материала<select id="materialKind"><option value="full">Полный вариант</option><option value="task">Отдельное задание</option></select></label>
@@ -39,7 +39,7 @@
             </div>
           </section>
 
-          <section class="task-editor" data-task-editor="1">
+          <section class="task-editor editor-section-card" data-task-editor="1">
             <header><div><p class="eyebrow">Задание 1</p><h2>Пять вопросов</h2></div><span>1:30 подготовки · 5 × 0:20</span></header>
             <p class="fixed-note">Тайминг, количество вопросов и инструкция зафиксированы стандартом экзамена.</p>
             <label>Ситуация<textarea id="task1Situation" rows="3" placeholder="Вы увидели объявление…"></textarea></label>
@@ -49,13 +49,13 @@
             <label class="asset-field">Изображение<input type="file" accept="image/jpeg,image/png,image/webp" data-asset="task1-image"><span data-asset-status="task1-image">Файл не выбран</span></label>
           </section>
 
-          <section class="task-editor" data-task-editor="2">
+          <section class="task-editor editor-section-card" data-task-editor="2">
             <header><div><p class="eyebrow">Задание 2</p><h2>Описание фотографии</h2></div><span>2:00 подготовки · до 2:00 ответа</span></header>
             <p class="fixed-note">Инструкция, план ответа и начальная фраза добавляются автоматически.</p>
             <div class="asset-grid" id="task2Assets"></div>
           </section>
 
-          <section class="task-editor" data-task-editor="3">
+          <section class="task-editor editor-section-card" data-task-editor="3">
             <header><div><p class="eyebrow">Задание 3</p><h2>Проектная работа</h2></div><span>3:00 подготовки · до 3:00 ответа</span></header>
             <p class="fixed-note">План ответа и экзаменационные требования нельзя изменить.</p>
             <label>Название проекта<input id="task3Title" placeholder="Проект «Идеальные выходные»"></label>

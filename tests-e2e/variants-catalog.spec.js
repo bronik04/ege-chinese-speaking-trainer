@@ -137,6 +137,19 @@ test("registered user publishes a standalone task and opens it from catalog", as
   await page.goto("/variant-editor.html");
   await expect(page.locator("[data-account-link]")).toContainText(email);
   await expect(page.locator("#editorTitle")).toHaveText("Новый материал");
+  await expect(page.locator(".materials-sidebar")).toHaveCSS("border-radius", "16px");
+  await expect(page.locator(".editor-panel")).toHaveCSS("border-radius", "16px");
+  await expect(page.locator("#newMaterialBtn")).toHaveCSS("background-color", "rgb(244, 236, 219)");
+  await expect(page.locator("#newMaterialBtn")).toHaveCSS("background-image", "none");
+  await expect(page.locator(".task-editor").first()).toHaveCSS("border-radius", "12px");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
+  const sidebarBox = await page.locator(".materials-sidebar").boundingBox();
+  const editorBox = await page.locator(".editor-panel").boundingBox();
+  expect(Math.abs(sidebarBox.x - editorBox.x)).toBeLessThan(2);
+  expect(editorBox.y).toBeGreaterThan(sidebarBox.y);
+  await expect(page.locator("#saveMaterialBtn")).toHaveCSS("min-height", "44px");
   await expect(page.locator("select:not([data-project-select='ready'])")).toHaveCount(0);
   await page.locator(".project-select-trigger").first().click();
   const materialMenu = page.locator(".project-select-menu").first();
