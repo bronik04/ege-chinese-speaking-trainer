@@ -68,6 +68,7 @@ test("guest catalog exposes only the open 2026 variant", async ({ page }) => {
   await expect(page.locator(".variant-card")).toHaveCount(1);
   const openVariant = page.locator(".variant-open").first();
   await expect(openVariant).toHaveCSS("background-color", "rgb(244, 236, 219)");
+  await expect(openVariant).toHaveCSS("box-shadow", "none");
   await openVariant.hover();
   await expect(openVariant).toHaveCSS("background-color", "rgb(232, 211, 138)");
   await openVariant.click();
@@ -156,7 +157,8 @@ test("registered user publishes a standalone task and opens it from catalog", as
   await expect(materialMenu).toBeVisible();
   const selectedOption = materialMenu.locator('[aria-selected="true"]');
   await materialMenu.locator('[data-value="task"]').hover();
-  await expect(selectedOption).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(selectedOption).toHaveCSS("background-color", "rgb(92, 14, 14)");
+  await expect(selectedOption).toHaveCSS("color", "rgb(244, 236, 219)");
   await page.locator('.project-select-option[data-value="task"]').click();
   await expect(page.locator("#materialKind")).toHaveValue("task");
   await expect(page.locator("#taskNumberField")).toBeVisible();

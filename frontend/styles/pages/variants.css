@@ -8,7 +8,7 @@
 .year-filter{color:var(--action-text);background:var(--action-bg)}
 .year-filter.active{color:var(--action-active-text);border-color:var(--action-active-bg);background:var(--action-active-bg);background-image:none;box-shadow:none}
 .year-filter:hover:not(.active){color:var(--action-text);border-color:var(--gold);background:var(--action-hover-bg)}
-.variant-open{color:var(--action-text);background:var(--action-bg);background-image:none}
+.variant-open{color:var(--action-text);background:var(--action-bg);background-image:none;box-shadow:none}
 .variant-open:hover{color:var(--action-text);background:var(--action-hover-bg);filter:none}
-.catalog-access-notice a{color:var(--action-text);background:var(--action-bg)}
+.catalog-access-notice a{min-height:44px;color:var(--action-text);background:var(--action-bg)}
 .catalog-access-notice a:hover{color:var(--action-text);background:var(--action-hover-bg)}

@@ -33,6 +33,7 @@ test("reference library filters phrases and switches exam tasks", async ({ page 
   const copyButton = page.locator(".copy-phrase").first();
   await expect(copyButton).toHaveCSS("background-color", "rgb(244, 236, 219)");
   await expect(copyButton).toHaveCSS("background-image", "none");
+  await expect(copyButton).toHaveCSS("box-shadow", "none");
   await copyButton.hover();
   await expect(copyButton).toHaveCSS("background-color", "rgb(232, 211, 138)");
   const listBox = await introGroup.locator(".phrase-list").boundingBox();
@@ -80,6 +81,7 @@ test("home exam action uses the classic cream and gold colors", async ({ page })
   await expect(examAction).toHaveCSS("background-image", "none");
   await expect(examAction).toHaveCSS("color", "rgb(92, 14, 14)");
   await expect(examAction).toHaveCSS("border-radius", "999px");
+  await expect(examAction).toHaveCSS("box-shadow", "none");
 
   await examAction.hover();
   await expect(examAction).toHaveCSS("background-color", "rgb(232, 211, 138)");
@@ -98,12 +100,14 @@ test("primary actions share the flat cream and gold palette", async ({ page }) =
   const runnerAction = page.locator("#mainActionBtn");
   await expect(runnerAction).toHaveCSS("background-color", "rgb(244, 236, 219)");
   await expect(runnerAction).toHaveCSS("background-image", "none");
+  await expect(runnerAction).toHaveCSS("box-shadow", "none");
 
   await page.locator("#exitBtn").click();
   await page.locator("#authButton").click();
   const authAction = page.locator("#authSubmitBtn");
   await expect(authAction).toHaveCSS("background-color", "rgb(244, 236, 219)");
   await expect(authAction).toHaveCSS("background-image", "none");
+  await expect(authAction).toHaveCSS("box-shadow", "none");
   await authAction.hover();
   await expect(authAction).toHaveCSS("background-color", "rgb(232, 211, 138)");
 });
@@ -115,6 +119,8 @@ test("account dialog follows the shared card system and closes safely", async ({
   await expect(page.locator("#authModal .auth-dialog")).toHaveCSS("border-radius", "16px");
   await expect(page.locator(".auth-tabs")).toHaveCSS("border-radius", "999px");
   await expect(page.locator("#authSubmitBtn")).toHaveCSS("border-radius", "999px");
+  await expect(page.locator("#authCloseBtn")).toHaveCSS("min-height", "44px");
+  await expect(page.locator("#loginTab")).toHaveCSS("min-height", "44px");
   await page.locator("#authCloseBtn").click();
   await expect(page.locator("#authModal")).toHaveClass(/hidden/);
 });
@@ -142,13 +148,31 @@ test("runner keeps locked task content out of the accessibility tree", async ({ 
 
 test("mobile navigation and utility controls fit the viewport and a finger", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await expect(page.locator(".speed-switch")).toHaveCSS("min-height", "44px");
+  await page.locator('[data-start="1"]').click();
+  await expect(page.locator("#exitBtn")).toHaveCSS("min-height", "44px");
   await page.goto("/reference.html");
   await expect(page.locator(".copy-phrase").first()).toHaveCSS("min-height", "44px");
   await expect(page.locator(".header-link").first()).toHaveCSS("min-height", "44px");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
   await page.goto("/variants.html");
   await expect(page.locator(".year-filter").first()).toHaveCSS("min-height", "44px");
+  await expect(page.locator("#catalogAccessNotice a")).toHaveCSS("min-height", "44px");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
+});
+
+test("keyboard focus stays visible on selected and ordinary controls", async ({ page }) => {
+  await page.goto("/reference.html");
+  const activeTab = page.locator(".reference-tab.active");
+  await activeTab.focus();
+  await expect(activeTab).toHaveCSS("outline-style", "solid");
+  await expect(activeTab).toHaveCSS("outline-color", "rgb(139, 26, 26)");
+
+  const search = page.locator("#referenceSearch");
+  await search.focus();
+  await expect(search).toHaveCSS("outline-style", "solid");
+  await expect(search).toHaveCSS("outline-color", "rgb(139, 26, 26)");
 });
 
 test("interactive controls stay flat and fit a mobile viewport", async ({ page }) => {

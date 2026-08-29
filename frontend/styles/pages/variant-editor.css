@@ -130,3 +130,10 @@
   .editor-actions { margin: 12px; padding: 16px; }
   .editor-actions > button { width: 100%; min-height: 44px; }
 }
+
+.editor-panel :where(input, textarea, .project-select-trigger):focus-visible {
+  outline: 3px solid var(--crimson) !important;
+  outline-offset: 3px;
+  border-color: var(--crimson);
+  box-shadow: none !important;
+}

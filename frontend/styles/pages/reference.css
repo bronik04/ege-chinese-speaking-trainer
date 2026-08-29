@@ -163,9 +163,17 @@
   color: var(--action-text);
   background: var(--action-bg);
   background-image: none;
+  box-shadow: none;
 }
 
 .copy-phrase:hover {
   color: var(--action-text);
   background: var(--action-hover-bg);
+}
+
+.reference-search input:focus-visible {
+  outline: 3px solid var(--crimson) !important;
+  outline-offset: 3px;
+  border-color: var(--crimson);
+  box-shadow: none !important;
 }

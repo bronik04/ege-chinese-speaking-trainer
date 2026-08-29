@@ -141,6 +141,13 @@ test("student and owner cabinets have no assignment controls", async ({ browser 
   await teacherPage.locator("#authButton").click();
   await teacherPage.locator("#teacherCabinetBtn").click();
   await studentPage.locator("#authButton").click();
+  await expect(studentPage.locator("#logoutBtn")).toHaveCSS("background-color", "rgb(244, 236, 219)");
+  await expect(studentPage.locator("#logoutBtn")).toHaveCSS("box-shadow", "none");
+  const deleteAccountLink = studentPage.locator("#showDeleteAccountBtn");
+  await expect(deleteAccountLink).toHaveCSS("color", "rgb(157, 23, 23)");
+  await expect(deleteAccountLink).toHaveCSS("background-color", "rgb(255, 245, 242)");
+  await deleteAccountLink.hover();
+  await expect(deleteAccountLink).toHaveCSS("background-color", "rgb(243, 215, 208)");
   await expect(teacherPage.locator("#teacherMaterialEditorLink")).toBeVisible();
   await expect(teacherPage.locator("#teacherMaterialEditorLink")).toHaveAttribute("href", "variant-editor.html");
   await expect(teacherPage.locator("#teacherModal .teacher-dialog")).toHaveCSS("border-radius", "16px");

@@ -312,6 +312,7 @@ test("owner scores queued review without groups, assignments, or comments", asyn
     await expect(teacherPage.locator("#teacherReviewRequests")).toContainText("E2E Student");
     const requestCard = teacherPage.locator(".teacher-review-request-card").first();
     await expect(requestCard).toHaveCSS("border-radius", "12px");
+    await expect(requestCard.locator("h3")).toHaveCSS("overflow-wrap", "anywhere");
     await expect(requestCard.locator(".primary-btn")).toHaveCSS("background-color", "rgb(244, 236, 219)");
     await expect(requestCard.locator(".primary-btn")).toHaveCSS("background-image", "none");
     await expect(teacherPage.locator("#teacherReviewRequests audio")).toHaveCount(1);
