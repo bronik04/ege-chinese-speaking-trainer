@@ -295,6 +295,9 @@ test("review queue markup keeps private audio and score-only request details", (
   assert.match(markup, /&lt;script&gt;Student&lt;\/script&gt;/);
   assert.match(markup, /\/api\/review-recordings\/7/);
   assert.match(markup, /4\/5/);
+  assert.match(markup, /class="teacher-request-heading"/);
+  assert.match(markup, /class="teacher-request-status"/);
+  assert.match(markup, /class="review-form"/);
   assert.doesNotMatch(markup, /Группа|Срок|Назначение|textarea|Комментарий/);
 });
 

@@ -310,6 +310,10 @@ test("owner scores queued review without groups, assignments, or comments", asyn
     await teacherPage.locator("#reviewDateFilter").fill(submittedDate);
     await teacherPage.getByRole("button", { name: "Применить" }).click();
     await expect(teacherPage.locator("#teacherReviewRequests")).toContainText("E2E Student");
+    const requestCard = teacherPage.locator(".teacher-review-request-card").first();
+    await expect(requestCard).toHaveCSS("border-radius", "12px");
+    await expect(requestCard.locator(".primary-btn")).toHaveCSS("background-color", "rgb(244, 236, 219)");
+    await expect(requestCard.locator(".primary-btn")).toHaveCSS("background-image", "none");
     await expect(teacherPage.locator("#teacherReviewRequests audio")).toHaveCount(1);
     await teacherPage.getByRole("button", { name: "История заявок" }).click();
     await expect(teacherPage.locator(".review-material-snapshot")).toContainText("Выберите и опишите фотографию");

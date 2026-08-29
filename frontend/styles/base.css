@@ -678,3 +678,147 @@ body.modal-open { overflow: hidden; }
 .material-row.selected .material-action {
   color: var(--cream-deep);
 }
+
+/* Кабинеты продолжают карточную систему главной страницы. */
+:where(#authModal, #teacherModal, #progressModal) .auth-dialog {
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  background: #fff;
+  box-shadow: 0 24px 75px rgba(50, 12, 9, .28);
+}
+
+#teacherModal .teacher-dialog {
+  width: min(1120px, 100%);
+  padding: 38px;
+}
+
+.dialog-heading {
+  padding-right: 54px;
+}
+
+.dialog-heading .auth-lede {
+  margin-bottom: 0;
+}
+
+.teacher-workspace {
+  display: grid;
+  gap: 24px;
+  margin-top: 26px;
+}
+
+.teacher-materials-entry {
+  margin: 0;
+  border: 0;
+  border-radius: var(--radius-lg);
+  box-shadow: inset 0 0 0 1px rgba(201, 162, 39, .28);
+}
+
+.teacher-review-section {
+  margin-top: 0;
+  padding-top: 24px;
+  border-top: 1px solid var(--hairline);
+}
+
+.submission-filters {
+  padding: 16px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--paper);
+}
+
+.submission-filters input,
+.submission-filters select,
+.review-form input {
+  border-color: var(--hairline);
+  border-radius: var(--radius-sm);
+}
+
+.teacher-review-request-card {
+  overflow: hidden;
+  border-color: var(--hairline);
+  border-radius: var(--radius-md);
+  box-shadow: var(--card-shadow);
+}
+
+.teacher-request-status {
+  flex: 0 0 auto;
+  padding: 7px 11px;
+  border-radius: var(--radius-pill);
+  color: var(--crimson-deep);
+  background: var(--cream);
+}
+
+.review-form {
+  background: #fdfaf2;
+}
+
+#progressModal .progress-dialog {
+  padding: 38px;
+}
+
+.history-sections {
+  display: grid;
+  gap: 20px;
+  margin-top: 26px;
+}
+
+.history-list {
+  gap: 10px;
+  margin-top: 0;
+}
+
+.history-item,
+.personal-recording-item {
+  padding: 16px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--paper);
+}
+
+.personal-recordings-history {
+  margin-top: 0;
+  padding-top: 20px;
+  border-top-color: var(--hairline);
+}
+
+@media (max-width: 700px) {
+  #teacherModal,
+  #progressModal {
+    padding: 12px;
+  }
+
+  #teacherModal .teacher-dialog,
+  #progressModal .progress-dialog {
+    padding: 24px 16px;
+  }
+
+  .dialog-heading {
+    padding-right: 44px;
+  }
+
+  .submission-filters {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .review-heading,
+  .teacher-request-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .teacher-request-status,
+  .queue-count {
+    align-self: flex-start;
+  }
+
+  .teacher-materials-entry .primary-btn,
+  .submission-filters .secondary-btn,
+  .review-form .primary-btn {
+    width: 100%;
+    text-align: center;
+  }
+
+  .review-task {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

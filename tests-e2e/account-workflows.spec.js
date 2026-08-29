@@ -143,6 +143,11 @@ test("student and owner cabinets have no assignment controls", async ({ browser 
   await studentPage.locator("#authButton").click();
   await expect(teacherPage.locator("#teacherMaterialEditorLink")).toBeVisible();
   await expect(teacherPage.locator("#teacherMaterialEditorLink")).toHaveAttribute("href", "variant-editor.html");
+  await expect(teacherPage.locator("#teacherModal .teacher-dialog")).toHaveCSS("border-radius", "16px");
+  await expect(teacherPage.locator("#teacherModal .teacher-materials-entry")).toHaveCSS("border-radius", "16px");
+  await expect(teacherPage.locator("#reviewRequestFilters")).toHaveCSS("border-radius", "12px");
+  await teacherPage.setViewportSize({ width: 390, height: 844 });
+  expect(await teacherPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
   await expect(teacherPage.locator("select:not([data-project-select='ready'])")).toHaveCount(0);
   for (const page of [teacherPage, studentPage]) {
     await expect(page.locator("#groupName, #joinGroupCode, #assignmentDue, #createAssignmentBtn, #exportCsvBtn, #exportPdfBtn")).toHaveCount(0);
