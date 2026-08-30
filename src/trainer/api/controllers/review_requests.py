@@ -19,24 +19,27 @@ from trainer.domain.recording_retention import expires_at
 from trainer.domain.review_requests import required_recording_positions, validate_review_selection
 from trainer.infrastructure.audio import validate_duration
 from trainer.infrastructure.database.core import begin_immediate
-from trainer.infrastructure.database.queries.review_requests import (
-    review_request_detail as fetch_review_request_detail,
-)
-from trainer.infrastructure.database.queries.review_requests import (
-    student_review_requests as fetch_student_review_requests,
-)
-from trainer.infrastructure.database.queries.review_requests import (
-    teacher_review_requests as fetch_teacher_review_requests,
-)
 from trainer.services import accounts as account_services
 from trainer.services.materials import assignment_material
 from trainer.services.recordings import write_recording
 from trainer.services.review_assets import copy_review_assets_from_env
+from trainer.services.review_requests import ReviewRequestError
 from trainer.services.storage_cleanup import enqueue_cleanup_job, process_cleanup_jobs
 
 
 def _validation_error(error: ValueError) -> ApiError:
     return ApiError(default_error_code(HTTPStatus.BAD_REQUEST), str(error), HTTPStatus.BAD_REQUEST)
+
+
+def _service_error(error: ReviewRequestError) -> ApiError:
+    if error.reason == "not_found":
+        return ApiError(
+            "review_request_not_found",
+            error.message or "Запрос не найден",
+            HTTPStatus.NOT_FOUND,
+            **error.details,
+        )
+    raise error
 
 
 def _owner_allowed(user: dict) -> bool:
@@ -378,13 +381,7 @@ def review_request_discard(request_id: int, user: dict, context: RequestContext)
 
 
 def student_review_requests(user: dict) -> ActionResult:
-    with runtime.connect() as database:
-        requests = fetch_student_review_requests(database, user["id"])
-    for request in requests:
-        if request["status"] != "reviewed":
-            request.pop("total", None)
-            request.pop("maximum", None)
-    return ActionResult({"requests": requests})
+    return ActionResult({"requests": runtime.review_request_service().student_requests(user["id"])})
 
 
 def teacher_review_requests(query: dict) -> ActionResult:
@@ -397,25 +394,23 @@ def teacher_review_requests(query: dict) -> ActionResult:
         submitted_before = int(query.get("submittedBefore")) if query.get("submittedBefore") is not None else None
     except (TypeError, ValueError):
         submitted_from = submitted_before = None
-    with runtime.connect() as database:
-        requests = fetch_teacher_review_requests(
-            database,
-            student=str(query.get("student") or "").strip(),
-            task=task,
-            status=str(query.get("status") or "").strip(),
-            submitted_from=submitted_from,
-            submitted_before=submitted_before,
-        )
+    requests = runtime.review_request_service().teacher_requests(
+        student=str(query.get("student") or "").strip(),
+        task=task,
+        status=str(query.get("status") or "").strip(),
+        submitted_from=submitted_from,
+        submitted_before=submitted_before,
+    )
     return ActionResult({"requests": requests})
 
 
 def teacher_review_request_detail(request_id: int, user: dict) -> ActionResult:
     if not _owner_allowed(user):
         raise ApiError("review_request_not_found", "Запрос не найден", HTTPStatus.NOT_FOUND)
-    with runtime.connect() as database:
-        result = fetch_review_request_detail(database, request_id)
-    if not result:
-        raise ApiError("review_request_not_found", "Запрос не найден", HTTPStatus.NOT_FOUND)
+    try:
+        result = runtime.review_request_service().teacher_detail(request_id)
+    except ReviewRequestError as error:
+        raise _service_error(error) from error
     return ActionResult({"reviewRequest": result})
 
 

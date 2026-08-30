@@ -47,3 +47,28 @@ class ReviewRequestService:
                 request.pop("total", None)
                 request.pop("maximum", None)
         return requests
+
+    def teacher_requests(
+        self,
+        *,
+        student: str = "",
+        task: int | None = None,
+        status: str = "",
+        submitted_from: int | None = None,
+        submitted_before: int | None = None,
+    ) -> list[dict]:
+        return copy.deepcopy(
+            self.repository.teacher_requests(
+                student=student,
+                task=task,
+                status=status,
+                submitted_from=submitted_from,
+                submitted_before=submitted_before,
+            )
+        )
+
+    def teacher_detail(self, request_id: int) -> dict:
+        detail = self.repository.teacher_detail(request_id)
+        if detail is None:
+            raise ReviewRequestError("not_found")
+        return copy.deepcopy(detail)

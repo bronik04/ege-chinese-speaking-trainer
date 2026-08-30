@@ -18,3 +18,15 @@ class RequestMetadata:
 
 class ReviewRequestRepository(Protocol):
     def student_requests(self, student_id: int) -> list[dict]: ...
+
+    def teacher_requests(
+        self,
+        *,
+        student: str = "",
+        task: int | None = None,
+        status: str = "",
+        submitted_from: int | None = None,
+        submitted_before: int | None = None,
+    ) -> list[dict]: ...
+
+    def teacher_detail(self, request_id: int) -> dict | None: ...

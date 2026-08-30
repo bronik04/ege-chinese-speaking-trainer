@@ -7,8 +7,11 @@ import sqlite3
 from pathlib import Path
 
 from trainer.config import PROJECT_ROOT
+from trainer.infrastructure.audio import validate_duration
 from trainer.infrastructure.database.core import connect as database_connect
 from trainer.infrastructure.database.core import initialize as initialize_database
+from trainer.infrastructure.database.review_request_repository import SQLiteReviewRequestRepository
+from trainer.services.review_requests import ReviewRequestService
 from trainer.services.storage_cleanup import expire_recordings, process_cleanup_jobs
 
 logger = logging.getLogger("trainer.storage_cleanup")
@@ -29,6 +32,24 @@ GROUP_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 def connect() -> sqlite3.Connection:
     return database_connect(DB_PATH)
+
+
+def review_request_service() -> ReviewRequestService:
+    return ReviewRequestService(
+        SQLiteReviewRequestRepository(
+            connect,
+            audio_root=AUDIO_DIR,
+            material_root=MATERIAL_ASSET_DIR,
+            review_asset_root=REVIEW_ASSET_DIR,
+        ),
+        project_root=ROOT,
+        audio_root=AUDIO_DIR,
+        material_asset_root=MATERIAL_ASSET_DIR,
+        review_asset_root=REVIEW_ASSET_DIR,
+        temporary_root=DATA_DIR / "tmp",
+        max_audio_body=MAX_AUDIO_BODY,
+        duration_validator=validate_duration,
+    )
 
 
 def init_database(*, cleanup: bool = True) -> None:
