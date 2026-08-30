@@ -12,4 +12,5 @@ def safe_progress(value: str | None) -> dict:
         return {"runs": []}
     return parsed if isinstance(parsed, dict) else {"runs": []}
 
+
 __all__ = ["safe_progress"]

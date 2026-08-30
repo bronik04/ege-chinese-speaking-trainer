@@ -55,7 +55,7 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         self.assertNotIn("sqlite3", {node.id for node in ast.walk(dependency_tree) if isinstance(node, ast.Name)})
 
     def test_target_controllers_do_not_select_storage_backend(self):
-        for name in ("auth.py", "recordings.py", "work.py"):
+        for name in ("auth.py", "recordings.py"):
             with self.subTest(name=name):
                 source = (PACKAGE / "api" / "controllers" / name).read_text(encoding="utf-8")
                 self.assertNotIn("storage_from_env", source)

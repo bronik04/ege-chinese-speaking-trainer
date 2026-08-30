@@ -15,9 +15,7 @@ class AudioValidationTest(unittest.TestCase):
             rate = 8000
             with wave.open(str(path), "wb") as audio:
                 audio.setparams((1, 2, rate, rate, "NONE", "not compressed"))
-                audio.writeframes(
-                    b"".join(struct.pack("<h", int(500 * math.sin(index / 20))) for index in range(rate))
-                )
+                audio.writeframes(b"".join(struct.pack("<h", int(500 * math.sin(index / 20))) for index in range(rate)))
             self.assertAlmostEqual(validate_duration(path, 1), 1.0, delta=0.1)
 
 
