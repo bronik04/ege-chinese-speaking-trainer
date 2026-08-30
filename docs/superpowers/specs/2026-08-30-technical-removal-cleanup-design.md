@@ -61,9 +61,9 @@ Compatibility-обработка retired URL в `main.py` остаётся: ин
 ### Зависимости
 
 - `reportlab` удаляется из production requirements вместе с неиспользуемым PDF-export;
-- `Pillow` переносится из `requirements.txt` в `requirements-dev.txt`, поскольку нужен импортёру банка,
-  а не работающему приложению;
-- `boto3`, Alembic, FastAPI и аудио-инструменты остаются.
+- `Pillow` остаётся production-зависимостью: `api/controllers/materials.py` использует его для проверки и
+  нормализации загружаемых изображений;
+- `boto3`, Alembic, FastAPI и аудио-инструменты также остаются.
 
 ## Пакет 2. Документация
 
