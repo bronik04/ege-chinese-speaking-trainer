@@ -13,7 +13,7 @@ from PIL import Image
 
 import asgi
 from trainer.api import dependencies, runtime
-from trainer.api.controllers import materials, recordings
+from trainer.api.controllers import recordings
 from trainer.domain.materials import EXAM_SPEC, build_content
 from trainer.infrastructure.database.material_repository import SQLiteMaterialRepository
 from trainer.infrastructure.images import encode_material_image
@@ -37,7 +37,6 @@ class MaterialApiTest(unittest.TestCase):
         runtime.MATERIAL_ASSET_DIR = root / "material-assets"
         dependencies.DATA_DIR = root
         dependencies.AUDIO_DIR = audio_dir
-        materials.MATERIAL_ASSET_DIR = runtime.MATERIAL_ASSET_DIR
         recordings.DATA_DIR = root
         recordings.AUDIO_DIR = audio_dir
         cls.client_context = TestClient(asgi.app)

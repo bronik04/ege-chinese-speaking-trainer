@@ -137,6 +137,42 @@ class ArchitectureBoundaryTest(unittest.TestCase):
                 self.assertNotIn("execute", direct_calls)
                 self.assertNotIn("connect", names)
 
+    def test_material_controller_has_no_database_storage_or_image_processing(self):
+        path = PACKAGE / "api" / "controllers" / "materials.py"
+        source = path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(path))
+        direct_calls = {
+            node.func.attr
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+        }
+        imports = file_imports(path)
+
+        self.assertFalse(any(module.startswith("trainer.infrastructure") for module in imports), imports)
+        self.assertFalse(any(module.startswith("trainer.domain") for module in imports), imports)
+        self.assertNotIn("PIL", imports)
+        self.assertNotIn("json", imports)
+        self.assertNotIn("execute", direct_calls)
+        self.assertNotIn("runtime.connect", source)
+        self.assertNotIn("write_bytes", direct_calls)
+        self.assertNotIn("_material_metadata", source)
+        self.assertNotIn("_material_index_payload", source)
+
+    def test_material_boundary_dependency_direction(self):
+        service_imports = file_imports(PACKAGE / "services" / "materials.py")
+        port_imports = file_imports(PACKAGE / "services" / "material_repository.py")
+        adapter_imports = file_imports(PACKAGE / "infrastructure" / "database" / "material_repository.py")
+        image_imports = file_imports(PACKAGE / "infrastructure" / "images.py")
+
+        self.assertFalse(any(module.startswith("trainer.api") for module in service_imports), service_imports)
+        self.assertFalse(
+            any(module.startswith("trainer.infrastructure.database") for module in service_imports),
+            service_imports,
+        )
+        self.assertNotIn("sqlite3", port_imports)
+        self.assertFalse(any(module.startswith("trainer.infrastructure") for module in port_imports), port_imports)
+        self.assertFalse(any(module.startswith("trainer.api") for module in adapter_imports | image_imports))
+
 
 if __name__ == "__main__":
     unittest.main()

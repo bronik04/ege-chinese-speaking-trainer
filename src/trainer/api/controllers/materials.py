@@ -1,14 +1,10 @@
 from __future__ import annotations
 
-import json
 from http import HTTPStatus
 
 from trainer.api import runtime
 from trainer.api.errors import ApiError
 from trainer.api.results import ActionResult, FileResult, RequestContext
-from trainer.domain.materials import (
-    validate_slug,
-)
 from trainer.services.material_repository import (
     MaterialActor,
     MaterialRequestData,
@@ -91,49 +87,6 @@ def _service_error(error: MaterialError) -> ApiError:
             HTTPStatus.NOT_FOUND,
         )
     raise error
-
-
-def _material_index_payload(row: dict) -> dict:
-    return {
-        "id": row["slug"],
-        "year": row["year"],
-        "label": row["title"],
-        "source": row["source"],
-        "kind": row["kind"],
-        "taskNumber": row["task_number"],
-        "official": False,
-        "status": row["status"],
-    }
-
-
-def _material_metadata(payload) -> dict:
-    kind = payload.kind
-    task_number = payload.taskNumber
-    try:
-        task_number = int(task_number) if task_number is not None else None
-        year = int(payload.year)
-    except (TypeError, ValueError) as error:
-        raise ValueError("Проверьте год и номер задания") from error
-    if kind == "full":
-        task_number = None
-    elif kind != "task" or task_number not in {1, 2, 3}:
-        raise ValueError("Выберите тип материала и номер задания")
-    content = payload.content
-    if not isinstance(content, dict) or len(json.dumps(content, ensure_ascii=False)) > 150_000:
-        raise ValueError("Содержание материала слишком велико")
-    title = payload.title.strip()
-    source = payload.source.strip()
-    if not 2 <= len(title) <= 120 or not 2 <= len(source) <= 200 or not 2020 <= year <= 2100:
-        raise ValueError("Проверьте название, год и источник материала")
-    return {
-        "slug": validate_slug(payload.slug),
-        "kind": kind,
-        "taskNumber": task_number,
-        "title": title,
-        "year": year,
-        "source": source,
-        "content": content,
-    }
 
 
 def materials_list(user: dict | None) -> ActionResult:
