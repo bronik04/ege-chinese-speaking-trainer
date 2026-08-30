@@ -1,13 +1,9 @@
 from __future__ import annotations
 
 import json
-import secrets
-import subprocess
-import tempfile
 import time
 from contextlib import suppress
 from http import HTTPStatus
-from pathlib import Path
 
 from trainer.api import runtime
 from trainer.api.dependencies import owner_email_from_env
@@ -15,12 +11,9 @@ from trainer.api.errors import ApiError, default_error_code
 from trainer.api.results import ActionResult, RequestContext
 from trainer.api.schemas import ReviewRequestCreate, ReviewScoresRequest
 from trainer.domain.grading import CRITERIA, validate_scores
-from trainer.domain.recording_retention import expires_at
 from trainer.domain.review_requests import required_recording_positions
-from trainer.infrastructure.audio import validate_duration
 from trainer.infrastructure.database.core import begin_immediate
 from trainer.services import accounts as account_services
-from trainer.services.recordings import write_recording
 from trainer.services.review_request_repository import RequestMetadata, ReviewActor
 from trainer.services.review_requests import ReviewRequestError
 from trainer.services.storage_cleanup import enqueue_cleanup_job, process_cleanup_jobs
@@ -45,11 +38,36 @@ def _service_error(error: ReviewRequestError) -> ApiError:
             "Материал не найден или не содержит выбранные задания",
             HTTPStatus.BAD_REQUEST,
         )
+    if error.reason == "unsupported_media_type":
+        return ApiError(
+            default_error_code(HTTPStatus.UNSUPPORTED_MEDIA_TYPE),
+            "Неподдерживаемый формат аудио",
+            HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+        )
+    if error.reason == "recording_too_large":
+        return ApiError(
+            default_error_code(HTTPStatus.REQUEST_ENTITY_TOO_LARGE),
+            "Запись превышает 15 МБ",
+            HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+        )
+    if error.reason == "invalid_audio":
+        return ApiError(
+            default_error_code(HTTPStatus.UNPROCESSABLE_ENTITY),
+            "Некорректная или слишком длинная аудиозапись",
+            HTTPStatus.UNPROCESSABLE_ENTITY,
+        )
     if error.reason == "not_found":
         return ApiError(
             "review_request_not_found",
             error.message or "Запрос не найден",
             HTTPStatus.NOT_FOUND,
+            **error.details,
+        )
+    if error.reason == "not_uploading":
+        return ApiError(
+            "review_request_not_uploading",
+            error.message or "Запрос уже отправлен",
+            HTTPStatus.CONFLICT,
             **error.details,
         )
     raise error
@@ -118,120 +136,20 @@ def review_recording_create(
         ) from error
     label = str(query.get("label") or f"Задание {task}")[:160]
     mime_type = content_type.split(";", 1)[0].lower()
-    extensions = {"audio/webm": "webm", "audio/mp4": "m4a", "audio/ogg": "ogg", "audio/wav": "wav"}
-    if task not in {1, 2, 3} or mime_type not in extensions:
-        raise ApiError(
-            default_error_code(HTTPStatus.UNSUPPORTED_MEDIA_TYPE),
-            "Неподдерживаемый формат аудио",
-            HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
-        )
-    if (task == 1 and question not in {1, 2, 3, 4, 5}) or (task in {2, 3} and question is not None):
-        raise ApiError(default_error_code(HTTPStatus.BAD_REQUEST), "Некорректный номер записи", HTTPStatus.BAD_REQUEST)
-    if not 0 < len(body) <= runtime.MAX_AUDIO_BODY:
-        raise ApiError(
-            default_error_code(HTTPStatus.REQUEST_ENTITY_TOO_LARGE),
-            "Запись превышает 15 МБ",
-            HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
-        )
-    with runtime.connect() as database:
-        item = database.execute(
-            """SELECT review_request_items.id,review_requests.status
-               FROM review_request_items
-               JOIN review_requests ON review_requests.id=review_request_items.request_id
-               WHERE review_requests.id=? AND review_requests.student_id=? AND review_request_items.task_number=?""",
-            (request_id, user["id"], task),
-        ).fetchone()
-    if not item:
-        raise ApiError("review_request_not_found", "Запрос не найден", HTTPStatus.NOT_FOUND)
-    if item["status"] != "uploading":
-        raise ApiError("review_request_not_uploading", "Запрос уже отправлен", HTTPStatus.CONFLICT)
-
-    storage_key = f"review-requests/{request_id}/{secrets.token_urlsafe(18)}.{extensions[mime_type]}"
-    temporary_dir = runtime.DATA_DIR / "tmp"
-    temporary_dir.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(dir=temporary_dir, suffix=f".{extensions[mime_type]}", delete=False) as file:
-        file.write(body)
-        temporary_path = Path(file.name)
     try:
-        duration = validate_duration(temporary_path, task)
-    except (OSError, ValueError, subprocess.SubprocessError) as error:
-        temporary_path.unlink(missing_ok=True)
-        raise ApiError(
-            default_error_code(HTTPStatus.UNPROCESSABLE_ENTITY),
-            "Некорректная или слишком длинная аудиозапись",
-            HTTPStatus.UNPROCESSABLE_ENTITY,
-        ) from error
-    try:
-        write_recording(runtime.AUDIO_DIR, storage_key, temporary_path, mime_type)
-        with runtime.connect() as database:
-            begin_immediate(database)
-            current = database.execute(
-                """SELECT review_request_items.id,review_requests.status
-                   FROM review_request_items
-                   JOIN review_requests ON review_requests.id=review_request_items.request_id
-                   WHERE review_requests.id=? AND review_requests.student_id=? AND review_request_items.task_number=?""",
-                (request_id, user["id"], task),
-            ).fetchone()
-            if not current:
-                raise ApiError("review_request_not_found", "Запрос не найден", HTTPStatus.NOT_FOUND)
-            if current["status"] != "uploading":
-                raise ApiError("review_request_not_uploading", "Запрос уже отправлен", HTTPStatus.CONFLICT)
-            guarded = database.execute(
-                """UPDATE review_requests SET status='uploading'
-                   WHERE id=? AND student_id=? AND status='uploading'""",
-                (request_id, user["id"]),
-            )
-            if not guarded.rowcount:
-                raise ApiError("review_request_not_uploading", "Запрос уже отправлен", HTTPStatus.CONFLICT)
-            replaced = database.execute(
-                """SELECT storage_key FROM review_request_recordings
-                   WHERE item_id=? AND question_number IS ?""",
-                (current["id"], question),
-            ).fetchall()
-            if replaced:
-                database.execute(
-                    "DELETE FROM review_request_recordings WHERE item_id=? AND question_number IS ?",
-                    (current["id"], question),
-                )
-            created_at = int(time.time())
-            cursor = database.execute(
-                """INSERT INTO review_request_recordings
-                   (item_id,question_number,label,storage_key,mime_type,size_bytes,duration_seconds,created_at,expires_at)
-                   VALUES (?,?,?,?,?,?,?,?,?)""",
-                (
-                    current["id"],
-                    question,
-                    label,
-                    storage_key,
-                    mime_type,
-                    len(body),
-                    duration,
-                    created_at,
-                    expires_at(created_at),
-                ),
-            )
-            if replaced:
-                enqueue_cleanup_job(
-                    database,
-                    audio_keys=[row["storage_key"] for row in replaced],
-                    material_keys=[],
-                    assignment_keys=[],
-                )
-            account_services.audit(
-                database,
-                "review_recording_uploaded",
-                client_ip=context.client_ip,
-                user_agent=context.user_agent,
-                user_id=user["id"],
-                email=user["email"],
-                details={"requestId": request_id, "task": task, "size": len(body)},
-            )
-    except Exception:
-        _cleanup_orphaned(audio_keys=[storage_key])
-        raise
-    finally:
-        temporary_path.unlink(missing_ok=True)
-    return ActionResult({"recording": {"id": cursor.lastrowid}}, status=HTTPStatus.CREATED)
+        result = runtime.review_request_service().upload_recording(
+            request_id=request_id,
+            task=task,
+            question=question,
+            label=label,
+            mime_type=mime_type,
+            body=body,
+            actor=ReviewActor(id=user["id"], email=user["email"]),
+            metadata=RequestMetadata(client_ip=context.client_ip, user_agent=context.user_agent),
+        )
+    except ReviewRequestError as error:
+        raise _service_error(error) from error
+    return ActionResult(result, status=HTTPStatus.CREATED)
 
 
 def review_request_complete(request_id: int, user: dict, context: RequestContext) -> ActionResult:

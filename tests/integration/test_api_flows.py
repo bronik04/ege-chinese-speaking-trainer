@@ -131,8 +131,8 @@ class ApiFlowTest(unittest.TestCase):
         dependencies.AUDIO_DIR = runtime.AUDIO_DIR
         recordings.DATA_DIR = root
         recordings.AUDIO_DIR = runtime.AUDIO_DIR
-        cls.original_validate_duration = review_requests.validate_duration
-        review_requests.validate_duration = lambda path, task: 1.0
+        cls.original_validate_duration = runtime.validate_duration
+        runtime.validate_duration = lambda path, task: 1.0
         cls.original_personal_validate_duration = personal_recordings.validate_duration
         personal_recordings.validate_duration = lambda path, task: 1.0
         cls.client_context = TestClient(asgi.app)
@@ -142,7 +142,7 @@ class ApiFlowTest(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.client_context.__exit__(None, None, None)
-        review_requests.validate_duration = cls.original_validate_duration
+        runtime.validate_duration = cls.original_validate_duration
         personal_recordings.validate_duration = cls.original_personal_validate_duration
         if cls.original_owner_email is None:
             os.environ.pop("TRAINER_OWNER_EMAIL", None)
@@ -773,6 +773,15 @@ class ApiFlowTest(unittest.TestCase):
             def __exit__(self, *arguments):
                 return self.database.__exit__(*arguments)
 
+            def commit(self):
+                return self.database.commit()
+
+            def rollback(self):
+                return self.database.rollback()
+
+            def close(self):
+                return self.database.close()
+
             def execute(self, statement, parameters=()):
                 if statement.strip().startswith("DELETE FROM review_requests"):
                     delete_reached.set()
@@ -945,7 +954,7 @@ class ApiFlowTest(unittest.TestCase):
         self.assertIsInstance(upload_outcome.get("error"), ApiError)
         self.assertEqual(upload_outcome["error"].code, "review_request_not_found")
         with runtime.connect() as database:
-            review_requests.process_cleanup_jobs(
+            process_cleanup_jobs(
                 database,
                 audio_root=runtime.AUDIO_DIR,
                 material_root=runtime.MATERIAL_ASSET_DIR,
@@ -1015,6 +1024,15 @@ class ApiFlowTest(unittest.TestCase):
 
             def __exit__(self, *arguments):
                 return self.database.__exit__(*arguments)
+
+            def commit(self):
+                return self.database.commit()
+
+            def rollback(self):
+                return self.database.rollback()
+
+            def close(self):
+                return self.database.close()
 
             def execute(self, statement, parameters=()):
                 if self.execute_calls == 0 and statement.strip() == "BEGIN IMMEDIATE":

@@ -2,13 +2,18 @@ from __future__ import annotations
 
 import copy
 import json
+import secrets
+import subprocess
+import tempfile
 import time
 from collections.abc import Callable
 from contextlib import suppress
 from pathlib import Path
 
+from trainer.domain.recording_retention import expires_at
 from trainer.domain.review_requests import validate_review_selection
 from trainer.services.materials import official_detail
+from trainer.services.recordings import write_recording
 from trainer.services.review_assets import copy_review_assets_from_roots
 from trainer.services.review_request_repository import (
     RequestMetadata,
@@ -146,3 +151,86 @@ class ReviewRequestService:
         with suppress(Exception):
             self.repository.enqueue_orphan_cleanup(audio_keys=audio_keys, assignment_keys=assignment_keys)
             self.repository.process_cleanup()
+
+    def upload_recording(
+        self,
+        *,
+        request_id: int,
+        task: int,
+        question: int | None,
+        label: str,
+        mime_type: str,
+        body: bytes,
+        actor: ReviewActor,
+        metadata: RequestMetadata,
+    ) -> dict:
+        extensions = {"audio/webm": "webm", "audio/mp4": "m4a", "audio/ogg": "ogg", "audio/wav": "wav"}
+        if task not in {1, 2, 3} or mime_type not in extensions:
+            raise ReviewRequestError("unsupported_media_type")
+        if (task == 1 and question not in {1, 2, 3, 4, 5}) or (task in {2, 3} and question is not None):
+            raise ReviewRequestError("invalid_request", "Некорректный номер записи")
+        if not 0 < len(body) <= self.max_audio_body:
+            raise ReviewRequestError("recording_too_large")
+
+        with self.repository.transaction() as session:
+            target = session.upload_target(request_id, actor.id, task)
+        self._ensure_upload_target(target)
+
+        storage_key = f"review-requests/{request_id}/{secrets.token_urlsafe(18)}.{extensions[mime_type]}"
+        self.temporary_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            dir=self.temporary_root,
+            suffix=f".{extensions[mime_type]}",
+            delete=False,
+        ) as file:
+            file.write(body)
+            temporary_path = Path(file.name)
+        try:
+            try:
+                duration = self.duration_validator(temporary_path, task)
+            except (OSError, ValueError, subprocess.SubprocessError) as error:
+                raise ReviewRequestError("invalid_audio") from error
+
+            try:
+                write_recording(self.audio_root, storage_key, temporary_path, mime_type)
+                with self.repository.transaction(immediate=True) as session:
+                    current = session.upload_target(request_id, actor.id, task)
+                    self._ensure_upload_target(current)
+                    if not session.guard_uploading(request_id, actor.id):
+                        raise ReviewRequestError("not_uploading")
+                    replaced = session.recordings_at(current.item_id, question)
+                    if replaced:
+                        session.remove_recordings_at(current.item_id, question)
+                    created_at = int(self.clock())
+                    recording_id = session.add_recording(
+                        item_id=current.item_id,
+                        question=question,
+                        label=label,
+                        storage_key=storage_key,
+                        mime_type=mime_type,
+                        size_bytes=len(body),
+                        duration_seconds=duration,
+                        created_at=created_at,
+                        expires_at=expires_at(created_at),
+                    )
+                    if replaced:
+                        session.enqueue_cleanup(audio_keys=[row.storage_key for row in replaced])
+                    session.audit(
+                        "review_recording_uploaded",
+                        actor=actor,
+                        metadata=metadata,
+                        details={"requestId": request_id, "task": task, "size": len(body)},
+                    )
+            except Exception:
+                self._cleanup_orphans(audio_keys=[storage_key])
+                raise
+        finally:
+            temporary_path.unlink(missing_ok=True)
+        return {"recording": {"id": recording_id}}
+
+    @staticmethod
+    def _ensure_upload_target(target) -> None:
+        if target is None:
+            raise ReviewRequestError("not_found")
+        if target.status != "uploading":
+            raise ReviewRequestError("not_uploading")

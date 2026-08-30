@@ -25,6 +25,18 @@ class MaterialAsset:
     size_bytes: int
 
 
+@dataclass(frozen=True)
+class UploadTarget:
+    item_id: int
+    status: str
+
+
+@dataclass(frozen=True)
+class RecordingRow:
+    id: int
+    storage_key: str
+
+
 class ReviewAssetRegistry(Protocol):
     def material_asset(self, asset_id: int) -> MaterialAsset | None: ...
 
@@ -54,6 +66,35 @@ class ReviewRequestSession(ReviewAssetRegistry, Protocol):
         actor: ReviewActor,
         metadata: RequestMetadata,
         details: Mapping[str, object],
+    ) -> None: ...
+
+    def upload_target(self, request_id: int, student_id: int, task: int) -> UploadTarget | None: ...
+
+    def guard_uploading(self, request_id: int, student_id: int) -> bool: ...
+
+    def recordings_at(self, item_id: int, question: int | None) -> list[RecordingRow]: ...
+
+    def remove_recordings_at(self, item_id: int, question: int | None) -> None: ...
+
+    def add_recording(
+        self,
+        *,
+        item_id: int,
+        question: int | None,
+        label: str,
+        storage_key: str,
+        mime_type: str,
+        size_bytes: int,
+        duration_seconds: float,
+        created_at: int,
+        expires_at: int,
+    ) -> int: ...
+
+    def enqueue_cleanup(
+        self,
+        *,
+        audio_keys: Sequence[str] = (),
+        assignment_keys: Sequence[str] = (),
     ) -> None: ...
 
 

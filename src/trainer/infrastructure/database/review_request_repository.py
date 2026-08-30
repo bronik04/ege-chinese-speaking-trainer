@@ -6,6 +6,7 @@ from contextlib import closing, contextmanager
 from pathlib import Path
 
 from trainer.domain.materials import material_payload
+from trainer.infrastructure.database.core import begin_immediate
 from trainer.infrastructure.database.queries.review_requests import (
     review_request_detail,
     student_review_requests,
@@ -14,8 +15,10 @@ from trainer.infrastructure.database.queries.review_requests import (
 from trainer.services import accounts as account_services
 from trainer.services.review_request_repository import (
     MaterialAsset,
+    RecordingRow,
     RequestMetadata,
     ReviewActor,
+    UploadTarget,
 )
 from trainer.services.storage_cleanup import enqueue_cleanup_job, process_cleanup_jobs
 
@@ -85,6 +88,81 @@ class _SQLiteReviewRequestSession:
             details=dict(details),
         )
 
+    def upload_target(self, request_id: int, student_id: int, task: int) -> UploadTarget | None:
+        row = self.database.execute(
+            """SELECT review_request_items.id,review_requests.status
+               FROM review_request_items
+               JOIN review_requests ON review_requests.id=review_request_items.request_id
+               WHERE review_requests.id=? AND review_requests.student_id=? AND review_request_items.task_number=?""",
+            (request_id, student_id, task),
+        ).fetchone()
+        return UploadTarget(row["id"], row["status"]) if row else None
+
+    def guard_uploading(self, request_id: int, student_id: int) -> bool:
+        cursor = self.database.execute(
+            """UPDATE review_requests SET status='uploading'
+               WHERE id=? AND student_id=? AND status='uploading'""",
+            (request_id, student_id),
+        )
+        return bool(cursor.rowcount)
+
+    def recordings_at(self, item_id: int, question: int | None) -> list[RecordingRow]:
+        rows = self.database.execute(
+            """SELECT id,storage_key FROM review_request_recordings
+               WHERE item_id=? AND question_number IS ?""",
+            (item_id, question),
+        ).fetchall()
+        return [RecordingRow(row["id"], row["storage_key"]) for row in rows]
+
+    def remove_recordings_at(self, item_id: int, question: int | None) -> None:
+        self.database.execute(
+            "DELETE FROM review_request_recordings WHERE item_id=? AND question_number IS ?",
+            (item_id, question),
+        )
+
+    def add_recording(
+        self,
+        *,
+        item_id: int,
+        question: int | None,
+        label: str,
+        storage_key: str,
+        mime_type: str,
+        size_bytes: int,
+        duration_seconds: float,
+        created_at: int,
+        expires_at: int,
+    ) -> int:
+        return self.database.execute(
+            """INSERT INTO review_request_recordings
+               (item_id,question_number,label,storage_key,mime_type,size_bytes,duration_seconds,created_at,expires_at)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            (
+                item_id,
+                question,
+                label,
+                storage_key,
+                mime_type,
+                size_bytes,
+                duration_seconds,
+                created_at,
+                expires_at,
+            ),
+        ).lastrowid
+
+    def enqueue_cleanup(
+        self,
+        *,
+        audio_keys: Sequence[str] = (),
+        assignment_keys: Sequence[str] = (),
+    ) -> None:
+        enqueue_cleanup_job(
+            self.database,
+            audio_keys=audio_keys,
+            material_keys=[],
+            assignment_keys=assignment_keys,
+        )
+
 
 class SQLiteReviewRequestRepository:
     def __init__(
@@ -105,7 +183,7 @@ class SQLiteReviewRequestRepository:
         with closing(self._connect()) as database:
             try:
                 if immediate:
-                    database.execute("BEGIN IMMEDIATE")
+                    begin_immediate(database)
                 yield _SQLiteReviewRequestSession(database)
                 database.commit()
             except Exception:

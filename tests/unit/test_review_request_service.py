@@ -7,7 +7,12 @@ import unittest
 from contextlib import contextmanager
 from pathlib import Path
 
-from trainer.services.review_request_repository import RequestMetadata, ReviewActor
+from trainer.services.review_request_repository import (
+    RecordingRow,
+    RequestMetadata,
+    ReviewActor,
+    UploadTarget,
+)
 from trainer.services.review_requests import ReviewRequestError, ReviewRequestService
 
 
@@ -19,16 +24,21 @@ class FakeReviewRequestRepository:
         teacher_rows: list[dict] | None = None,
         details: dict[int, dict] | None = None,
         custom_materials: dict[str, dict] | None = None,
+        upload_targets: dict[tuple[int, int, int], UploadTarget] | None = None,
     ):
         self.student_rows = student_rows or []
         self.teacher_rows = teacher_rows or []
         self.details = details or {}
         self.custom_materials = custom_materials or {}
+        self.upload_targets = upload_targets or {}
         self.teacher_filters: dict | None = None
         self.requests: list[dict] = []
         self.items: list[dict] = []
         self.audits: list[dict] = []
         self.orphan_assignment_keys: list[str] = []
+        self.orphan_audio_keys: list[str] = []
+        self.recordings: list[dict] = []
+        self.cleanup_audio_keys: list[str] = []
 
     def student_requests(self, student_id: int) -> list[dict]:
         return copy.deepcopy(self.student_rows)
@@ -75,10 +85,40 @@ class FakeReviewRequestRepository:
         self.audits.append({"action": action, "actor": actor, "metadata": metadata, "details": copy.deepcopy(details)})
 
     def enqueue_orphan_cleanup(self, *, audio_keys=(), assignment_keys=()) -> None:
+        self.orphan_audio_keys.extend(audio_keys)
         self.orphan_assignment_keys.extend(assignment_keys)
 
     def process_cleanup(self) -> None:
         return None
+
+    def upload_target(self, request_id: int, student_id: int, task: int) -> UploadTarget | None:
+        return self.upload_targets.get((request_id, student_id, task))
+
+    def guard_uploading(self, request_id: int, student_id: int) -> bool:
+        return any(
+            key[0] == request_id and key[1] == student_id and target.status == "uploading"
+            for key, target in self.upload_targets.items()
+        )
+
+    def recordings_at(self, item_id: int, question: int | None) -> list[RecordingRow]:
+        return [
+            RecordingRow(row["id"], row["storage_key"])
+            for row in self.recordings
+            if row["item_id"] == item_id and row["question"] == question
+        ]
+
+    def remove_recordings_at(self, item_id: int, question: int | None) -> None:
+        self.recordings = [
+            row for row in self.recordings if not (row["item_id"] == item_id and row["question"] == question)
+        ]
+
+    def add_recording(self, **recording) -> int:
+        recording_id = max((row["id"] for row in self.recordings), default=0) + 1
+        self.recordings.append({"id": recording_id, **recording})
+        return recording_id
+
+    def enqueue_cleanup(self, *, audio_keys=(), assignment_keys=()) -> None:
+        self.cleanup_audio_keys.extend(audio_keys)
 
 
 class ReviewRequestServiceTest(unittest.TestCase):
@@ -92,7 +132,14 @@ class ReviewRequestServiceTest(unittest.TestCase):
     def tearDown(self):
         self.directory.cleanup()
 
-    def make_service(self, repository: FakeReviewRequestRepository) -> ReviewRequestService:
+    def make_service(
+        self,
+        repository: FakeReviewRequestRepository,
+        *,
+        duration_validator=None,
+        max_audio_body: int = 15_000_000,
+        clock=lambda: 1000,
+    ) -> ReviewRequestService:
         return ReviewRequestService(
             repository,
             project_root=self.root,
@@ -100,8 +147,9 @@ class ReviewRequestServiceTest(unittest.TestCase):
             material_asset_root=self.root / "material-assets",
             review_asset_root=self.root / "review-assets",
             temporary_root=self.root / "tmp",
-            max_audio_body=15_000_000,
-            duration_validator=lambda _path, _task: 1.0,
+            max_audio_body=max_audio_body,
+            duration_validator=duration_validator or (lambda _path, _task: 1.0),
+            clock=clock,
         )
 
     def test_student_list_hides_totals_until_reviewed(self):
@@ -235,6 +283,106 @@ class ReviewRequestServiceTest(unittest.TestCase):
 
         self.assertEqual(caught.exception.reason, "invalid_material")
         self.assertEqual(repository.requests, [])
+
+    def test_upload_replaces_recording_and_queues_old_storage_key(self):
+        repository = FakeReviewRequestRepository(
+            upload_targets={(9, 17, 2): UploadTarget(item_id=4, status="uploading")}
+        )
+        repository.recordings.append(
+            {
+                "id": 3,
+                "item_id": 4,
+                "question": None,
+                "storage_key": "review-requests/9/old.webm",
+            }
+        )
+
+        result = self.make_service(repository).upload_recording(
+            request_id=9,
+            task=2,
+            question=None,
+            label="Ответ",
+            mime_type="audio/webm",
+            body=b"new-audio",
+            actor=ReviewActor(id=17, email="student@example.test"),
+            metadata=RequestMetadata(client_ip="127.0.0.1", user_agent="test"),
+        )
+
+        self.assertEqual(result, {"recording": {"id": 1}})
+        self.assertEqual(len(repository.recordings), 1)
+        self.assertEqual(repository.recordings[0]["item_id"], 4)
+        self.assertEqual(repository.recordings[0]["duration_seconds"], 1.0)
+        self.assertEqual(repository.cleanup_audio_keys, ["review-requests/9/old.webm"])
+        stored_key = repository.recordings[0]["storage_key"]
+        self.assertEqual((self.root / "audio" / stored_key).read_bytes(), b"new-audio")
+        self.assertEqual(repository.audits[-1]["action"], "review_recording_uploaded")
+        self.assertEqual(list((self.root / "tmp").glob("*")), [])
+
+    def test_upload_rejects_unsupported_mime_before_writing_file(self):
+        repository = FakeReviewRequestRepository(
+            upload_targets={(9, 17, 2): UploadTarget(item_id=4, status="uploading")}
+        )
+
+        with self.assertRaises(ReviewRequestError) as caught:
+            self.make_service(repository).upload_recording(
+                request_id=9,
+                task=2,
+                question=None,
+                label="Ответ",
+                mime_type="audio/mpeg",
+                body=b"audio",
+                actor=ReviewActor(id=17, email="student@example.test"),
+                metadata=RequestMetadata(client_ip="127.0.0.1", user_agent="test"),
+            )
+
+        self.assertEqual(caught.exception.reason, "unsupported_media_type")
+        self.assertFalse((self.root / "audio").exists())
+
+    def test_upload_removes_temporary_file_when_audio_validation_fails(self):
+        repository = FakeReviewRequestRepository(
+            upload_targets={(9, 17, 2): UploadTarget(item_id=4, status="uploading")}
+        )
+
+        with self.assertRaises(ReviewRequestError) as caught:
+            self.make_service(
+                repository,
+                duration_validator=lambda _path, _task: (_ for _ in ()).throw(ValueError("invalid")),
+            ).upload_recording(
+                request_id=9,
+                task=2,
+                question=None,
+                label="Ответ",
+                mime_type="audio/webm",
+                body=b"audio",
+                actor=ReviewActor(id=17, email="student@example.test"),
+                metadata=RequestMetadata(client_ip="127.0.0.1", user_agent="test"),
+            )
+
+        self.assertEqual(caught.exception.reason, "invalid_audio")
+        self.assertEqual(list((self.root / "tmp").glob("*")), [])
+        self.assertEqual(repository.recordings, [])
+
+    def test_upload_persists_cleanup_intent_when_storage_write_fails(self):
+        repository = FakeReviewRequestRepository(
+            upload_targets={(9, 17, 2): UploadTarget(item_id=4, status="uploading")}
+        )
+        (self.root / "audio").write_bytes(b"blocks-storage-directory")
+
+        with self.assertRaises(OSError):
+            self.make_service(repository).upload_recording(
+                request_id=9,
+                task=2,
+                question=None,
+                label="Ответ",
+                mime_type="audio/webm",
+                body=b"audio",
+                actor=ReviewActor(id=17, email="student@example.test"),
+                metadata=RequestMetadata(client_ip="127.0.0.1", user_agent="test"),
+            )
+
+        self.assertEqual(len(repository.orphan_audio_keys), 1)
+        self.assertRegex(repository.orphan_audio_keys[0], r"^review-requests/9/.+\.webm$")
+        self.assertEqual(list((self.root / "tmp").glob("*")), [])
 
 
 if __name__ == "__main__":
