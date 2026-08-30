@@ -11,8 +11,6 @@ from trainer.api.errors import ApiError, default_error_code
 from trainer.api.results import ActionResult, RequestContext
 from trainer.api.schemas import ReviewRequestCreate, ReviewScoresRequest
 from trainer.domain.grading import CRITERIA, validate_scores
-from trainer.domain.review_requests import required_recording_positions
-from trainer.infrastructure.database.core import begin_immediate
 from trainer.services import accounts as account_services
 from trainer.services.review_request_repository import RequestMetadata, ReviewActor
 from trainer.services.review_requests import ReviewRequestError
@@ -67,6 +65,13 @@ def _service_error(error: ReviewRequestError) -> ApiError:
         return ApiError(
             "review_request_not_uploading",
             error.message or "Запрос уже отправлен",
+            HTTPStatus.CONFLICT,
+            **error.details,
+        )
+    if error.reason == "incomplete":
+        return ApiError(
+            "review_request_incomplete",
+            "Загрузите все обязательные записи",
             HTTPStatus.CONFLICT,
             **error.details,
         )
@@ -153,112 +158,27 @@ def review_recording_create(
 
 
 def review_request_complete(request_id: int, user: dict, context: RequestContext) -> ActionResult:
-    with runtime.connect() as database:
-        begin_immediate(database)
-        request_row = database.execute(
-            "SELECT status FROM review_requests WHERE id=? AND student_id=?",
-            (request_id, user["id"]),
-        ).fetchone()
-        if not request_row:
-            raise ApiError("review_request_not_found", "Запрос не найден", HTTPStatus.NOT_FOUND)
-        if request_row["status"] != "uploading":
-            raise ApiError("review_request_not_uploading", "Запрос уже отправлен", HTTPStatus.CONFLICT)
-        items = database.execute(
-            "SELECT id,task_number FROM review_request_items WHERE request_id=? ORDER BY task_number",
-            (request_id,),
-        ).fetchall()
-        tasks = [row["task_number"] for row in items]
-        recordings = database.execute(
-            """SELECT review_request_items.task_number,review_request_recordings.question_number
-               FROM review_request_recordings
-               JOIN review_request_items ON review_request_items.id=review_request_recordings.item_id
-               WHERE review_request_items.request_id=?""",
-            (request_id,),
-        ).fetchall()
-        uploaded = {(row["task_number"], row["question_number"]) for row in recordings}
-        missing = sorted(required_recording_positions(tasks) - uploaded, key=lambda item: (item[0], item[1] or 0))
-        if missing:
-            raise ApiError(
-                "review_request_incomplete",
-                "Загрузите все обязательные записи",
-                HTTPStatus.CONFLICT,
-                missing=[
-                    {"task": task, **({"question": question} if question is not None else {})}
-                    for task, question in missing
-                ],
-            )
-        submitted_at = int(time.time())
-        cursor = database.execute(
-            """UPDATE review_requests SET status='queued',submitted_at=?
-               WHERE id=? AND student_id=? AND status='uploading'""",
-            (submitted_at, request_id, user["id"]),
+    try:
+        result = runtime.review_request_service().complete(
+            request_id,
+            actor=ReviewActor(id=user["id"], email=user["email"]),
+            metadata=RequestMetadata(client_ip=context.client_ip, user_agent=context.user_agent),
         )
-        if not cursor.rowcount:
-            raise ApiError("review_request_not_uploading", "Запрос уже отправлен", HTTPStatus.CONFLICT)
-        account_services.audit(
-            database,
-            "review_request_queued",
-            client_ip=context.client_ip,
-            user_agent=context.user_agent,
-            user_id=user["id"],
-            email=user["email"],
-            details={"requestId": request_id, "tasks": tasks},
-        )
-    return ActionResult({"reviewRequest": {"id": request_id, "status": "queued"}})
+    except ReviewRequestError as error:
+        raise _service_error(error) from error
+    return ActionResult(result)
 
 
 def review_request_discard(request_id: int, user: dict, context: RequestContext) -> ActionResult:
-    with runtime.connect() as database:
-        begin_immediate(database)
-        request_row = database.execute(
-            "SELECT status FROM review_requests WHERE id=? AND student_id=?",
-            (request_id, user["id"]),
-        ).fetchone()
-        if not request_row:
-            raise ApiError("review_request_not_found", "Запрос не найден", HTTPStatus.NOT_FOUND)
-        if request_row["status"] != "uploading":
-            raise ApiError("review_request_not_uploading", "Запрос уже отправлен", HTTPStatus.CONFLICT)
-        audio_keys = [
-            row["storage_key"]
-            for row in database.execute(
-                """SELECT review_request_recordings.storage_key FROM review_request_recordings
-                   JOIN review_request_items ON review_request_items.id=review_request_recordings.item_id
-                   WHERE review_request_items.request_id=?""",
-                (request_id,),
-            ).fetchall()
-        ]
-        asset_keys = [
-            row["storage_key"]
-            for row in database.execute(
-                "SELECT storage_key FROM review_request_assets WHERE request_id=?", (request_id,)
-            ).fetchall()
-        ]
-        database.execute("DELETE FROM review_requests WHERE id=? AND student_id=?", (request_id, user["id"]))
-        if audio_keys or asset_keys:
-            enqueue_cleanup_job(
-                database,
-                audio_keys=audio_keys,
-                material_keys=[],
-                assignment_keys=asset_keys,
-            )
-        account_services.audit(
-            database,
-            "review_request_discarded",
-            client_ip=context.client_ip,
-            user_agent=context.user_agent,
-            user_id=user["id"],
-            email=user["email"],
-            details={"requestId": request_id},
+    try:
+        result = runtime.review_request_service().discard(
+            request_id,
+            actor=ReviewActor(id=user["id"], email=user["email"]),
+            metadata=RequestMetadata(client_ip=context.client_ip, user_agent=context.user_agent),
         )
-    with suppress(Exception):
-        with runtime.connect() as database:
-            process_cleanup_jobs(
-                database,
-                audio_root=runtime.AUDIO_DIR,
-                material_root=runtime.MATERIAL_ASSET_DIR,
-                assignment_root=runtime.REVIEW_ASSET_DIR,
-            )
-    return ActionResult({"ok": True})
+    except ReviewRequestError as error:
+        raise _service_error(error) from error
+    return ActionResult(result)
 
 
 def student_review_requests(user: dict) -> ActionResult:

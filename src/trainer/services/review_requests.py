@@ -11,7 +11,7 @@ from contextlib import suppress
 from pathlib import Path
 
 from trainer.domain.recording_retention import expires_at
-from trainer.domain.review_requests import validate_review_selection
+from trainer.domain.review_requests import required_recording_positions, validate_review_selection
 from trainer.services.materials import official_detail
 from trainer.services.recordings import write_recording
 from trainer.services.review_assets import copy_review_assets_from_roots
@@ -233,4 +233,68 @@ class ReviewRequestService:
         if target is None:
             raise ReviewRequestError("not_found")
         if target.status != "uploading":
+            raise ReviewRequestError("not_uploading")
+
+    def complete(
+        self,
+        request_id: int,
+        *,
+        actor: ReviewActor,
+        metadata: RequestMetadata,
+    ) -> dict:
+        with self.repository.transaction(immediate=True) as session:
+            self._ensure_uploading_status(session.request_status(request_id, actor.id))
+            items = session.request_items(request_id)
+            tasks = [item.task for item in items]
+            missing = sorted(
+                required_recording_positions(tasks) - session.uploaded_positions(request_id),
+                key=lambda item: (item[0], item[1] or 0),
+            )
+            if missing:
+                raise ReviewRequestError(
+                    "incomplete",
+                    missing=[
+                        {"task": task, **({"question": question} if question is not None else {})}
+                        for task, question in missing
+                    ],
+                )
+            if not session.queue_request(request_id, actor.id, int(self.clock())):
+                raise ReviewRequestError("not_uploading")
+            session.audit(
+                "review_request_queued",
+                actor=actor,
+                metadata=metadata,
+                details={"requestId": request_id, "tasks": tasks},
+            )
+        return {"reviewRequest": {"id": request_id, "status": "queued"}}
+
+    def discard(
+        self,
+        request_id: int,
+        *,
+        actor: ReviewActor,
+        metadata: RequestMetadata,
+    ) -> dict:
+        with self.repository.transaction(immediate=True) as session:
+            self._ensure_uploading_status(session.request_status(request_id, actor.id))
+            audio_keys, assignment_keys = session.request_storage_keys(request_id)
+            if not session.delete_request(request_id, actor.id):
+                raise ReviewRequestError("not_found")
+            if audio_keys or assignment_keys:
+                session.enqueue_cleanup(audio_keys=audio_keys, assignment_keys=assignment_keys)
+            session.audit(
+                "review_request_discarded",
+                actor=actor,
+                metadata=metadata,
+                details={"requestId": request_id},
+            )
+        with suppress(Exception):
+            self.repository.process_cleanup()
+        return {"ok": True}
+
+    @staticmethod
+    def _ensure_uploading_status(status: str | None) -> None:
+        if status is None:
+            raise ReviewRequestError("not_found")
+        if status != "uploading":
             raise ReviewRequestError("not_uploading")

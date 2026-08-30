@@ -16,6 +16,7 @@ from trainer.services import accounts as account_services
 from trainer.services.review_request_repository import (
     MaterialAsset,
     RecordingRow,
+    RequestItem,
     RequestMetadata,
     ReviewActor,
     UploadTarget,
@@ -162,6 +163,64 @@ class _SQLiteReviewRequestSession:
             material_keys=[],
             assignment_keys=assignment_keys,
         )
+
+    def request_status(self, request_id: int, student_id: int) -> str | None:
+        row = self.database.execute(
+            "SELECT status FROM review_requests WHERE id=? AND student_id=?",
+            (request_id, student_id),
+        ).fetchone()
+        return row["status"] if row else None
+
+    def request_items(self, request_id: int) -> list[RequestItem]:
+        rows = self.database.execute(
+            "SELECT id,task_number FROM review_request_items WHERE request_id=? ORDER BY task_number",
+            (request_id,),
+        ).fetchall()
+        return [RequestItem(row["id"], row["task_number"]) for row in rows]
+
+    def uploaded_positions(self, request_id: int) -> set[tuple[int, int | None]]:
+        rows = self.database.execute(
+            """SELECT review_request_items.task_number,review_request_recordings.question_number
+               FROM review_request_recordings
+               JOIN review_request_items ON review_request_items.id=review_request_recordings.item_id
+               WHERE review_request_items.request_id=?""",
+            (request_id,),
+        ).fetchall()
+        return {(row["task_number"], row["question_number"]) for row in rows}
+
+    def queue_request(self, request_id: int, student_id: int, submitted_at: int) -> bool:
+        cursor = self.database.execute(
+            """UPDATE review_requests SET status='queued',submitted_at=?
+               WHERE id=? AND student_id=? AND status='uploading'""",
+            (submitted_at, request_id, student_id),
+        )
+        return bool(cursor.rowcount)
+
+    def request_storage_keys(self, request_id: int) -> tuple[list[str], list[str]]:
+        audio_keys = [
+            row["storage_key"]
+            for row in self.database.execute(
+                """SELECT review_request_recordings.storage_key FROM review_request_recordings
+                   JOIN review_request_items ON review_request_items.id=review_request_recordings.item_id
+                   WHERE review_request_items.request_id=?""",
+                (request_id,),
+            ).fetchall()
+        ]
+        assignment_keys = [
+            row["storage_key"]
+            for row in self.database.execute(
+                "SELECT storage_key FROM review_request_assets WHERE request_id=?",
+                (request_id,),
+            ).fetchall()
+        ]
+        return audio_keys, assignment_keys
+
+    def delete_request(self, request_id: int, student_id: int) -> bool:
+        cursor = self.database.execute(
+            "DELETE FROM review_requests WHERE id=? AND student_id=?",
+            (request_id, student_id),
+        )
+        return bool(cursor.rowcount)
 
 
 class SQLiteReviewRequestRepository:

@@ -37,6 +37,12 @@ class RecordingRow:
     storage_key: str
 
 
+@dataclass(frozen=True)
+class RequestItem:
+    id: int
+    task: int
+
+
 class ReviewAssetRegistry(Protocol):
     def material_asset(self, asset_id: int) -> MaterialAsset | None: ...
 
@@ -96,6 +102,18 @@ class ReviewRequestSession(ReviewAssetRegistry, Protocol):
         audio_keys: Sequence[str] = (),
         assignment_keys: Sequence[str] = (),
     ) -> None: ...
+
+    def request_status(self, request_id: int, student_id: int) -> str | None: ...
+
+    def request_items(self, request_id: int) -> list[RequestItem]: ...
+
+    def uploaded_positions(self, request_id: int) -> set[tuple[int, int | None]]: ...
+
+    def queue_request(self, request_id: int, student_id: int, submitted_at: int) -> bool: ...
+
+    def request_storage_keys(self, request_id: int) -> tuple[list[str], list[str]]: ...
+
+    def delete_request(self, request_id: int, student_id: int) -> bool: ...
 
 
 class ReviewRequestRepository(Protocol):

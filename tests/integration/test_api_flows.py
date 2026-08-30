@@ -895,6 +895,15 @@ class ApiFlowTest(unittest.TestCase):
             def __exit__(self, *arguments):
                 return self.database.__exit__(*arguments)
 
+            def commit(self):
+                return self.database.commit()
+
+            def rollback(self):
+                return self.database.rollback()
+
+            def close(self):
+                return self.database.close()
+
             def execute(self, statement, parameters=()):
                 if statement.strip().startswith("DELETE FROM review_requests"):
                     delete_reached.set()

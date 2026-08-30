@@ -9,6 +9,7 @@ from pathlib import Path
 
 from trainer.services.review_request_repository import (
     RecordingRow,
+    RequestItem,
     RequestMetadata,
     ReviewActor,
     UploadTarget,
@@ -25,12 +26,20 @@ class FakeReviewRequestRepository:
         details: dict[int, dict] | None = None,
         custom_materials: dict[str, dict] | None = None,
         upload_targets: dict[tuple[int, int, int], UploadTarget] | None = None,
+        workflow_statuses: dict[tuple[int, int], str] | None = None,
+        workflow_items: dict[int, list[RequestItem]] | None = None,
+        uploaded_positions: dict[int, set[tuple[int, int | None]]] | None = None,
+        storage_keys: dict[int, tuple[list[str], list[str]]] | None = None,
     ):
         self.student_rows = student_rows or []
         self.teacher_rows = teacher_rows or []
         self.details = details or {}
         self.custom_materials = custom_materials or {}
         self.upload_targets = upload_targets or {}
+        self.workflow_statuses = workflow_statuses or {}
+        self.workflow_items = workflow_items or {}
+        self.workflow_uploaded_positions = uploaded_positions or {}
+        self.storage_keys = storage_keys or {}
         self.teacher_filters: dict | None = None
         self.requests: list[dict] = []
         self.items: list[dict] = []
@@ -39,6 +48,7 @@ class FakeReviewRequestRepository:
         self.orphan_audio_keys: list[str] = []
         self.recordings: list[dict] = []
         self.cleanup_audio_keys: list[str] = []
+        self.cleanup_assignment_keys: list[str] = []
 
     def student_requests(self, student_id: int) -> list[dict]:
         return copy.deepcopy(self.student_rows)
@@ -119,6 +129,29 @@ class FakeReviewRequestRepository:
 
     def enqueue_cleanup(self, *, audio_keys=(), assignment_keys=()) -> None:
         self.cleanup_audio_keys.extend(audio_keys)
+        self.cleanup_assignment_keys.extend(assignment_keys)
+
+    def request_status(self, request_id: int, student_id: int) -> str | None:
+        return self.workflow_statuses.get((request_id, student_id))
+
+    def request_items(self, request_id: int) -> list[RequestItem]:
+        return copy.deepcopy(self.workflow_items.get(request_id, []))
+
+    def uploaded_positions(self, request_id: int) -> set[tuple[int, int | None]]:
+        return set(self.workflow_uploaded_positions.get(request_id, set()))
+
+    def queue_request(self, request_id: int, student_id: int, submitted_at: int) -> bool:
+        key = (request_id, student_id)
+        if self.workflow_statuses.get(key) != "uploading":
+            return False
+        self.workflow_statuses[key] = "queued"
+        return True
+
+    def request_storage_keys(self, request_id: int) -> tuple[list[str], list[str]]:
+        return copy.deepcopy(self.storage_keys.get(request_id, ([], [])))
+
+    def delete_request(self, request_id: int, student_id: int) -> bool:
+        return self.workflow_statuses.pop((request_id, student_id), None) is not None
 
 
 class ReviewRequestServiceTest(unittest.TestCase):
@@ -383,6 +416,62 @@ class ReviewRequestServiceTest(unittest.TestCase):
         self.assertEqual(len(repository.orphan_audio_keys), 1)
         self.assertRegex(repository.orphan_audio_keys[0], r"^review-requests/9/.+\.webm$")
         self.assertEqual(list((self.root / "tmp").glob("*")), [])
+
+    def test_complete_reports_exact_sorted_missing_positions(self):
+        repository = FakeReviewRequestRepository(
+            workflow_statuses={(9, 17): "uploading"},
+            workflow_items={9: [RequestItem(1, 1), RequestItem(2, 2)]},
+            uploaded_positions={9: {(1, 1), (1, 3), (1, 5)}},
+        )
+
+        with self.assertRaises(ReviewRequestError) as caught:
+            self.make_service(repository).complete(
+                9,
+                actor=ReviewActor(id=17, email="student@example.test"),
+                metadata=RequestMetadata(client_ip="127.0.0.1", user_agent="test"),
+            )
+
+        self.assertEqual(caught.exception.reason, "incomplete")
+        self.assertEqual(
+            caught.exception.details["missing"],
+            [{"task": 1, "question": 2}, {"task": 1, "question": 4}, {"task": 2}],
+        )
+        self.assertEqual(repository.workflow_statuses[(9, 17)], "uploading")
+
+    def test_complete_queues_request_and_audits_tasks(self):
+        repository = FakeReviewRequestRepository(
+            workflow_statuses={(9, 17): "uploading"},
+            workflow_items={9: [RequestItem(1, 2)]},
+            uploaded_positions={9: {(2, None)}},
+        )
+
+        result = self.make_service(repository).complete(
+            9,
+            actor=ReviewActor(id=17, email="student@example.test"),
+            metadata=RequestMetadata(client_ip="127.0.0.1", user_agent="test"),
+        )
+
+        self.assertEqual(result, {"reviewRequest": {"id": 9, "status": "queued"}})
+        self.assertEqual(repository.workflow_statuses[(9, 17)], "queued")
+        self.assertEqual(repository.audits[-1]["details"], {"requestId": 9, "tasks": [2]})
+
+    def test_discard_deletes_request_and_queues_all_private_keys(self):
+        repository = FakeReviewRequestRepository(
+            workflow_statuses={(9, 17): "uploading"},
+            storage_keys={9: (["review-requests/9/audio.webm"], ["review-requests/9/image.webp"])},
+        )
+
+        result = self.make_service(repository).discard(
+            9,
+            actor=ReviewActor(id=17, email="student@example.test"),
+            metadata=RequestMetadata(client_ip="127.0.0.1", user_agent="test"),
+        )
+
+        self.assertEqual(result, {"ok": True})
+        self.assertNotIn((9, 17), repository.workflow_statuses)
+        self.assertEqual(repository.cleanup_audio_keys, ["review-requests/9/audio.webm"])
+        self.assertEqual(repository.cleanup_assignment_keys, ["review-requests/9/image.webp"])
+        self.assertEqual(repository.audits[-1]["action"], "review_request_discarded")
 
 
 if __name__ == "__main__":
