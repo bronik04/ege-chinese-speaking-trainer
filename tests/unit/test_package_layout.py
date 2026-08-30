@@ -29,6 +29,12 @@ class PackageLayoutTest(unittest.TestCase):
         for relative in (
             "src/trainer/api/routes/work.py",
             "src/trainer/api/controllers/work.py",
+            "src/trainer/infrastructure/database/queries/combined.py",
+            "src/trainer/infrastructure/database/queries/assignments.py",
+            "src/trainer/infrastructure/database/queries/groups.py",
+            "src/trainer/infrastructure/database/queries/submissions.py",
+            "src/trainer/infrastructure/database/submissions.py",
+            "src/trainer/infrastructure/exports.py",
         ):
             self.assertFalse((root / relative).exists(), relative)
 
