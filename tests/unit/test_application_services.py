@@ -11,7 +11,6 @@ from unittest.mock import Mock, patch
 from trainer.api import runtime
 from trainer.infrastructure.database.migrations import upgrade_sqlite_database
 from trainer.services.accounts import delete_account_storage
-from trainer.services.assignment_assets import copy_assignment_assets_from_env, read_assignment_asset
 from trainer.services.recordings import delete_recordings, read_recording, write_recording
 from trainer.services.storage_cleanup import (
     account_review_storage_keys,
@@ -40,25 +39,6 @@ class RecordingStorageServiceTest(unittest.TestCase):
             delete_recordings(root, ["1/answer.webm"])
         storage.put.assert_called_once_with("1/answer.webm", source, "audio/webm")
         storage.delete.assert_called_once_with("1/answer.webm")
-
-
-class AssignmentStorageServiceTest(unittest.TestCase):
-    @patch("trainer.services.assignment_assets.storage_from_env")
-    @patch("trainer.services.assignment_assets.copy_assignment_assets")
-    def test_factory_wrapper_supplies_source_and_target_storage(self, copy_assets, factory):
-        source_storage = Mock()
-        target_storage = Mock()
-        factory.side_effect = [source_storage, target_storage]
-        copy_assets.return_value = {"tasks": {}}
-        database = Mock()
-        result = copy_assignment_assets_from_env(database, 12, {"tasks": {}}, Path("materials"), Path("assignments"))
-        self.assertEqual(result, {"tasks": {}})
-        copy_assets.assert_called_once_with(database, 12, {"tasks": {}}, source_storage, target_storage)
-
-    @patch("trainer.services.assignment_assets.storage_from_env")
-    def test_reads_assignment_asset_through_factory(self, factory):
-        factory.return_value.read.return_value = b"image"
-        self.assertEqual(read_assignment_asset(Path("assignments"), "asset.webp"), b"image")
 
 
 class AccountStorageServiceTest(unittest.TestCase):

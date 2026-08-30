@@ -35,6 +35,7 @@ class PackageLayoutTest(unittest.TestCase):
             "src/trainer/infrastructure/database/queries/submissions.py",
             "src/trainer/infrastructure/database/submissions.py",
             "src/trainer/infrastructure/exports.py",
+            "src/trainer/services/assignment_assets.py",
         ):
             self.assertFalse((root / relative).exists(), relative)
 
