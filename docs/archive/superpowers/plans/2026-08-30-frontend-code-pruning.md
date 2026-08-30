@@ -37,7 +37,7 @@
 - Consumes: native `HTMLSelectElement.value`, `change`, `selectOption()`, and browser keyboard semantics
 - Produces: visible native `#materialKind`, `#materialTaskNumber`, `#reviewTaskFilter`, and `#reviewStatusFilter`; hidden synchronization-only `#variantSelect`
 
-- [ ] **Step 1: Change the browser tests to describe native controls**
+- [x] **Step 1: Change the browser tests to describe native controls**
 
 In `variants-catalog.spec.js`, replace the custom menu assertions with:
 
@@ -63,7 +63,7 @@ for (const selector of ["#reviewTaskFilter", "#reviewStatusFilter"]) {
 await expect(teacherPage.locator(".project-select")).toHaveCount(0);
 ```
 
-- [ ] **Step 2: Run the focused tests and verify the old implementation fails them**
+- [x] **Step 2: Run the focused tests and verify the old implementation fails them**
 
 Run:
 
@@ -73,7 +73,7 @@ npx playwright test tests-e2e/variants-catalog.spec.js tests-e2e/account-workflo
 
 Expected: FAIL because the polyfill hides the native selects and inserts `.project-select` wrappers.
 
-- [ ] **Step 3: Remove JavaScript enhancement calls**
+- [x] **Step 3: Remove JavaScript enhancement calls**
 
 Delete the `project-select.js` imports from both entry points. Delete `enhanceProjectSelects()` from both
 initialization flows and `syncProjectSelects()` from `showTasks()`. Do not replace these calls: native
@@ -81,7 +81,7 @@ controls update themselves, and the existing `change` listeners already drive ap
 
 Delete `frontend/js/shared/project-select.js`.
 
-- [ ] **Step 4: Keep the home-page synchronization select hidden explicitly**
+- [x] **Step 4: Keep the home-page synchronization select hidden explicitly**
 
 In `index.html`, simplify the select to:
 
@@ -92,7 +92,7 @@ In `index.html`, simplify the select to:
 Rename the corresponding visually-hidden rule from `.project-select-native-label` to
 `.material-list-native-label`. Do not globally hide native selects.
 
-- [ ] **Step 5: Style native form selects and remove generated-markup rules**
+- [x] **Step 5: Style native form selects and remove generated-markup rules**
 
 Replace the `.project-select*` block in `base.css` with:
 
@@ -118,7 +118,7 @@ Remove `.project-select-trigger` and `.project-select-option` from the shared `:
 44 px utility group. In `variant-editor.css`, change every `.project-select-trigger` entry in `:where(...)`
 to `select`, retaining the editor-specific border and focus colors.
 
-- [ ] **Step 6: Verify the focused behavior**
+- [x] **Step 6: Verify the focused behavior**
 
 Run:
 
@@ -131,7 +131,7 @@ rg -n "project-select|enhanceProjectSelects|syncProjectSelects|data-project-sele
 
 Expected: lint, unit tests, and focused browser tests pass; `rg` returns no matches.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add frontend tests-e2e
@@ -150,7 +150,7 @@ git commit -m "refactor: use native select controls"
 - Consumes: the final home-page declarations currently applied by browser cascade
 - Produces: one canonical declaration for each home-page selector and a static guard against reintroducing the retired layers
 
-- [ ] **Step 1: Add a failing static CSS regression test**
+- [x] **Step 1: Add a failing static CSS regression test**
 
 Create `tests-js/unit/styles.test.js`:
 
@@ -167,13 +167,13 @@ test("base stylesheet has no retired override layers or custom-select markup", (
 });
 ```
 
-- [ ] **Step 2: Run the test and verify the duplicate markers fail it**
+- [x] **Step 2: Run the test and verify the duplicate markers fail it**
 
 Run: `npm test`
 
 Expected: FAIL on `Главная 2A` or `Финальные overrides главного экрана` before the stylesheet cleanup.
 
-- [ ] **Step 3: Delete only the overridden preliminary home rules**
+- [x] **Step 3: Delete only the overridden preliminary home rules**
 
 Remove the preliminary home block beginning with `/* Главная 2A` and ending immediately before the
 shared base component declarations. Keep the later declarations that currently win the cascade as the
@@ -188,7 +188,7 @@ the value from the later block because that is the value users currently see (fo
 material-row shadow). Rename `.project-select-native-label` to `.material-list-native-label` while moving
 it. The result must have one desktop home rule layer followed only by its two responsive media overrides.
 
-- [ ] **Step 4: Run static and focused browser verification**
+- [x] **Step 4: Run static and focused browser verification**
 
 Run:
 
@@ -200,7 +200,7 @@ npx playwright test tests-e2e/account-workflows.spec.js tests-e2e/variants-catal
 
 Expected: all tests pass and the material cards, home hero, editor controls, and 390 px layout remain unchanged.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend/styles/base.css tests-js/unit/styles.test.js
@@ -218,7 +218,7 @@ git commit -m "refactor: collapse duplicate frontend styles"
 - Consumes: native-select and CSS cleanup changes
 - Produces: verified desktop/mobile UI with no removed frontend references
 
-- [ ] **Step 1: Inspect the two affected surfaces at desktop width**
+- [x] **Step 1: Inspect the two affected surfaces at desktop width**
 
 Start the documented local server and use the in-app browser to inspect:
 
@@ -228,12 +228,12 @@ Start the documented local server and use the in-app browser to inspect:
 
 Capture screenshots only for comparison during implementation; do not commit them.
 
-- [ ] **Step 2: Repeat at 390 × 844**
+- [x] **Step 2: Repeat at 390 × 844**
 
 Verify there is no horizontal overflow, each visible select is at least 44 px high, labels remain associated,
 and native dropdown use does not depend on deleted custom-menu keyboard handlers.
 
-- [ ] **Step 3: Run all required checks**
+- [x] **Step 3: Run all required checks**
 
 Run:
 
@@ -263,17 +263,17 @@ pre-existing untracked `.superpowers/brainstorm/` are present.
 - Consumes: the four cleanup documents after all three implementation packages pass
 - Produces: no completed implementation records in the active `docs/superpowers/` directories
 
-- [ ] **Step 1: Confirm every preceding task is complete**
+- [x] **Step 1: Confirm every preceding task is complete**
 
 Do not start this task until backend removal, documentation cleanup, frontend pruning, `make test-e2e`, and
 `make check` all have fresh successful output.
 
-- [ ] **Step 2: Move the current cleanup documents into the historical archive**
+- [x] **Step 2: Move the current cleanup documents into the historical archive**
 
 Move the spec to `docs/archive/superpowers/specs/` and all three plans to
 `docs/archive/superpowers/plans/`. Add a short dated entry to the archive README naming this cleanup package.
 
-- [ ] **Step 3: Verify links and the active/archive boundary**
+- [x] **Step 3: Verify links and the active/archive boundary**
 
 Run:
 
@@ -285,7 +285,7 @@ git diff --check
 
 Expected: no stale active links and no completed files remain in the active plan/spec directories.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add docs/archive docs/superpowers

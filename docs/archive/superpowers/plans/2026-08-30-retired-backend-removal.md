@@ -33,7 +33,7 @@
 - Consumes: active schema imports listed by `src/trainer/api/routes/*.py` and `src/trainer/api/controllers/*.py`
 - Produces: `trainer.api.schemas` containing only schemas imported by active runtime code
 
-- [ ] **Step 1: Add a failing package-layout test**
+- [x] **Step 1: Add a failing package-layout test**
 
 Add this method to `PackageLayoutTest`:
 
@@ -58,19 +58,19 @@ def test_retired_assignment_runtime_is_removed(self):
         self.assertNotIn(f"class {name}(", source)
 ```
 
-- [ ] **Step 2: Run the test and verify the current code fails it**
+- [x] **Step 2: Run the test and verify the current code fails it**
 
 Run: `.venv/bin/python -m unittest tests.unit.test_package_layout.PackageLayoutTest.test_retired_assignment_runtime_is_removed -v`
 
 Expected: FAIL because both work modules and the retired schema classes still exist.
 
-- [ ] **Step 3: Delete only the retired definitions and modules**
+- [x] **Step 3: Delete only the retired definitions and modules**
 
 Remove the seven classes named by the test. Retain `ProgressRequest`, `PersonalRecordingUpload`,
 `ReviewRequestCreate`, `ReviewScoresRequest`, and `MaterialRequest` unchanged. Delete the two five-line
 work modules.
 
-- [ ] **Step 4: Verify imports and focused tests**
+- [x] **Step 4: Verify imports and focused tests**
 
 Run:
 
@@ -81,7 +81,7 @@ rg -n "GroupRequest|JoinGroupRequest|AssignmentRequest|AssignmentUpdateRequest|S
 
 Expected: `rg` returns no runtime references; package-layout and ASGI tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tests/unit/test_package_layout.py src/trainer/api/schemas.py src/trainer/api/routes/work.py src/trainer/api/controllers/work.py
@@ -111,7 +111,7 @@ git commit -m "refactor: remove retired assignment api surface"
 - Consumes: `safe_progress(value: str | None) -> dict` from `queries.progress`
 - Produces: focused `queries` package exporting only review-request queries; no PDF/CSV export interface
 
-- [ ] **Step 1: Extend the failing removal guard**
+- [x] **Step 1: Extend the failing removal guard**
 
 Add these paths to `test_retired_assignment_runtime_is_removed`:
 
@@ -128,13 +128,13 @@ for relative in retired_paths:
     self.assertFalse((root / relative).exists(), relative)
 ```
 
-- [ ] **Step 2: Run the guard and verify it fails**
+- [x] **Step 2: Run the guard and verify it fails**
 
 Run: `.venv/bin/python -m unittest tests.unit.test_package_layout.PackageLayoutTest.test_retired_assignment_runtime_is_removed -v`
 
 Expected: FAIL listing the six existing retired modules.
 
-- [ ] **Step 3: Move the only live helper out of `combined.py`**
+- [x] **Step 3: Move the only live helper out of `combined.py`**
 
 Replace `queries/progress.py` with:
 
@@ -160,7 +160,7 @@ __all__ = ["safe_progress"]
 Update `queries/__init__.py` to export only `review_request_detail`, `student_review_requests`, and
 `teacher_review_requests` from `queries.review_requests`.
 
-- [ ] **Step 4: Remove retired tests without losing audio validation**
+- [x] **Step 4: Remove retired tests without losing audio validation**
 
 Delete `ConcurrentSubmissionTest` and its `threading`/`ThreadPoolExecutor` imports from
 `tests/integration/test_queries.py`. Create `tests/integration/test_audio_validation.py` containing the
@@ -192,12 +192,12 @@ class AudioValidationTest(unittest.TestCase):
 
 Delete `test_media_exports.py`; its `ExportTest` is retired behavior.
 
-- [ ] **Step 5: Delete modules and remove ReportLab**
+- [x] **Step 5: Delete modules and remove ReportLab**
 
 Delete the six guarded modules. Remove only `reportlab==4.4.3` from `requirements.txt`; keep `Pillow`,
 `boto3`, Alembic, FastAPI, Pydantic, and Uvicorn.
 
-- [ ] **Step 6: Run focused verification**
+- [x] **Step 6: Run focused verification**
 
 Run:
 
@@ -209,7 +209,7 @@ rg -n "teacher_dashboard|student_assignments|teacher_assignments|teacher_submiss
 
 Expected: `rg` finds nothing; all focused tests pass, including clean and upgraded SQLite migration tests.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add requirements.txt src/trainer/infrastructure/database tests/integration tests/unit/test_package_layout.py
@@ -231,7 +231,7 @@ git commit -m "refactor: remove retired assignment persistence"
 - Consumes: `copy_review_assets(...)` and `copy_review_assets_from_env(...)` from `trainer.services.review_assets`
 - Produces: review-snapshot tests with no dependency on groups, assignments, or `assignment_material_assets`
 
-- [ ] **Step 1: Add the service path to the removal guard**
+- [x] **Step 1: Add the service path to the removal guard**
 
 ```python
 self.assertFalse((root / "src/trainer/services/assignment_assets.py").exists())
@@ -239,13 +239,13 @@ self.assertFalse((root / "src/trainer/services/assignment_assets.py").exists())
 
 Run the package-layout test and expect failure while the module exists.
 
-- [ ] **Step 2: Remove unit tests for the retired service**
+- [x] **Step 2: Remove unit tests for the retired service**
 
 Delete the `AssignmentStorageServiceTest` class and the import of
 `copy_assignment_assets_from_env, read_assignment_asset` from `tests/unit/test_application_services.py`.
 Keep recording, account-storage, review cleanup, and personal-recording tests unchanged.
 
-- [ ] **Step 3: Rebuild the integration fixture around review requests only**
+- [x] **Step 3: Rebuild the integration fixture around review requests only**
 
 Create `test_review_assets.py` from the active tests currently in `test_assignment_assets.py`:
 
@@ -277,12 +277,12 @@ def create_material_fixture(self, database) -> dict:
     return {"id": "author-task", "tasks": {"2": {"images": [f"/api/material-assets/{asset_id}"] * 3}}}
 ```
 
-- [ ] **Step 4: Delete the legacy module and old mixed test file**
+- [x] **Step 4: Delete the legacy module and old mixed test file**
 
 Delete `services/assignment_assets.py` and `test_assignment_assets.py` after the active tests exist in
 `test_review_assets.py`.
 
-- [ ] **Step 5: Run focused tests**
+- [x] **Step 5: Run focused tests**
 
 Run:
 
@@ -293,7 +293,7 @@ rg -n "copy_assignment_assets|read_assignment_asset|delete_assignment_assets|tra
 
 Expected: no search matches and all retained review/storage tests pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/trainer/services tests/unit/test_application_services.py tests/integration/test_review_assets.py tests/integration/test_assignment_assets.py tests/unit/test_package_layout.py
@@ -321,7 +321,7 @@ git commit -m "refactor: remove retired assignment asset service"
 - Consumes: existing physical directory `DATA_DIR / "assignment-assets"`
 - Produces: `runtime.REVIEW_ASSET_DIR: Path`, used for active review snapshots and legacy-key cleanup
 
-- [ ] **Step 1: Write the failing compatibility assertion**
+- [x] **Step 1: Write the failing compatibility assertion**
 
 Add to `PackageLayoutTest`:
 
@@ -335,7 +335,7 @@ def test_review_asset_root_has_current_logical_name(self):
 
 Run it and expect `AttributeError` because `REVIEW_ASSET_DIR` does not exist yet.
 
-- [ ] **Step 2: Rename the runtime constant and active references**
+- [x] **Step 2: Rename the runtime constant and active references**
 
 In `runtime.py` define exactly:
 
@@ -348,7 +348,7 @@ Replace active `runtime.ASSIGNMENT_ASSET_DIR` references with `runtime.REVIEW_AS
 controllers, route, service, cleanup command, and tests. Do not rename the database column
 `assignment_keys_json` or `process_cleanup_jobs(..., assignment_root=...)` parameter in this package.
 
-- [ ] **Step 3: Verify existing files remain readable**
+- [x] **Step 3: Verify existing files remain readable**
 
 The existing API flow test that writes a review asset and reads `/api/review-assets/{id}` must continue to
 use a temporary directory named `assignment-assets`. Run:
@@ -362,14 +362,14 @@ use a temporary directory named `assignment-assets`. Run:
 
 Expected: all tests pass without moving or copying a directory.
 
-- [ ] **Step 4: Verify no runtime constant references remain**
+- [x] **Step 4: Verify no runtime constant references remain**
 
 Run: `rg -n "ASSIGNMENT_ASSET_DIR" src scripts tests`
 
 Expected: no matches. References to `assignment_root`, `assignment_keys_json`, legacy tables, migrations,
 and the physical string `assignment-assets` are allowed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src scripts tests
@@ -387,7 +387,7 @@ git commit -m "refactor: rename review asset runtime root"
 - Consumes: Tasks 1–4
 - Produces: a passing backend cleanup package ready for documentation cleanup
 
-- [ ] **Step 1: Run stale-symbol and dependency searches**
+- [x] **Step 1: Run stale-symbol and dependency searches**
 
 ```bash
 rg -n "GroupRequest|JoinGroupRequest|AssignmentRequest|SubmissionRequest|copy_assignment_assets|submissions_pdf|submissions_csv|ASSIGNMENT_ASSET_DIR" src scripts tests
@@ -396,13 +396,13 @@ rg -n "reportlab" requirements.txt src tests
 
 Expected: no matches.
 
-- [ ] **Step 2: Run the mandatory check**
+- [x] **Step 2: Run the mandatory check**
 
 Run: `make check`
 
 Expected: all pre-commit hooks, JS tests, Python unit/integration tests, and coverage threshold pass.
 
-- [ ] **Step 3: Review the diff for migration safety**
+- [x] **Step 3: Review the diff for migration safety**
 
 Run:
 

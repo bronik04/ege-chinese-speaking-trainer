@@ -30,7 +30,7 @@
 - Consumes: authoritative current guides listed below
 - Produces: `RepositoryHygieneTest.test_active_docs_do_not_describe_removed_runtimes`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add this method:
 
@@ -63,13 +63,13 @@ def test_active_docs_do_not_describe_removed_runtimes(self):
             self.assertNotIn(marker, source, f"{relative}: {marker}")
 ```
 
-- [ ] **Step 2: Run the test and verify it fails**
+- [x] **Step 2: Run the test and verify it fails**
 
 Run: `.venv/bin/python -m unittest tests.unit.test_repository_hygiene.RepositoryHygieneTest.test_active_docs_do_not_describe_removed_runtimes -v`
 
 Expected: FAIL on existing references in README, DEVELOPMENT, AGENTS, CLAUDE, architecture, and runbooks.
 
-- [ ] **Step 3: Commit the failing guard with the documentation changes in Task 2**
+- [x] **Step 3: Commit the failing guard with the documentation changes in Task 2**
 
 Do not commit the red test alone; it becomes green in the next task.
 
@@ -93,7 +93,7 @@ Do not commit the red test alone; it becomes green in the next task.
 - Consumes: ADR 0004, `compose.yml`, `.env.example`, `Makefile`, `scripts/`, and the actual `src/trainer` tree
 - Produces: current operational documentation with no absent-runtime instructions
 
-- [ ] **Step 1: Replace the architecture summary**
+- [x] **Step 1: Replace the architecture summary**
 
 Ensure `docs/architecture.md` states these exact current facts:
 
@@ -108,7 +108,7 @@ Ensure `docs/architecture.md` states these exact current facts:
 Remove current-state tree entries for `legacy/` and `src/trainer/workers/`, references to PDF/OpenAI
 infrastructure, and the future migration step that still proposes SQLite/PostgreSQL unification.
 
-- [ ] **Step 2: Correct DEVELOPMENT and runbooks**
+- [x] **Step 2: Correct DEVELOPMENT and runbooks**
 
 In `DEVELOPMENT.md`:
 
@@ -129,7 +129,7 @@ In `backup-restore.md`, keep only SQLite plus local/S3 asset backup. Replace ass
 Delete the PostgreSQL restore section. In `incident-response.md`, compare request time with app and proxy
 logs; mention cleanup command output instead of PostgreSQL/worker logs.
 
-- [ ] **Step 3: Correct contributor and agent guides**
+- [x] **Step 3: Correct contributor and agent guides**
 
 Update `AGENTS.md` and `CLAUDE.md` so they point only to current directories and responsibilities. Preserve
 the dependency direction `API → domain → infrastructure interfaces`, but remove groups/assignments/OpenAI
@@ -141,7 +141,7 @@ from the list of active domain/infrastructure examples. Replace dual-database gu
 
 In `docs/agent-guidelines.md`, remove transcription from the security-sensitive current zones.
 
-- [ ] **Step 4: Correct README indexes**
+- [x] **Step 4: Correct README indexes**
 
 Remove the transcription-worker reference from `README.md` and `docs/README.md`. Add one archive entry:
 
@@ -149,7 +149,7 @@ Remove the transcription-worker reference from `README.md` and `docs/README.md`.
 - [Архив проектных планов](archive/superpowers/) — исторические документы, не описывающие текущее состояние системы.
 ```
 
-- [ ] **Step 5: Run the documentation guard**
+- [x] **Step 5: Run the documentation guard**
 
 Run:
 
@@ -160,7 +160,7 @@ rg -n "legacy/README\.md|compose\.scale\.yml|scripts\.transcription_worker|trans
 
 Expected: tests pass and `rg` returns no matches.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add README.md DEVELOPMENT.md AGENTS.md CLAUDE.md docs/README.md docs/architecture.md docs/agent-guidelines.md docs/runbooks tests/unit/test_repository_hygiene.py
@@ -181,7 +181,7 @@ git commit -m "docs: align active guides with current runtime"
 - Consumes: all plans/specs dated before 2026-08-30
 - Produces: an explicit historical archive; current cleanup spec/plans remain under `docs/superpowers/`
 
-- [ ] **Step 1: Create the archive index**
+- [x] **Step 1: Create the archive index**
 
 ```markdown
 # Архив проектных документов
@@ -191,7 +191,7 @@ git commit -m "docs: align active guides with current runtime"
 в `README.md`, `DEVELOPMENT.md`, `docs/architecture.md`, ADR и runbooks.
 ```
 
-- [ ] **Step 2: Move only completed pre-cleanup documents**
+- [x] **Step 2: Move only completed pre-cleanup documents**
 
 Move every file dated before `2026-08-30` from `docs/superpowers/plans/` and `docs/superpowers/specs/` into
 the matching archive subdirectory. Do not move:
@@ -203,7 +203,7 @@ docs/superpowers/plans/2026-08-30-active-documentation-cleanup.md
 docs/superpowers/plans/2026-08-30-frontend-code-pruning.md
 ```
 
-- [ ] **Step 3: Verify the archive boundary**
+- [x] **Step 3: Verify the archive boundary**
 
 Run:
 
@@ -215,7 +215,7 @@ find docs/archive/superpowers -type f -print | sort
 Expected: active directories contain only the four current cleanup documents; the archive contains its
 README plus every earlier plan/spec.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add docs/archive docs/superpowers docs/README.md
@@ -233,7 +233,7 @@ git commit -m "docs: archive completed implementation records"
 - Consumes: Tasks 1–3
 - Produces: a passing documentation cleanup package
 
-- [ ] **Step 1: Check referenced current files exist**
+- [x] **Step 1: Check referenced current files exist**
 
 Run this focused script:
 
@@ -258,13 +258,13 @@ PY
 
 Expected: exit 0.
 
-- [ ] **Step 2: Run mandatory verification**
+- [x] **Step 2: Run mandatory verification**
 
 Run: `make check`
 
 Expected: all hooks and tests pass.
 
-- [ ] **Step 3: Review changed documentation only**
+- [x] **Step 3: Review changed documentation only**
 
 Run:
 
