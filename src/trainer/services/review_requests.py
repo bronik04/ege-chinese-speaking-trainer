@@ -6,10 +6,11 @@ import secrets
 import subprocess
 import tempfile
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import suppress
 from pathlib import Path
 
+from trainer.domain.grading import CRITERIA, validate_scores
 from trainer.domain.recording_retention import expires_at
 from trainer.domain.review_requests import required_recording_positions, validate_review_selection
 from trainer.services.materials import official_detail
@@ -298,3 +299,44 @@ class ReviewRequestService:
             raise ReviewRequestError("not_found")
         if status != "uploading":
             raise ReviewRequestError("not_uploading")
+
+    def score(
+        self,
+        request_id: int,
+        scores_payload: Mapping[str, object],
+        *,
+        actor: ReviewActor,
+        metadata: RequestMetadata,
+    ) -> dict:
+        with self.repository.transaction() as session:
+            items = session.scorable_items(request_id)
+            if items is None:
+                raise ReviewRequestError("not_found")
+            tasks = [item.task for item in items]
+            try:
+                scores, total, maximum = validate_scores(scores_payload, tasks)
+            except ValueError as error:
+                raise ReviewRequestError("invalid_scores", str(error)) from error
+            for item in items:
+                task_scores = scores[str(item.task)]
+                session.save_item_scores(
+                    item.id,
+                    json.dumps(task_scores, ensure_ascii=False, separators=(",", ":")),
+                    sum(task_scores.values()),
+                    sum(CRITERIA[item.task].values()),
+                )
+            session.mark_reviewed(request_id, actor.id, int(self.clock()))
+            session.audit(
+                "review_request_scored",
+                actor=actor,
+                metadata=metadata,
+                details={"requestId": request_id, "tasks": tasks, "total": total, "maximum": maximum},
+            )
+        return {
+            "reviewRequest": {
+                "id": request_id,
+                "status": "reviewed",
+                "total": total,
+                "maximum": maximum,
+            }
+        }

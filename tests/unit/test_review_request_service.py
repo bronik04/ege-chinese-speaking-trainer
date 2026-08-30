@@ -30,6 +30,7 @@ class FakeReviewRequestRepository:
         workflow_items: dict[int, list[RequestItem]] | None = None,
         uploaded_positions: dict[int, set[tuple[int, int | None]]] | None = None,
         storage_keys: dict[int, tuple[list[str], list[str]]] | None = None,
+        scorable_items: dict[int, list[RequestItem]] | None = None,
     ):
         self.student_rows = student_rows or []
         self.teacher_rows = teacher_rows or []
@@ -40,6 +41,7 @@ class FakeReviewRequestRepository:
         self.workflow_items = workflow_items or {}
         self.workflow_uploaded_positions = uploaded_positions or {}
         self.storage_keys = storage_keys or {}
+        self.scorable = scorable_items or {}
         self.teacher_filters: dict | None = None
         self.requests: list[dict] = []
         self.items: list[dict] = []
@@ -49,6 +51,8 @@ class FakeReviewRequestRepository:
         self.recordings: list[dict] = []
         self.cleanup_audio_keys: list[str] = []
         self.cleanup_assignment_keys: list[str] = []
+        self.saved_scores: list[dict] = []
+        self.reviewed: dict[int, dict] = {}
 
     def student_requests(self, student_id: int) -> list[dict]:
         return copy.deepcopy(self.student_rows)
@@ -152,6 +156,16 @@ class FakeReviewRequestRepository:
 
     def delete_request(self, request_id: int, student_id: int) -> bool:
         return self.workflow_statuses.pop((request_id, student_id), None) is not None
+
+    def scorable_items(self, request_id: int) -> list[RequestItem] | None:
+        items = self.scorable.get(request_id)
+        return copy.deepcopy(items) if items is not None else None
+
+    def save_item_scores(self, item_id: int, scores_json: str, total: int, maximum: int) -> None:
+        self.saved_scores.append({"item_id": item_id, "scores_json": scores_json, "total": total, "maximum": maximum})
+
+    def mark_reviewed(self, request_id: int, reviewer_id: int, reviewed_at: int) -> None:
+        self.reviewed[request_id] = {"reviewer_id": reviewer_id, "reviewed_at": reviewed_at}
 
 
 class ReviewRequestServiceTest(unittest.TestCase):
@@ -472,6 +486,52 @@ class ReviewRequestServiceTest(unittest.TestCase):
         self.assertEqual(repository.cleanup_audio_keys, ["review-requests/9/audio.webm"])
         self.assertEqual(repository.cleanup_assignment_keys, ["review-requests/9/image.webp"])
         self.assertEqual(repository.audits[-1]["action"], "review_request_discarded")
+
+    def test_score_persists_normalized_scores_and_review_summary(self):
+        repository = FakeReviewRequestRepository(scorable_items={9: [RequestItem(4, 2)]})
+
+        result = self.make_service(repository).score(
+            9,
+            {"2": {"content": 3, "organization": 2, "language": 2}},
+            actor=ReviewActor(id=99, email="teacher@example.test"),
+            metadata=RequestMetadata(client_ip="127.0.0.1", user_agent="test"),
+        )
+
+        self.assertEqual(
+            result,
+            {"reviewRequest": {"id": 9, "status": "reviewed", "total": 7, "maximum": 7}},
+        )
+        self.assertEqual(
+            repository.saved_scores,
+            [
+                {
+                    "item_id": 4,
+                    "scores_json": '{"content":3,"organization":2,"language":2}',
+                    "total": 7,
+                    "maximum": 7,
+                }
+            ],
+        )
+        self.assertEqual(repository.reviewed[9], {"reviewer_id": 99, "reviewed_at": 1000})
+        self.assertEqual(
+            repository.audits[-1]["details"],
+            {"requestId": 9, "tasks": [2], "total": 7, "maximum": 7},
+        )
+
+    def test_score_rejects_out_of_range_values_without_writes(self):
+        repository = FakeReviewRequestRepository(scorable_items={9: [RequestItem(4, 2)]})
+
+        with self.assertRaises(ReviewRequestError) as caught:
+            self.make_service(repository).score(
+                9,
+                {"2": {"content": 4, "organization": 2, "language": 2}},
+                actor=ReviewActor(id=99, email="teacher@example.test"),
+                metadata=RequestMetadata(client_ip="127.0.0.1", user_agent="test"),
+            )
+
+        self.assertEqual(caught.exception.reason, "invalid_scores")
+        self.assertEqual(caught.exception.message, "Баллы за задание 2 выходят за допустимый диапазон")
+        self.assertEqual(repository.saved_scores, [])
 
 
 if __name__ == "__main__":

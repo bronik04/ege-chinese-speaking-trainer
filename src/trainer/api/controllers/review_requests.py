@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import json
-import time
-from contextlib import suppress
 from http import HTTPStatus
 
 from trainer.api import runtime
@@ -10,15 +7,8 @@ from trainer.api.dependencies import owner_email_from_env
 from trainer.api.errors import ApiError, default_error_code
 from trainer.api.results import ActionResult, RequestContext
 from trainer.api.schemas import ReviewRequestCreate, ReviewScoresRequest
-from trainer.domain.grading import CRITERIA, validate_scores
-from trainer.services import accounts as account_services
 from trainer.services.review_request_repository import RequestMetadata, ReviewActor
 from trainer.services.review_requests import ReviewRequestError
-from trainer.services.storage_cleanup import enqueue_cleanup_job, process_cleanup_jobs
-
-
-def _validation_error(error: ValueError) -> ApiError:
-    return ApiError(default_error_code(HTTPStatus.BAD_REQUEST), str(error), HTTPStatus.BAD_REQUEST)
 
 
 def _service_error(error: ReviewRequestError) -> ApiError:
@@ -75,6 +65,13 @@ def _service_error(error: ReviewRequestError) -> ApiError:
             HTTPStatus.CONFLICT,
             **error.details,
         )
+    if error.reason == "invalid_scores":
+        return ApiError(
+            default_error_code(HTTPStatus.BAD_REQUEST),
+            error.message,
+            HTTPStatus.BAD_REQUEST,
+            **error.details,
+        )
     raise error
 
 
@@ -84,28 +81,6 @@ def _owner_allowed(user: dict) -> bool:
         and user.get("emailVerified")
         and str(user.get("email", "")).strip().lower() == owner_email_from_env()
     )
-
-
-def _cleanup_orphaned(*, audio_keys: list[str] | None = None, assignment_keys: list[str] | None = None) -> None:
-    audio_keys = audio_keys or []
-    assignment_keys = assignment_keys or []
-    if not audio_keys and not assignment_keys:
-        return
-    with suppress(Exception):
-        with runtime.connect() as database:
-            enqueue_cleanup_job(
-                database,
-                audio_keys=audio_keys,
-                material_keys=[],
-                assignment_keys=assignment_keys,
-            )
-        with runtime.connect() as database:
-            process_cleanup_jobs(
-                database,
-                audio_root=runtime.AUDIO_DIR,
-                material_root=runtime.MATERIAL_ASSET_DIR,
-                assignment_root=runtime.REVIEW_ASSET_DIR,
-            )
 
 
 def review_request_create(payload: ReviewRequestCreate, user: dict, context: RequestContext) -> ActionResult:
@@ -221,57 +196,13 @@ def teacher_review_request_score(
     user: dict,
     context: RequestContext,
 ) -> ActionResult:
-    with runtime.connect() as database:
-        request_row = database.execute(
-            "SELECT status FROM review_requests WHERE id=? AND status IN ('queued','reviewed')",
-            (request_id,),
-        ).fetchone()
-        if not request_row:
-            raise ApiError("review_request_not_found", "Запрос не найден", HTTPStatus.NOT_FOUND)
-        items = database.execute(
-            "SELECT id,task_number FROM review_request_items WHERE request_id=? ORDER BY task_number",
-            (request_id,),
-        ).fetchall()
-        tasks = [row["task_number"] for row in items]
-        try:
-            scores, total, maximum = validate_scores(payload.scores, tasks)
-        except ValueError as error:
-            raise _validation_error(error) from error
-        for item in items:
-            task = item["task_number"]
-            task_scores = scores[str(task)]
-            database.execute(
-                """UPDATE review_request_items
-                   SET scores_json=?,total_score=?,max_score=? WHERE id=?""",
-                (
-                    json.dumps(task_scores, ensure_ascii=False, separators=(",", ":")),
-                    sum(task_scores.values()),
-                    sum(CRITERIA[task].values()),
-                    item["id"],
-                ),
-            )
-        reviewed_at = int(time.time())
-        database.execute(
-            """UPDATE review_requests
-               SET status='reviewed',reviewed_at=?,reviewer_id=? WHERE id=?""",
-            (reviewed_at, user["id"], request_id),
+    try:
+        result = runtime.review_request_service().score(
+            request_id,
+            payload.scores,
+            actor=ReviewActor(id=user["id"], email=user["email"]),
+            metadata=RequestMetadata(client_ip=context.client_ip, user_agent=context.user_agent),
         )
-        account_services.audit(
-            database,
-            "review_request_scored",
-            client_ip=context.client_ip,
-            user_agent=context.user_agent,
-            user_id=user["id"],
-            email=user["email"],
-            details={"requestId": request_id, "tasks": tasks, "total": total, "maximum": maximum},
-        )
-    return ActionResult(
-        {
-            "reviewRequest": {
-                "id": request_id,
-                "status": "reviewed",
-                "total": total,
-                "maximum": maximum,
-            }
-        }
-    )
+    except ReviewRequestError as error:
+        raise _service_error(error) from error
+    return ActionResult(result)

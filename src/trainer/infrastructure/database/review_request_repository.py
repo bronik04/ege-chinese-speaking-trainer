@@ -222,6 +222,29 @@ class _SQLiteReviewRequestSession:
         )
         return bool(cursor.rowcount)
 
+    def scorable_items(self, request_id: int) -> list[RequestItem] | None:
+        request = self.database.execute(
+            "SELECT id FROM review_requests WHERE id=? AND status IN ('queued','reviewed')",
+            (request_id,),
+        ).fetchone()
+        if not request:
+            return None
+        return self.request_items(request_id)
+
+    def save_item_scores(self, item_id: int, scores_json: str, total: int, maximum: int) -> None:
+        self.database.execute(
+            """UPDATE review_request_items
+               SET scores_json=?,total_score=?,max_score=? WHERE id=?""",
+            (scores_json, total, maximum, item_id),
+        )
+
+    def mark_reviewed(self, request_id: int, reviewer_id: int, reviewed_at: int) -> None:
+        self.database.execute(
+            """UPDATE review_requests
+               SET status='reviewed',reviewed_at=?,reviewer_id=? WHERE id=?""",
+            (reviewed_at, reviewer_id, request_id),
+        )
+
 
 class SQLiteReviewRequestRepository:
     def __init__(
