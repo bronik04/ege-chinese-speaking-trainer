@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import io
 import json
-import os
 import secrets
 import time
 from http import HTTPStatus
@@ -10,20 +9,36 @@ from pathlib import Path
 
 from PIL import Image, UnidentifiedImageError
 
+from trainer.api import runtime
 from trainer.api.errors import ApiError
 from trainer.api.results import ActionResult, FileResult, RequestContext
-from trainer.api.runtime import MATERIAL_ASSET_DIR, MAX_AUDIO_BODY, ROOT, connect
+from trainer.api.runtime import MATERIAL_ASSET_DIR, MAX_AUDIO_BODY, connect
 from trainer.domain.materials import (
     build_content,
-    editor_allowed,
     material_asset_ids,
-    material_payload,
     validate_slug,
 )
 from trainer.infrastructure.database.core import INTEGRITY_ERRORS
 from trainer.infrastructure.storage import storage_from_env
 from trainer.services import accounts as account_services
-from trainer.services.materials import official_detail, public_official_index
+from trainer.services.material_repository import MaterialActor
+from trainer.services.materials import MaterialError
+
+
+def _actor(user: dict | None) -> MaterialActor | None:
+    return MaterialActor(user["id"], user["email"], bool(user.get("emailVerified"))) if user is not None else None
+
+
+def _required_actor(user: dict) -> MaterialActor:
+    actor = _actor(user)
+    assert actor is not None
+    return actor
+
+
+def _service_error(error: MaterialError) -> ApiError:
+    if error.reason == "not_found":
+        return ApiError("material_not_found", "Материал не найден", HTTPStatus.NOT_FOUND)
+    raise error
 
 
 def _material_index_payload(row: dict) -> dict:
@@ -70,46 +85,19 @@ def _material_metadata(payload) -> dict:
 
 
 def materials_list(user: dict | None) -> ActionResult:
-    items = public_official_index(ROOT, bool(user))
-    if user:
-        with connect() as database:
-            rows = database.execute(
-                "SELECT * FROM materials WHERE status = 'published' ORDER BY year DESC, updated_at DESC"
-            ).fetchall()
-        items.extend(_material_index_payload(dict(row)) for row in rows)
-    return ActionResult(
-        {
-            "materials": items,
-            "canCreate": editor_allowed(user, os.environ.get("TRAINER_EDITOR_EMAILS", "")),
-        }
-    )
+    return ActionResult(runtime.material_service().catalog(_actor(user)))
 
 
 def materials_mine(user: dict) -> ActionResult:
-    with connect() as database:
-        rows = database.execute(
-            "SELECT * FROM materials WHERE owner_id = ? AND status != 'archived' ORDER BY updated_at DESC",
-            (user["id"],),
-        ).fetchall()
-    return ActionResult({"materials": [_material_index_payload(dict(row)) for row in rows]})
+    return ActionResult({"materials": runtime.material_service().mine(_required_actor(user))})
 
 
 def material_get(material_id: str, user: dict | None) -> ActionResult:
-    official = official_detail(ROOT, material_id)
-    if official:
-        if not user and material_id != "open-2026":
-            raise ApiError("material_not_found", "Материал не найден", HTTPStatus.NOT_FOUND)
-        return ActionResult({"material": official})
-    with connect() as database:
-        row = database.execute("SELECT * FROM materials WHERE slug = ?", (material_id,)).fetchone()
-    if (
-        not row
-        or not user
-        or row["status"] == "archived"
-        or (row["status"] != "published" and row["owner_id"] != user["id"])
-    ):
-        raise ApiError("material_not_found", "Материал не найден", HTTPStatus.NOT_FOUND)
-    return ActionResult({"material": material_payload(dict(row))})
+    try:
+        material = runtime.material_service().detail(material_id, _actor(user))
+    except MaterialError as error:
+        raise _service_error(error) from error
+    return ActionResult({"material": material})
 
 
 def material_create(payload, user: dict, context: RequestContext) -> ActionResult:

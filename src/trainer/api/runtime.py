@@ -10,7 +10,11 @@ from trainer.config import PROJECT_ROOT
 from trainer.infrastructure.audio import validate_duration
 from trainer.infrastructure.database.core import connect as database_connect
 from trainer.infrastructure.database.core import initialize as initialize_database
+from trainer.infrastructure.database.material_repository import SQLiteMaterialRepository
 from trainer.infrastructure.database.review_request_repository import SQLiteReviewRequestRepository
+from trainer.infrastructure.images import encode_material_image
+from trainer.infrastructure.storage import storage_from_env
+from trainer.services.materials import MaterialService
 from trainer.services.review_requests import ReviewRequestService
 from trainer.services.storage_cleanup import expire_recordings, process_cleanup_jobs
 
@@ -49,6 +53,18 @@ def review_request_service() -> ReviewRequestService:
         temporary_root=DATA_DIR / "tmp",
         max_audio_body=MAX_AUDIO_BODY,
         duration_validator=validate_duration,
+    )
+
+
+def material_service() -> MaterialService:
+    return MaterialService(
+        SQLiteMaterialRepository(connect),
+        project_root=ROOT,
+        asset_root=MATERIAL_ASSET_DIR,
+        storage=storage_from_env(MATERIAL_ASSET_DIR),
+        image_encoder=encode_material_image,
+        editor_emails=os.environ.get("TRAINER_EDITOR_EMAILS", ""),
+        max_image_body=min(MAX_AUDIO_BODY, 5_000_000),
     )
 
 
