@@ -146,6 +146,20 @@ class _SQLiteMaterialRepositorySession:
             (now, material_id),
         )
 
+    def add_asset(
+        self,
+        material_id: int,
+        storage_key: str,
+        mime_type: str,
+        size_bytes: int,
+        created_at: int,
+    ) -> int:
+        return self.database.execute(
+            """INSERT INTO material_assets(material_id,storage_key,mime_type,size_bytes,created_at)
+               VALUES (?,?,?,?,?)""",
+            (material_id, storage_key, mime_type, size_bytes, created_at),
+        ).lastrowid
+
     def audit(self, event: MaterialAudit) -> None:
         account_services.audit(
             self.database,

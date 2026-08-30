@@ -276,6 +276,37 @@ class SQLiteMaterialRepositoryTest(unittest.TestCase):
         row = self.repository.material("draft-newer")
         self.assertEqual(row.status, "archived")
 
+    def test_add_asset_commits_and_rolls_back_without_translating_failures(self):
+        with self.repository.transaction() as session:
+            committed_id = session.add_asset(
+                self.draft_newer_id,
+                "materials/1/committed.webp",
+                "image/webp",
+                44,
+                600,
+            )
+
+        committed = self.repository.asset_access(committed_id)
+        self.assertEqual(
+            (committed.storage_key, committed.mime_type, committed.size_bytes),
+            ("materials/1/committed.webp", "image/webp", 44),
+        )
+
+        rolled_back_id = None
+        with self.assertRaises(RuntimeError):
+            with self.repository.transaction() as session:
+                rolled_back_id = session.add_asset(
+                    self.draft_newer_id,
+                    "materials/1/rolled-back.webp",
+                    "image/webp",
+                    55,
+                    601,
+                )
+                raise RuntimeError("rollback")
+
+        self.assertIsNotNone(rolled_back_id)
+        self.assertIsNone(self.repository.asset_access(rolled_back_id))
+
 
 if __name__ == "__main__":
     unittest.main()

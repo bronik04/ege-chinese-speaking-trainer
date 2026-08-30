@@ -8,8 +8,10 @@ from pathlib import Path
 
 from trainer.services.material_repository import (
     MaterialActor,
+    MaterialAssetAccess,
     MaterialAssetRecord,
     MaterialConflictError,
+    MaterialImageError,
     MaterialRecord,
     MaterialRequestData,
     MaterialRequestMetadata,
@@ -50,9 +52,13 @@ class FakeStorage:
     def __init__(self):
         self.deleted = []
         self.delete_error = None
+        self.puts = []
+        self.put_error = None
 
     def put(self, key, source, content_type):
-        raise AssertionError("read scenarios must not write storage")
+        self.puts.append((key, source, content_type, source.exists()))
+        if self.put_error:
+            raise self.put_error
 
     def delete(self, key):
         self.deleted.append(key)
@@ -84,6 +90,9 @@ class FakeMaterialRepository:
         self.published_update = None
         self.removed_asset_ids = []
         self.archived = None
+        self.added_asset = None
+        self.add_asset_error = None
+        self.asset_access_rows = {}
 
     def published_materials(self):
         return list(self._published)
@@ -99,7 +108,7 @@ class FakeMaterialRepository:
         return material if material and material.owner_id == owner_id else None
 
     def asset_access(self, asset_id):
-        return None
+        return self.asset_access_rows.get(asset_id)
 
     @contextmanager
     def transaction(self):
@@ -147,6 +156,18 @@ class FakeMaterialRepository:
     def archive(self, material_id, now):
         self.archived = {"material_id": material_id, "now": now}
 
+    def add_asset(self, material_id, storage_key, mime_type, size_bytes, created_at):
+        if self.add_asset_error:
+            raise self.add_asset_error
+        self.added_asset = {
+            "material_id": material_id,
+            "storage_key": storage_key,
+            "mime_type": mime_type,
+            "size_bytes": size_bytes,
+            "created_at": created_at,
+        }
+        return 41
+
     def audit(self, event):
         self.audits.append(event)
 
@@ -170,16 +191,19 @@ class MaterialServiceTest(unittest.TestCase):
         self,
         repository: FakeMaterialRepository | None = None,
         storage: FakeStorage | None = None,
+        image_encoder=None,
     ) -> MaterialService:
         return MaterialService(
             repository or self.repository,
             project_root=ROOT,
             asset_root=ROOT / "tmp" / "material-service-test",
             storage=storage or FakeStorage(),
-            image_encoder=lambda body: body,
+            image_encoder=image_encoder or (lambda body: body),
             editor_emails="author@example.test",
             max_image_body=5_000_000,
             now=lambda: 123,
+            storage_token=lambda: "fixed-token",
+            temporary_token=lambda: "fixed-temporary",
         )
 
     def test_catalog_filters_official_materials_for_guest_and_adds_published_custom_for_user(self):
@@ -356,6 +380,97 @@ class MaterialServiceTest(unittest.TestCase):
         with self.assertRaises(MaterialError) as caught:
             self.service().archive("author-task", replace(self.actor, id=8))
         self.assertEqual(caught.exception.reason, "not_found")
+
+    def test_upload_rejects_mime_and_size_before_encoder_or_storage(self):
+        encoded = []
+        storage = FakeStorage()
+        service = self.service(
+            storage=storage,
+            image_encoder=lambda body: encoded.append(body) or body,
+        )
+
+        for content_type, body, reason in (
+            ("image/gif", b"gif", "unsupported_image"),
+            ("image/png", b"", "image_too_large"),
+            ("image/png", b"x" * 5_000_001, "image_too_large"),
+        ):
+            with self.subTest(reason=reason), self.assertRaises(MaterialError) as caught:
+                service.upload_asset("author-task", body, content_type, self.actor)
+            self.assertEqual(caught.exception.reason, reason)
+
+        self.assertEqual(encoded, [])
+        self.assertEqual(storage.puts, [])
+        self.assertEqual(self.repository.transaction_count, 0)
+
+    def test_upload_stores_webp_then_persists_metadata_and_removes_temporary_file(self):
+        self.repository.materials["author-task"] = material_record()
+        storage = FakeStorage()
+
+        result = self.service(
+            storage=storage,
+            image_encoder=lambda body: b"encoded-webp",
+        ).upload_asset("author-task", b"png", "image/png; charset=binary", self.actor)
+
+        self.assertEqual(result, {"id": 41, "url": "/api/material-assets/41"})
+        key, temporary, content_type, existed_during_put = storage.puts[0]
+        self.assertEqual(key, "materials/10/fixed-token.webp")
+        self.assertEqual(content_type, "image/webp")
+        self.assertTrue(existed_during_put)
+        self.assertFalse(temporary.exists())
+        self.assertEqual(self.repository.added_asset["storage_key"], key)
+        self.assertEqual(self.repository.added_asset["mime_type"], "image/webp")
+        self.assertEqual(self.repository.added_asset["size_bytes"], len(b"encoded-webp"))
+
+    def test_upload_deletes_new_object_when_metadata_insert_fails(self):
+        self.repository.materials["author-task"] = material_record()
+        self.repository.add_asset_error = RuntimeError("metadata failed")
+        storage = FakeStorage()
+
+        with self.assertRaisesRegex(RuntimeError, "metadata failed"):
+            self.service(storage=storage).upload_asset(
+                "author-task",
+                b"png",
+                "image/png",
+                self.actor,
+            )
+
+        self.assertEqual(storage.deleted, [storage.puts[0][0]])
+        self.assertFalse(storage.puts[0][1].exists())
+
+    def test_upload_maps_only_expected_image_validation_errors(self):
+        self.repository.materials["author-task"] = material_record()
+
+        with self.assertRaises(MaterialError) as caught:
+            self.service(image_encoder=lambda body: (_ for _ in ()).throw(MaterialImageError())).upload_asset(
+                "author-task",
+                b"png",
+                "image/png",
+                self.actor,
+            )
+        self.assertEqual(caught.exception.reason, "invalid_image")
+
+    def test_asset_access_preserves_private_material_visibility(self):
+        self.repository.asset_access_rows[5] = MaterialAssetAccess(
+            "materials/10/5.webp",
+            "image/webp",
+            14,
+            owner_id=7,
+            material_status="draft",
+        )
+        service = self.service()
+
+        self.assertEqual(service.asset(5, self.actor).storage_key, "materials/10/5.webp")
+        for actor in (None, replace(self.actor, id=8)):
+            with self.subTest(actor=actor), self.assertRaises(MaterialError) as caught:
+                service.asset(5, actor)
+            self.assertEqual(caught.exception.reason, "asset_not_found")
+
+        self.repository.asset_access_rows[5] = replace(
+            self.repository.asset_access_rows[5],
+            owner_id=8,
+            material_status="published",
+        )
+        self.assertEqual(service.asset(5, self.actor).storage_key, "materials/10/5.webp")
 
 
 if __name__ == "__main__":

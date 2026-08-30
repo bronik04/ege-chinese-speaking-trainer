@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import secrets
 import time
 from contextlib import suppress
 from dataclasses import asdict
@@ -16,9 +17,11 @@ from trainer.domain.materials import (
 )
 from trainer.services.material_repository import (
     MaterialActor,
+    MaterialAssetAccess,
     MaterialAssetStorage,
     MaterialAudit,
     MaterialConflictError,
+    MaterialImageError,
     MaterialRecord,
     MaterialRepository,
     MaterialRequestData,
@@ -111,6 +114,8 @@ class MaterialService:
         editor_emails: str,
         max_image_body: int,
         now: Callable[[], int] = lambda: int(time.time()),
+        storage_token: Callable[[], str] | None = None,
+        temporary_token: Callable[[], str] | None = None,
     ):
         self._repository = repository
         self._project_root = project_root
@@ -120,6 +125,8 @@ class MaterialService:
         self._editor_emails = editor_emails
         self._max_image_body = max_image_body
         self._now = now
+        self._storage_token = storage_token or (lambda: secrets.token_urlsafe(18))
+        self._temporary_token = temporary_token or (lambda: secrets.token_hex(8))
 
     def catalog(self, actor: MaterialActor | None) -> dict:
         items = public_official_index(self._project_root, actor is not None)
@@ -252,3 +259,52 @@ class MaterialService:
                 raise MaterialError("not_found")
             session.archive(record.id, self._now())
         return {"ok": True}
+
+    def upload_asset(
+        self,
+        material_id: str,
+        body: bytes,
+        content_type: str,
+        actor: MaterialActor,
+    ) -> dict:
+        mime_type = content_type.split(";", 1)[0].lower()
+        if mime_type not in {"image/jpeg", "image/png", "image/webp"}:
+            raise MaterialError("unsupported_image")
+        if not 0 < len(body) <= self._max_image_body:
+            raise MaterialError("image_too_large")
+
+        material = self._repository.owned_material(material_id, actor.id)
+        if material is None:
+            raise MaterialError("not_found")
+        try:
+            encoded = self._image_encoder(body)
+        except MaterialImageError as error:
+            raise MaterialError("invalid_image") from error
+
+        storage_key = f"materials/{material.id}/{self._storage_token()}.webp"
+        temporary = self._asset_root / f".{self._temporary_token()}.webp"
+        try:
+            temporary.parent.mkdir(parents=True, exist_ok=True)
+            temporary.write_bytes(encoded)
+            self._storage.put(storage_key, temporary, "image/webp")
+            with self._repository.transaction() as session:
+                asset_id = session.add_asset(
+                    material.id,
+                    storage_key,
+                    "image/webp",
+                    len(encoded),
+                    self._now(),
+                )
+        except Exception:
+            with suppress(Exception):
+                self._storage.delete(storage_key)
+            raise
+        finally:
+            temporary.unlink(missing_ok=True)
+        return {"id": asset_id, "url": f"/api/material-assets/{asset_id}"}
+
+    def asset(self, asset_id: int, actor: MaterialActor | None) -> MaterialAssetAccess:
+        asset = self._repository.asset_access(asset_id)
+        if asset is None or actor is None or (asset.material_status != "published" and asset.owner_id != actor.id):
+            raise MaterialError("asset_not_found")
+        return asset

@@ -15,6 +15,9 @@ import asgi
 from trainer.api import dependencies, runtime
 from trainer.api.controllers import materials, recordings
 from trainer.domain.materials import EXAM_SPEC, build_content
+from trainer.infrastructure.database.material_repository import SQLiteMaterialRepository
+from trainer.infrastructure.images import encode_material_image
+from trainer.services.materials import MaterialService
 
 
 class MaterialApiTest(unittest.TestCase):
@@ -211,7 +214,7 @@ class MaterialApiTest(unittest.TestCase):
                 self.deleted.append(key)
 
         storage = FailingStorage()
-        original_connect = materials.connect
+        original_connect = runtime.connect
         calls = 0
 
         def failing_connect():
@@ -221,10 +224,16 @@ class MaterialApiTest(unittest.TestCase):
                 raise sqlite3.IntegrityError("metadata failed")
             return original_connect()
 
-        with (
-            patch.object(materials, "connect", side_effect=failing_connect),
-            patch.object(materials, "storage_from_env", return_value=storage),
-        ):
+        service = MaterialService(
+            SQLiteMaterialRepository(failing_connect),
+            project_root=runtime.ROOT,
+            asset_root=runtime.MATERIAL_ASSET_DIR,
+            storage=storage,
+            image_encoder=encode_material_image,
+            editor_emails=os.environ["TRAINER_EDITOR_EMAILS"],
+            max_image_body=min(runtime.MAX_AUDIO_BODY, 5_000_000),
+        )
+        with patch.object(runtime, "material_service", return_value=service):
             response = self.client.post(
                 "/api/materials/cleanup-task/assets",
                 headers={**self.origin, "Content-Type": "image/png"},
