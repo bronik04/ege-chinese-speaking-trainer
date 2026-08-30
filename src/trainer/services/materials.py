@@ -6,12 +6,16 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Callable
 
-from trainer.domain.materials import editor_allowed, material_payload
+from trainer.domain.materials import editor_allowed, material_payload, validate_slug
 from trainer.services.material_repository import (
     MaterialActor,
     MaterialAssetStorage,
+    MaterialAudit,
+    MaterialConflictError,
     MaterialRecord,
     MaterialRepository,
+    MaterialRequestData,
+    MaterialRequestMetadata,
 )
 
 
@@ -49,6 +53,36 @@ def _material_index_payload(record: MaterialRecord) -> dict:
 
 def _material_payload(record: MaterialRecord) -> dict:
     return material_payload(asdict(record))
+
+
+def _normalize(data: MaterialRequestData) -> MaterialRequestData:
+    kind = data.kind
+    task_number = data.task_number
+    try:
+        task_number = int(task_number) if task_number is not None else None
+        year = int(data.year)
+    except (TypeError, ValueError) as error:
+        raise ValueError("Проверьте год и номер задания") from error
+    if kind == "full":
+        task_number = None
+    elif kind != "task" or task_number not in {1, 2, 3}:
+        raise ValueError("Выберите тип материала и номер задания")
+    content = data.content
+    if not isinstance(content, dict) or len(json.dumps(content, ensure_ascii=False)) > 150_000:
+        raise ValueError("Содержание материала слишком велико")
+    title = data.title.strip()
+    source = data.source.strip()
+    if not 2 <= len(title) <= 120 or not 2 <= len(source) <= 200 or not 2020 <= year <= 2100:
+        raise ValueError("Проверьте название, год и источник материала")
+    return MaterialRequestData(
+        slug=validate_slug(data.slug),
+        kind=kind,
+        task_number=task_number,
+        title=title,
+        year=year,
+        source=source,
+        content=content,
+    )
 
 
 class MaterialError(Exception):
@@ -107,3 +141,49 @@ class MaterialService:
         ):
             raise MaterialError("not_found")
         return _material_payload(record)
+
+    def create(
+        self,
+        data: MaterialRequestData,
+        actor: MaterialActor,
+        metadata: MaterialRequestMetadata,
+    ) -> dict:
+        try:
+            normalized = _normalize(data)
+        except ValueError as error:
+            raise MaterialError("invalid_metadata", str(error)) from error
+        now = self._now()
+        try:
+            with self._repository.transaction() as session:
+                material_id = session.create(actor.id, normalized, now)
+                session.audit(
+                    MaterialAudit(
+                        "material_created",
+                        actor,
+                        metadata,
+                        {"materialId": material_id},
+                    )
+                )
+        except MaterialConflictError as error:
+            raise MaterialError("slug_exists") from error
+        return {"id": normalized.slug, "status": "draft"}
+
+    def update(
+        self,
+        material_id: str,
+        data: MaterialRequestData,
+        actor: MaterialActor,
+        metadata: MaterialRequestMetadata,
+    ) -> dict:
+        try:
+            normalized = _normalize(data)
+        except ValueError as error:
+            raise MaterialError("invalid_metadata", str(error)) from error
+        try:
+            with self._repository.transaction() as session:
+                updated = session.update(material_id, actor.id, normalized, self._now())
+                if not updated:
+                    raise MaterialError("not_found")
+        except MaterialConflictError as error:
+            raise MaterialError("slug_exists") from error
+        return {"id": normalized.slug, "status": "draft"}

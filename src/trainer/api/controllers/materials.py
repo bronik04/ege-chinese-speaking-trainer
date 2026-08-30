@@ -18,10 +18,13 @@ from trainer.domain.materials import (
     material_asset_ids,
     validate_slug,
 )
-from trainer.infrastructure.database.core import INTEGRITY_ERRORS
 from trainer.infrastructure.storage import storage_from_env
 from trainer.services import accounts as account_services
-from trainer.services.material_repository import MaterialActor
+from trainer.services.material_repository import (
+    MaterialActor,
+    MaterialRequestData,
+    MaterialRequestMetadata,
+)
 from trainer.services.materials import MaterialError
 
 
@@ -35,9 +38,33 @@ def _required_actor(user: dict) -> MaterialActor:
     return actor
 
 
+def _request_data(payload) -> MaterialRequestData:
+    return MaterialRequestData(
+        slug=payload.slug,
+        kind=payload.kind,
+        task_number=payload.taskNumber,
+        title=payload.title,
+        year=payload.year,
+        source=payload.source,
+        content=payload.content,
+    )
+
+
+def _metadata(context: RequestContext) -> MaterialRequestMetadata:
+    return MaterialRequestMetadata(context.client_ip, context.user_agent)
+
+
 def _service_error(error: MaterialError) -> ApiError:
     if error.reason == "not_found":
         return ApiError("material_not_found", "Материал не найден", HTTPStatus.NOT_FOUND)
+    if error.reason == "invalid_metadata":
+        return ApiError("invalid_material", error.message or "Некорректный материал", HTTPStatus.BAD_REQUEST)
+    if error.reason == "slug_exists":
+        return ApiError(
+            "material_slug_exists",
+            "Материал с таким идентификатором уже существует",
+            HTTPStatus.CONFLICT,
+        )
     raise error
 
 
@@ -102,76 +129,27 @@ def material_get(material_id: str, user: dict | None) -> ActionResult:
 
 def material_create(payload, user: dict, context: RequestContext) -> ActionResult:
     try:
-        normalized = _material_metadata(payload)
-    except ValueError as error:
-        raise ApiError("invalid_material", str(error), HTTPStatus.BAD_REQUEST) from error
-    now = int(time.time())
-    try:
-        with connect() as database:
-            cursor = database.execute(
-                """INSERT INTO materials(slug,owner_id,kind,task_number,title,year,source,status,content_json,created_at,updated_at)
-                   VALUES (?,?,?,?,?,?,?,'draft',?,?,?)""",
-                (
-                    normalized["slug"],
-                    user["id"],
-                    normalized["kind"],
-                    normalized["taskNumber"],
-                    normalized["title"],
-                    normalized["year"],
-                    normalized["source"],
-                    json.dumps(normalized["content"], ensure_ascii=False),
-                    now,
-                    now,
-                ),
-            )
-            account_services.audit(
-                database,
-                "material_created",
-                client_ip=context.client_ip,
-                user_agent=context.user_agent,
-                user_id=user["id"],
-                email=user["email"],
-                details={"materialId": cursor.lastrowid},
-            )
-    except INTEGRITY_ERRORS as error:
-        raise ApiError(
-            "material_slug_exists", "Материал с таким идентификатором уже существует", HTTPStatus.CONFLICT
-        ) from error
-    return ActionResult({"material": {"id": normalized["slug"], "status": "draft"}}, status=HTTPStatus.CREATED)
+        material = runtime.material_service().create(
+            _request_data(payload),
+            _required_actor(user),
+            _metadata(context),
+        )
+    except MaterialError as error:
+        raise _service_error(error) from error
+    return ActionResult({"material": material}, status=HTTPStatus.CREATED)
 
 
 def material_update(material_id: str, payload, user: dict, context: RequestContext) -> ActionResult:
     try:
-        normalized = _material_metadata(payload)
-    except ValueError as error:
-        raise ApiError("invalid_material", str(error), HTTPStatus.BAD_REQUEST) from error
-    try:
-        with connect() as database:
-            cursor = database.execute(
-                """UPDATE materials SET slug=?,kind=?,task_number=?,title=?,year=?,source=?,content_json=?,
-                       status='draft',published_at=NULL,updated_at=? WHERE slug=? AND owner_id=?""",
-                (
-                    normalized["slug"],
-                    normalized["kind"],
-                    normalized["taskNumber"],
-                    normalized["title"],
-                    normalized["year"],
-                    normalized["source"],
-                    json.dumps(normalized["content"], ensure_ascii=False),
-                    int(time.time()),
-                    material_id,
-                    user["id"],
-                ),
-            )
-            if not cursor.rowcount:
-                raise ApiError("material_not_found", "Материал не найден", HTTPStatus.NOT_FOUND)
-    except ApiError:
-        raise
-    except INTEGRITY_ERRORS as error:
-        raise ApiError(
-            "material_slug_exists", "Материал с таким идентификатором уже существует", HTTPStatus.CONFLICT
-        ) from error
-    return ActionResult({"material": {"id": normalized["slug"], "status": "draft"}})
+        material = runtime.material_service().update(
+            material_id,
+            _request_data(payload),
+            _required_actor(user),
+            _metadata(context),
+        )
+    except MaterialError as error:
+        raise _service_error(error) from error
+    return ActionResult({"material": material})
 
 
 def material_publish(material_id: str, user: dict, context: RequestContext) -> ActionResult:

@@ -107,10 +107,16 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         self.assertFalse(any(module.startswith("trainer.infrastructure") for module in port_imports), port_imports)
         self.assertFalse(any(module.startswith("trainer.api") for module in adapter_imports), adapter_imports)
 
-    def test_material_read_controller_functions_have_no_database_access(self):
+    def test_material_delegated_controller_functions_have_no_database_access(self):
         path = PACKAGE / "api" / "controllers" / "materials.py"
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        targets = {"materials_list", "materials_mine", "material_get"}
+        targets = {
+            "materials_list",
+            "materials_mine",
+            "material_get",
+            "material_create",
+            "material_update",
+        }
         functions = {
             node.name: node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in targets
         }

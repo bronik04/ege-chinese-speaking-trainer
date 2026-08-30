@@ -4,10 +4,18 @@ import sqlite3
 import tempfile
 import unittest
 from contextlib import closing
+from dataclasses import replace
 from pathlib import Path
 
 from trainer.infrastructure.database.material_repository import SQLiteMaterialRepository
 from trainer.infrastructure.database.migrations import upgrade_sqlite_database
+from trainer.services.material_repository import (
+    MaterialActor,
+    MaterialAudit,
+    MaterialConflictError,
+    MaterialRequestData,
+    MaterialRequestMetadata,
+)
 
 
 class SQLiteMaterialRepositoryTest(unittest.TestCase):
@@ -56,6 +64,17 @@ class SQLiteMaterialRepositoryTest(unittest.TestCase):
                 (self.draft_newer_id, "materials/1/source.webp", "image/webp", 14, 1),
             ).lastrowid
         self.repository = SQLiteMaterialRepository(self.connect)
+        self.actor = MaterialActor(self.owner_id, "owner@example.test", True)
+        self.metadata = MaterialRequestMetadata("127.0.0.1", "tests")
+        self.request_data = MaterialRequestData(
+            "created-task",
+            "task",
+            2,
+            "Created task",
+            2026,
+            "Test",
+            {"2": {}},
+        )
 
     def tearDown(self):
         self.directory.cleanup()
@@ -100,6 +119,77 @@ class SQLiteMaterialRepositoryTest(unittest.TestCase):
             (asset.owner_id, asset.material_status, asset.storage_key, asset.mime_type, asset.size_bytes),
             (self.owner_id, "draft", "materials/1/source.webp", "image/webp", 14),
         )
+
+    def test_create_and_audit_commit_together_and_rollback_together(self):
+        with self.repository.transaction() as session:
+            material_id = session.create(self.owner_id, self.request_data, 100)
+            session.audit(
+                MaterialAudit(
+                    "material_created",
+                    self.actor,
+                    self.metadata,
+                    {"materialId": material_id},
+                )
+            )
+
+        with closing(self.connect()) as database:
+            created = database.execute(
+                "SELECT status,created_at,updated_at FROM materials WHERE slug='created-task'"
+            ).fetchone()
+            audit = database.execute(
+                "SELECT action,details_json FROM audit_log WHERE action='material_created'"
+            ).fetchone()
+        self.assertEqual(tuple(created), ("draft", 100, 100))
+        self.assertEqual(tuple(audit), ("material_created", f'{{"materialId":{material_id}}}'))
+
+        with self.assertRaises(RuntimeError):
+            with self.repository.transaction() as session:
+                session.create(
+                    self.owner_id,
+                    replace(self.request_data, slug="rolled-back"),
+                    101,
+                )
+                raise RuntimeError("rollback")
+
+        self.assertIsNone(self.repository.material("rolled-back"))
+
+    def test_update_resets_publication_state_and_reports_missing_owner_row(self):
+        with self.repository.transaction() as session:
+            updated = session.update(
+                "published-older",
+                self.owner_id,
+                replace(self.request_data, slug="renamed-task"),
+                200,
+            )
+            missing = session.update(
+                "published-newer",
+                self.owner_id,
+                replace(self.request_data, slug="forbidden"),
+                201,
+            )
+
+        row = self.repository.material("renamed-task")
+        self.assertTrue(updated)
+        self.assertFalse(missing)
+        self.assertEqual((row.status, row.content_json), ("draft", '{"2": {}}'))
+
+    def test_create_and_update_translate_slug_integrity_conflicts(self):
+        with self.assertRaises(MaterialConflictError):
+            with self.repository.transaction() as session:
+                session.create(
+                    self.owner_id,
+                    replace(self.request_data, slug="draft-newer"),
+                    100,
+                )
+
+        with self.assertRaises(MaterialConflictError):
+            with self.repository.transaction() as session:
+                session.update(
+                    "draft-newer",
+                    self.owner_id,
+                    replace(self.request_data, slug="published-newer"),
+                    100,
+                )
 
 
 if __name__ == "__main__":
