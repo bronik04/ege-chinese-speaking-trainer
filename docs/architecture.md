@@ -37,13 +37,33 @@ compatibility-слои и параллельные реализации не с�
 - API знает HTTP, Pydantic, cookies, статусы и JSON-контракт.
 - Domain описывает аккаунты, материалы, review selection, оценивание и retention без зависимости от HTTP,
   environment или внешних adapters.
-- Services выполняет операции над domain-правилами, БД и storage.
+- Services оркестрирует прикладные сценарии и зависит от infrastructure через явные ports там, где граница уже
+  выделена.
 - Infrastructure реализует SQLite, filesystem, S3/R2, SMTP/outbox и observability и не импортирует API.
 - Frontend зависит только от публичного HTTP-контракта и публичных assets.
 
 Контроллеры — синхронные функции, возвращающие `ActionResult`/`FileResult`. FastAPI routes выполняют их через
 thread pool и преобразуют результат в response. Это сохраняет transport на границе API и позволяет тестировать
 сценарии без web framework.
+
+### Вертикальная граница review requests
+
+Все восемь review-request сценариев проходят через одну прикладную границу:
+
+```text
+review_requests controller
+  → ReviewRequestService
+    → ReviewRequestRepository port
+      → SQLiteReviewRequestRepository
+```
+
+Controller разбирает HTTP-значения, проверяет owner-only detail и преобразует `ReviewRequestError` в прежний
+`ApiError`. Service содержит правила selection, snapshots, аудиозаписей, переходов статуса и оценивания.
+SQLite adapter владеет SQL, audit, cleanup jobs и обычными/immediate transactions. Snapshot helper получает
+только `ReviewAssetRegistry`, а не database connection.
+
+Это проверенная вертикальная миграция одного bounded context, а не общий DI framework. Остальные контроллеры
+могут сохранять переходную структуру и переносятся только отдельными проверяемыми изменениями.
 
 ## Потоки данных
 

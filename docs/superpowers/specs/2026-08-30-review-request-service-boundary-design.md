@@ -176,3 +176,21 @@ Controller централизованно отображает их на дей�
 6. Удалить последние database dependencies из controller, включить архитектурный guard и обновить документацию.
 
 Каждый этап сохраняет рабочий API и завершается профильными тестами и отдельным commit.
+
+## Результат реализации
+
+Вертикальная граница реализована в модулях:
+
+- `src/trainer/services/review_requests.py` — прикладная оркестрация восьми сценариев;
+- `src/trainer/services/review_request_repository.py` — transport- и SQLite-независимые ports/структуры;
+- `src/trainer/infrastructure/database/review_request_repository.py` — SQLite SQL, audit, cleanup и transactions;
+- `src/trainer/api/runtime.py` — composition factory;
+- `src/trainer/api/controllers/review_requests.py` — transport adapter без database imports, `.execute()` и
+  `runtime.connect()`.
+
+Snapshot helper принимает `ReviewAssetRegistry` и больше не импортирует API runtime. Публичные routes, schemas,
+error payloads, migration/schema и storage paths не изменились. Guard в `tests/unit/test_architecture_boundaries.py`
+фиксирует направление зависимостей.
+
+Свежая обязательная проверка `make check` прошла: 18 JavaScript unit-тестов, 131 Python unit-тест, 95 Python
+integration-тестов (2 PostgreSQL smoke-теста пропущены без `TEST_DATABASE_URL`), итоговое покрытие — 88%.

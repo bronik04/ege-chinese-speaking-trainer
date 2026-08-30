@@ -8,15 +8,21 @@ ROOT = Path(__file__).resolve().parents[2]
 PACKAGE = ROOT / "src" / "trainer"
 
 
+def file_imports(path: Path) -> set[str]:
+    modules: set[str] = set()
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            modules.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            modules.add(node.module)
+    return modules
+
+
 def imported_modules(directory: Path) -> set[str]:
     modules: set[str] = set()
     for path in directory.rglob("*.py"):
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                modules.update(alias.name for alias in node.names)
-            elif isinstance(node, ast.ImportFrom) and node.module:
-                modules.add(node.module)
+        modules.update(file_imports(path))
     return modules
 
 
@@ -69,6 +75,37 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         imports = imported_modules(PACKAGE / "api" / "controllers")
         forbidden = ("fastapi", "starlette")
         self.assertFalse(any(module.startswith(forbidden) for module in imports), imports)
+
+    def test_review_request_controller_has_no_database_access(self):
+        path = PACKAGE / "api" / "controllers" / "review_requests.py"
+        source = path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(path))
+        direct_calls = {
+            node.func.attr
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+        }
+
+        self.assertFalse(
+            any(module.startswith("trainer.infrastructure.database") for module in file_imports(path)),
+            file_imports(path),
+        )
+        self.assertNotIn("execute", direct_calls)
+        self.assertNotIn("runtime.connect", source)
+
+    def test_review_request_boundary_dependency_direction(self):
+        service_imports = file_imports(PACKAGE / "services" / "review_requests.py")
+        port_imports = file_imports(PACKAGE / "services" / "review_request_repository.py")
+        adapter_imports = file_imports(PACKAGE / "infrastructure" / "database" / "review_request_repository.py")
+
+        self.assertFalse(any(module.startswith("trainer.api") for module in service_imports), service_imports)
+        self.assertFalse(
+            any(module.startswith("trainer.infrastructure.database") for module in service_imports),
+            service_imports,
+        )
+        self.assertNotIn("sqlite3", port_imports)
+        self.assertFalse(any(module.startswith("trainer.infrastructure") for module in port_imports), port_imports)
+        self.assertFalse(any(module.startswith("trainer.api") for module in adapter_imports), adapter_imports)
 
 
 if __name__ == "__main__":
