@@ -16,13 +16,12 @@ from trainer.api.results import ActionResult, RequestContext
 from trainer.api.schemas import ReviewRequestCreate, ReviewScoresRequest
 from trainer.domain.grading import CRITERIA, validate_scores
 from trainer.domain.recording_retention import expires_at
-from trainer.domain.review_requests import required_recording_positions, validate_review_selection
+from trainer.domain.review_requests import required_recording_positions
 from trainer.infrastructure.audio import validate_duration
 from trainer.infrastructure.database.core import begin_immediate
 from trainer.services import accounts as account_services
-from trainer.services.materials import assignment_material
 from trainer.services.recordings import write_recording
-from trainer.services.review_assets import copy_review_assets_from_env
+from trainer.services.review_request_repository import RequestMetadata, ReviewActor
 from trainer.services.review_requests import ReviewRequestError
 from trainer.services.storage_cleanup import enqueue_cleanup_job, process_cleanup_jobs
 
@@ -32,6 +31,20 @@ def _validation_error(error: ValueError) -> ApiError:
 
 
 def _service_error(error: ReviewRequestError) -> ApiError:
+    if error.reason == "invalid_request":
+        return ApiError(default_error_code(HTTPStatus.BAD_REQUEST), error.message, HTTPStatus.BAD_REQUEST)
+    if error.reason == "run_too_large":
+        return ApiError(
+            default_error_code(HTTPStatus.BAD_REQUEST),
+            "Данные попытки слишком велики",
+            HTTPStatus.BAD_REQUEST,
+        )
+    if error.reason == "invalid_material":
+        return ApiError(
+            "invalid_review_material",
+            "Материал не найден или не содержит выбранные задания",
+            HTTPStatus.BAD_REQUEST,
+        )
     if error.reason == "not_found":
         return ApiError(
             "review_request_not_found",
@@ -74,67 +87,17 @@ def _cleanup_orphaned(*, audio_keys: list[str] | None = None, assignment_keys: l
 
 def review_request_create(payload: ReviewRequestCreate, user: dict, context: RequestContext) -> ActionResult:
     try:
-        selection = validate_review_selection(payload.kind, payload.tasks)
-    except ValueError as error:
-        raise _validation_error(error) from error
-    variant_id = payload.variantId.strip()
-    encoded_run = json.dumps(payload.run, ensure_ascii=False, separators=(",", ":"))
-    if len(encoded_run.encode("utf-8")) > 100_000:
-        raise ApiError(
-            default_error_code(HTTPStatus.BAD_REQUEST), "Данные попытки слишком велики", HTTPStatus.BAD_REQUEST
+        result = runtime.review_request_service().create(
+            kind=payload.kind,
+            tasks=payload.tasks,
+            variant_id=payload.variantId.strip(),
+            run=payload.run,
+            actor=ReviewActor(id=user["id"], email=user["email"]),
+            metadata=RequestMetadata(client_ip=context.client_ip, user_agent=context.user_agent),
         )
-
-    created_asset_keys: list[str] = []
-    try:
-        with runtime.connect() as database:
-            material = assignment_material(runtime.ROOT, database, variant_id)
-            material_tasks = material.get("tasks", {}) if isinstance(material, dict) else {}
-            if not material or any(str(task) not in material_tasks for task in selection.tasks):
-                raise ApiError(
-                    "invalid_review_material",
-                    "Материал не найден или не содержит выбранные задания",
-                    HTTPStatus.BAD_REQUEST,
-                )
-            trimmed_material = {
-                **material,
-                "tasks": {str(task): material_tasks[str(task)] for task in selection.tasks},
-            }
-            cursor = database.execute(
-                """INSERT INTO review_requests(student_id,kind,status,variant_id,run_json)
-                   VALUES (?,?,?,?,?)""",
-                (user["id"], selection.kind, "uploading", variant_id, encoded_run),
-            )
-            request_id = cursor.lastrowid
-            snapshot = copy_review_assets_from_env(database, request_id, trimmed_material, created_asset_keys)
-            for task in selection.tasks:
-                database.execute(
-                    """INSERT INTO review_request_items(request_id,task_number,task_snapshot_json)
-                       VALUES (?,?,?)""",
-                    (
-                        request_id,
-                        task,
-                        json.dumps(snapshot["tasks"][str(task)], ensure_ascii=False, separators=(",", ":")),
-                    ),
-                )
-            account_services.audit(
-                database,
-                "review_request_created",
-                client_ip=context.client_ip,
-                user_agent=context.user_agent,
-                user_id=user["id"],
-                email=user["email"],
-                details={"requestId": request_id, "tasks": list(selection.tasks)},
-            )
-    except ApiError:
-        _cleanup_orphaned(assignment_keys=created_asset_keys)
-        raise
-    except Exception:
-        _cleanup_orphaned(assignment_keys=created_asset_keys)
-        raise
-    return ActionResult(
-        {"reviewRequest": {"id": request_id, "status": "uploading"}},
-        status=HTTPStatus.CREATED,
-    )
+    except ReviewRequestError as error:
+        raise _service_error(error) from error
+    return ActionResult(result, status=HTTPStatus.CREATED)
 
 
 def review_recording_create(

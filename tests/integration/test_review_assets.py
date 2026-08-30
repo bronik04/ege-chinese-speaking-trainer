@@ -16,7 +16,8 @@ from trainer.infrastructure.database.queries.review_requests import (
     teacher_review_requests,
 )
 from trainer.infrastructure.storage import LocalAudioStorage
-from trainer.services.review_assets import copy_review_assets, copy_review_assets_from_env
+from trainer.services.review_assets import copy_review_assets
+from trainer.services.review_request_repository import MaterialAsset
 
 
 class FailingSecondPutStorage(LocalAudioStorage):
@@ -29,6 +30,36 @@ class FailingSecondPutStorage(LocalAudioStorage):
         super().put(key, source, content_type)
         if self.put_calls == 2:
             raise OSError("second snapshot storage failed")
+
+
+class FakeReviewAssetRegistry:
+    def __init__(self, source_assets: dict[int, MaterialAsset]):
+        self.source_assets = source_assets
+        self.review_assets: dict[int, dict] = {}
+
+    def material_asset(self, asset_id: int) -> MaterialAsset | None:
+        return self.source_assets.get(asset_id)
+
+    def add_review_asset(
+        self,
+        request_id: int,
+        storage_key: str,
+        mime_type: str,
+        size_bytes: int,
+        created_at: int,
+    ) -> int:
+        asset_id = len(self.review_assets) + 1
+        self.review_assets[asset_id] = {
+            "request_id": request_id,
+            "storage_key": storage_key,
+            "mime_type": mime_type,
+            "size_bytes": size_bytes,
+            "created_at": created_at,
+        }
+        return asset_id
+
+    def remove_review_asset(self, asset_id: int) -> None:
+        self.review_assets.pop(asset_id, None)
 
 
 class ReviewAssetServiceTest(unittest.TestCase):
@@ -73,42 +104,46 @@ class ReviewAssetServiceTest(unittest.TestCase):
             "tasks": {"2": {"images": [f"/api/material-assets/{asset_id}"] * 3}},
         }
 
+    def test_uses_asset_registry_without_database_access(self):
+        registry = FakeReviewAssetRegistry({1: MaterialAsset("materials/1/source.webp", "image/webp", 14)})
+        material = {"tasks": {"2": {"images": ["/api/material-assets/1"]}}}
+
+        snapshot = copy_review_assets(
+            registry,
+            7,
+            material,
+            self.source_storage,
+            self.target_storage,
+        )
+
+        self.assertEqual(snapshot["tasks"]["2"]["images"], ["/api/review-assets/1"])
+        self.assertEqual(self.target_storage.read(registry.review_assets[1]["storage_key"]), b"snapshot-image")
+
     def test_copies_material_assets_into_an_immutable_review_snapshot(self):
-        from trainer.api import runtime
+        registry = FakeReviewAssetRegistry({1: MaterialAsset("materials/1/source.webp", "image/webp", 14)})
+        material = {"tasks": {"2": {"images": ["/api/material-assets/1"] * 3}}}
+        created_keys: list[str] = []
 
-        original_material_root = runtime.MATERIAL_ASSET_DIR
-        original_review_root = runtime.REVIEW_ASSET_DIR
-        runtime.MATERIAL_ASSET_DIR = self.source_storage.root
-        runtime.REVIEW_ASSET_DIR = self.target_storage.root
-        self.addCleanup(setattr, runtime, "MATERIAL_ASSET_DIR", original_material_root)
-        self.addCleanup(setattr, runtime, "REVIEW_ASSET_DIR", original_review_root)
+        snapshot = copy_review_assets(
+            registry,
+            7,
+            material,
+            self.source_storage,
+            self.target_storage,
+            created_keys,
+        )
 
-        with closing(self.connect()) as database, database:
-            material = self.create_material_fixture(database)
-            asset_id = int(material["tasks"]["2"]["images"][0].rsplit("/", 1)[1])
-            request_id = database.execute(
-                """INSERT INTO review_requests(student_id,kind,status,variant_id,run_json)
-                   VALUES (?,?,?,?,?)""",
-                (1, "task", "uploading", "author-task", "{}"),
-            ).lastrowid
-            created_keys: list[str] = []
+        snapshot_url = snapshot["tasks"]["2"]["images"][0]
+        self.assertEqual(snapshot["tasks"]["2"]["images"], [snapshot_url] * 3)
+        self.assertRegex(snapshot_url, r"^/api/review-assets/\d+$")
+        row = registry.review_assets[1]
+        self.assertEqual(self.target_storage.read(row["storage_key"]), b"snapshot-image")
+        self.assertEqual(created_keys, [row["storage_key"]])
 
-            snapshot = copy_review_assets_from_env(database, request_id, material, created_keys)
-
-            snapshot_url = snapshot["tasks"]["2"]["images"][0]
-            self.assertRegex(snapshot_url, r"^/api/review-assets/\d+$")
-            review_asset_id = int(snapshot_url.rsplit("/", 1)[1])
-            row = database.execute(
-                "SELECT storage_key FROM review_request_assets WHERE id=?", (review_asset_id,)
-            ).fetchone()
-            self.assertEqual(self.target_storage.read(row["storage_key"]), b"snapshot-image")
-            self.assertEqual(created_keys, [row["storage_key"]])
-
-            source_file = self.root / "changed-source.webp"
-            source_file.write_bytes(b"changed-original")
-            source_row = database.execute("SELECT storage_key FROM material_assets WHERE id=?", (asset_id,)).fetchone()
-            self.source_storage.put(source_row["storage_key"], source_file, "image/webp")
-            self.assertEqual(self.target_storage.read(row["storage_key"]), b"snapshot-image")
+        source_file = self.root / "changed-source.webp"
+        source_file.write_bytes(b"changed-original")
+        self.source_storage.put("materials/1/source.webp", source_file, "image/webp")
+        self.assertEqual(self.target_storage.read(row["storage_key"]), b"snapshot-image")
 
     def test_copies_official_public_images_into_an_immutable_private_review_snapshot(self):
         public_root = self.root / "public"
@@ -128,34 +163,24 @@ class ReviewAssetServiceTest(unittest.TestCase):
             },
         }
 
-        with closing(self.connect()) as database, database:
-            self.create_material_fixture(database)
-            request_id = database.execute(
-                """INSERT INTO review_requests(student_id,kind,status,variant_id,run_json)
-                   VALUES (?,?,?,?,?)""",
-                (1, "task", "uploading", "demo", "{}"),
-            ).lastrowid
+        registry = FakeReviewAssetRegistry({})
+        snapshot = copy_review_assets(
+            registry,
+            7,
+            material,
+            self.source_storage,
+            self.target_storage,
+            public_root=public_root,
+        )
 
-            snapshot = copy_review_assets(
-                database,
-                request_id,
-                material,
-                self.source_storage,
-                self.target_storage,
-                public_root=public_root,
-            )
-
-            images = snapshot["tasks"]["2"]["images"]
-            self.assertEqual(images[0], images[1])
-            self.assertRegex(images[0], r"^/api/review-assets/\d+$")
-            row = database.execute(
-                "SELECT storage_key,mime_type,size_bytes FROM review_request_assets WHERE request_id=?",
-                (request_id,),
-            ).fetchone()
-            self.assertEqual((row["mime_type"], row["size_bytes"]), ("image/webp", 17))
-            source_file.write_bytes(b"changed")
-            source_file.unlink()
-            self.assertEqual(self.target_storage.read(row["storage_key"]), b"official-snapshot")
+        images = snapshot["tasks"]["2"]["images"]
+        self.assertEqual(images[0], images[1])
+        self.assertRegex(images[0], r"^/api/review-assets/\d+$")
+        row = registry.review_assets[1]
+        self.assertEqual((row["mime_type"], row["size_bytes"]), ("image/webp", 17))
+        source_file.write_bytes(b"changed")
+        source_file.unlink()
+        self.assertEqual(self.target_storage.read(row["storage_key"]), b"official-snapshot")
 
     def test_rejects_official_asset_paths_outside_the_public_root(self):
         public_root = self.root / "public"
@@ -165,53 +190,43 @@ class ReviewAssetServiceTest(unittest.TestCase):
             "tasks": {"2": {"images": ["assets/variants/../../../secret.webp"]}},
         }
 
-        with closing(self.connect()) as database, database:
-            self.create_material_fixture(database)
-            request_id = database.execute(
-                """INSERT INTO review_requests(student_id,kind,status,variant_id,run_json)
-                   VALUES (?,?,?,?,?)""",
-                (1, "task", "uploading", "demo", "{}"),
-            ).lastrowid
+        registry = FakeReviewAssetRegistry({})
+        with self.assertRaisesRegex(ValueError, "outside the public root"):
+            copy_review_assets(
+                registry,
+                7,
+                material,
+                self.source_storage,
+                self.target_storage,
+                public_root=public_root,
+            )
 
-            with self.assertRaisesRegex(ValueError, "outside the public root"):
-                copy_review_assets(
-                    database,
-                    request_id,
-                    material,
-                    self.source_storage,
-                    self.target_storage,
-                    public_root=public_root,
-                )
-
-            self.assertEqual(database.execute("SELECT COUNT(*) FROM review_request_assets").fetchone()[0], 0)
+        self.assertEqual(registry.review_assets, {})
 
     def test_removes_review_rows_and_objects_when_a_later_copy_fails(self):
         failing_storage = FailingSecondPutStorage(self.root / "failing-review-assets")
         second_source = self.root / "second-source.webp"
         second_source.write_bytes(b"second-image")
         self.source_storage.put("materials/1/second.webp", second_source, "image/webp")
-        with closing(self.connect()) as database:
-            with database:
-                material = self.create_material_fixture(database)
-                second_asset_id = database.execute(
-                    """INSERT INTO material_assets(material_id,storage_key,mime_type,size_bytes,created_at)
-                       VALUES (?,?,?,?,?)""",
-                    (1, "materials/1/second.webp", "image/webp", 12, 1),
-                ).lastrowid
-                request_id = database.execute(
-                    """INSERT INTO review_requests(student_id,kind,status,variant_id,run_json)
-                       VALUES (?,?,?,?,?)""",
-                    (1, "task", "uploading", "author-task", "{}"),
-                ).lastrowid
-                material["tasks"]["2"]["images"] = [
-                    material["tasks"]["2"]["images"][0],
-                    f"/api/material-assets/{second_asset_id}",
-                ]
-                with self.assertRaisesRegex(OSError, "second snapshot storage failed"):
-                    copy_review_assets(database, request_id, material, self.source_storage, failing_storage)
+        registry = FakeReviewAssetRegistry(
+            {
+                1: MaterialAsset("materials/1/source.webp", "image/webp", 14),
+                2: MaterialAsset("materials/1/second.webp", "image/webp", 12),
+            }
+        )
+        material = {
+            "tasks": {
+                "2": {
+                    "images": ["/api/material-assets/1", "/api/material-assets/2"],
+                }
+            }
+        }
 
-            self.assertEqual(database.execute("SELECT COUNT(*) FROM review_request_assets").fetchone()[0], 0)
-            self.assertEqual(list(failing_storage.root.rglob("*.webp")), [])
+        with self.assertRaisesRegex(OSError, "second snapshot storage failed"):
+            copy_review_assets(registry, 7, material, self.source_storage, failing_storage)
+
+        self.assertEqual(registry.review_assets, {})
+        self.assertEqual(list(failing_storage.root.rglob("*.webp")), [])
 
 
 class ReviewRequestQueryTest(unittest.TestCase):
