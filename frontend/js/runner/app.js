@@ -7,7 +7,6 @@ import { shortTime } from "./task-view.js";
 import { plural, pluralize } from "../shared/plural.js";
 import { createAccountController } from "../account/account-controller.js";
 import { fullyRecordedTasks } from "../account/account-review-requests-controller.js";
-import { enhanceProjectSelects } from "../shared/project-select.js";
 import { enhanceMaterialList } from "../shared/material-list.js";
 import "../shared/site-shell.js";
 
@@ -376,7 +375,6 @@ renderProgress();
 setAuthMode("login");
 
 async function initialize() {
-  enhanceProjectSelects();
   enhanceMaterialList($("variantSelect"), $("materialList"));
   await initVariants();
   await handleAccountLinks();

@@ -155,7 +155,11 @@ test("student and owner cabinets have no assignment controls", async ({ browser 
   await expect(teacherPage.locator("#reviewRequestFilters")).toHaveCSS("border-radius", "12px");
   await teacherPage.setViewportSize({ width: 390, height: 844 });
   expect(await teacherPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
-  await expect(teacherPage.locator("select:not([data-project-select='ready'])")).toHaveCount(0);
+  for (const selector of ["#reviewTaskFilter", "#reviewStatusFilter"]) {
+    await expect(teacherPage.locator(selector)).toBeVisible();
+    await expect(teacherPage.locator(selector)).toHaveCSS("min-height", "44px");
+  }
+  await expect(teacherPage.locator(".project-select")).toHaveCount(0);
   for (const page of [teacherPage, studentPage]) {
     await expect(page.locator("#groupName, #joinGroupCode, #assignmentDue, #createAssignmentBtn, #exportCsvBtn, #exportPdfBtn")).toHaveCount(0);
     await expect(page.locator("[data-copy-code], [data-resend-assignment], [data-start-assignment]")).toHaveCount(0);

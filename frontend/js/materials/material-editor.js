@@ -1,5 +1,4 @@
 import { api } from "../shared/api.js";
-import { enhanceProjectSelects, syncProjectSelects } from "../shared/project-select.js";
 import { escapeHtml } from "../shared/progress.js";
 import "../shared/site-shell.js";
 
@@ -30,7 +29,6 @@ function showTasks() {
   document.querySelectorAll("[data-task-editor]").forEach(section => {
     section.classList.toggle("hidden", kind === "task" && Number(section.dataset.taskEditor) !== selected);
   });
-  syncProjectSelects();
 }
 
 function collectContent() {
@@ -190,7 +188,6 @@ async function deleteMaterial() {
 
 async function initialize() {
   renderAssetFields();
-  enhanceProjectSelects();
   try {
     await api("/api/auth/me");
     await loadMine();
