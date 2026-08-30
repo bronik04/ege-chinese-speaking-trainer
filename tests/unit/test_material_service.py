@@ -344,6 +344,9 @@ class MaterialServiceTest(unittest.TestCase):
         self.repository.snapshot_jsons = [
             "{",
             None,
+            "null",
+            "[]",
+            json.dumps({"tasks": []}),
             json.dumps({"tasks": {"2": {"images": ["external.webp"]}}}),
         ]
 

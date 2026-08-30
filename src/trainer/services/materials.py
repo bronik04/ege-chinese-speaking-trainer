@@ -229,7 +229,14 @@ class MaterialService:
             for snapshot in session.assignment_snapshots():
                 try:
                     snapshot_payload = json.loads(snapshot)
-                    assignment_asset_ids.update(material_asset_ids(snapshot_payload.get("tasks", {})))
+                    if not isinstance(snapshot_payload, dict):
+                        continue
+                    snapshot_tasks = snapshot_payload.get("tasks", {})
+                    if not isinstance(snapshot_tasks, dict) or not all(
+                        isinstance(task, dict) for task in snapshot_tasks.values()
+                    ):
+                        continue
+                    assignment_asset_ids.update(material_asset_ids(snapshot_tasks))
                 except (json.JSONDecodeError, ValueError, TypeError):
                     continue
             retained_asset_ids = asset_ids | assignment_asset_ids
