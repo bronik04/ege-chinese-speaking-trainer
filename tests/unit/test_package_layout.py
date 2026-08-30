@@ -24,6 +24,26 @@ class PackageLayoutTest(unittest.TestCase):
         self.assertFalse((root / "server.py").exists())
         self.assertFalse((root / "legacy").exists())
 
+    def test_retired_assignment_runtime_is_removed(self):
+        root = Path(__file__).resolve().parents[2]
+        for relative in (
+            "src/trainer/api/routes/work.py",
+            "src/trainer/api/controllers/work.py",
+        ):
+            self.assertFalse((root / relative).exists(), relative)
+
+        source = (root / "src/trainer/api/schemas.py").read_text(encoding="utf-8")
+        for name in (
+            "GroupRequest",
+            "JoinGroupRequest",
+            "AssignmentRequest",
+            "AssignmentUpdateRequest",
+            "SubmissionRequest",
+            "SubmissionCompleteRequest",
+            "ReviewRequest",
+        ):
+            self.assertNotIn(f"class {name}(", source)
+
     def test_frontend_content_and_public_files_are_separated(self):
         root = Path(__file__).resolve().parents[2]
         expected = (

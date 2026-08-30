@@ -40,35 +40,6 @@ class ProgressRequest(ApiSchema):
     progress: dict[str, Any]
 
 
-class GroupRequest(ApiSchema):
-    name: str = Field(min_length=2, max_length=80)
-
-
-class JoinGroupRequest(ApiSchema):
-    code: str = Field(min_length=6, max_length=16)
-
-
-class AssignmentRequest(ApiSchema):
-    groupId: int = Field(ge=1)
-    title: str = Field(min_length=2, max_length=100)
-    variantId: str = Field(pattern=r"^[a-z0-9-]{3,50}$")
-    tasks: list[Literal[1, 2, 3]] = Field(min_length=1, max_length=3)
-    dueAt: int | None = None
-
-
-class AssignmentUpdateRequest(ApiSchema):
-    title: str = Field(min_length=2, max_length=100)
-    dueAt: int | None = None
-
-
-class SubmissionRequest(ApiSchema):
-    run: dict[str, Any]
-
-
-class SubmissionCompleteRequest(ApiSchema):
-    pass
-
-
 class PersonalRecordingUpload(ApiSchema):
     runId: str = Field(min_length=1, max_length=120)
     variantId: str = Field(pattern=r"^[a-z0-9-]{3,50}$")
@@ -86,11 +57,6 @@ class ReviewRequestCreate(ApiSchema):
 
 class ReviewScoresRequest(ApiSchema):
     scores: dict[str, dict[str, int]]
-
-
-class ReviewRequest(ApiSchema):
-    scores: dict[str, dict[str, int]]
-    comment: str = Field(default="", max_length=3000)
 
 
 class MaterialRequest(ApiSchema):
