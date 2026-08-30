@@ -107,6 +107,7 @@ standard library и ports из `src/trainer/services/material_repository.py`. О
 - `MaterialMetadata(slug, kind, task_number, title, year, source, content)`;
 - `MaterialRecord` с полями, необходимыми правилам и formatters;
 - `MaterialAssetRecord(id, material_id, storage_key, mime_type, size_bytes)`;
+- `MaterialAssetAccess(storage_key, mime_type, size_bytes, owner_id, material_status)` для проверки download;
 - `MaterialAudit(actor, action, client_ip, user_agent, details)`;
 - `MaterialImageError` как adapter-neutral ошибка декодирования/преобразования изображения;
 - `MaterialRepository` для read operations и `transaction()`;
