@@ -249,3 +249,17 @@ status codes, audit action names/details и storage keys не меняются.
 - Upload удаляет новый storage object при metadata failure и всегда удаляет временный файл.
 - Схема БД, migrations, frontend и официальный content не изменены.
 - `make check` завершён с нулевым кодом.
+
+## Результат реализации
+
+Граница реализована в запланированном виде: transport-only controller вызывает `MaterialService`, service зависит
+от `MaterialRepository`/`MaterialAssetStorage` ports, SQLite adapter владеет SQL и транзакциями, а Pillow adapter —
+проверкой и WebP-кодированием. Все девять публичных функций, маршруты, payloads, статусы, русские сообщения,
+audit events, storage keys и assignment-snapshot retention сохранены; schema, migrations, frontend и content не
+изменялись. Итоговый `src/trainer/api/controllers/materials.py` содержит 180 строк и не импортирует infrastructure,
+database, storage или Pillow.
+
+Независимый code review выявил два важных пробела: malformed historical snapshots и отсутствие точных тестов
+semantic error mapping. Оба закрыты структурной проверкой snapshot JSON и table-driven controller contract test.
+Свежий `make check` прошёл: 18 JavaScript-тестов, 154 Python unit-теста и 104 Python integration-теста; две
+PostgreSQL-проверки пропущены, поскольку `TEST_DATABASE_URL` не настроен. Итоговое покрытие — 91%.

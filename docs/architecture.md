@@ -65,6 +65,23 @@ SQLite adapter владеет SQL, audit, cleanup jobs и обычными/immed
 Это проверенная вертикальная миграция одного bounded context, а не общий DI framework. Остальные контроллеры
 могут сохранять переходную структуру и переносятся только отдельными проверяемыми изменениями.
 
+### Вертикальная граница материалов
+
+Все девять material-сценариев проходят через одну прикладную границу:
+
+```text
+materials controller
+  → MaterialService
+    → MaterialRepository port
+      → SQLiteMaterialRepository
+    → image encoder и storage port
+```
+
+Controller преобразует API-входы и semantic errors в прежние HTTP-ответы. Service владеет видимостью каталога,
+черновиками, публикацией, сохранением изображений из assignment snapshots и компенсационным удалением при сбое
+загрузки. SQLite adapter владеет SQL, транзакциями и audit persistence, а Pillow adapter — декодированием,
+проверкой и WebP-кодированием изображений. Публичные маршруты, payloads и правила storage при этом не меняются.
+
 ## Потоки данных
 
 ```text

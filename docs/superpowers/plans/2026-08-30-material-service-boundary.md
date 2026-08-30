@@ -953,3 +953,18 @@ Expected: `make check` exits 0; worktree is clean; commits and files match this 
 - [ ] **Step 8: Finish the development branch**
 
 Use `superpowers:verification-before-completion`, then `superpowers:finishing-a-development-branch`. Do not merge, push, or remove the worktree without the user's explicit integration choice.
+
+## Execution Record
+
+- Implemented the planned controller → service → repository/storage/image boundary without changing routes,
+  schemas, migrations, frontend, official content, payloads, status codes, messages, audit events, or storage keys.
+- Final controller size: 180 lines, with no database, infrastructure, Pillow, storage selection, or filesystem
+  access. SQLite owns SQL/transactions/audit; the image adapter owns validation/WebP encoding.
+- Publication remains atomic, retains assignment-snapshot assets, ignores structurally malformed historical
+  snapshots, and performs physical deletion after commit on a best-effort basis.
+- Upload retains the 5 MB cap and WebP settings, removes temporary files, and compensates storage objects when
+  metadata persistence fails.
+- Independent review found two Important issues (malformed snapshot shapes and missing exact error-mapping
+  coverage); both were fixed and the focused suites were rerun before the final full check.
+- Fresh `make check`: 18 JavaScript tests, 154 Python unit tests, 104 Python integration tests, 2 PostgreSQL tests
+  skipped because `TEST_DATABASE_URL` was not configured, and 91% total coverage.
