@@ -99,4 +99,4 @@ Email владельца должен быть задан до регистра�
 - [docs/architecture.md](docs/architecture.md) — текущая и целевая архитектура;
 - [SECURITY.md](SECURITY.md) — работа с секретами, аккаунтами и аудиозаписями;
 - [AGENTS.md](AGENTS.md) — обязательные правила для разработчиков и AI-агентов;
-- [docs/runbooks/](docs/runbooks/) — backup/restore, transcription worker и реакция на инциденты.
+- [docs/runbooks/](docs/runbooks/) — backup/restore, хранение записей и реакция на инциденты.

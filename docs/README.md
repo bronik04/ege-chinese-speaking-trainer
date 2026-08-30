@@ -1,10 +1,12 @@
-# Документация проекта
+# Документация
 
-- [Архитектура](architecture.md) — текущие компоненты, целевые границы и стратегия перехода.
-- [ADR 0001: FastAPI как основной runtime](decisions/0001-fastapi-runtime.md).
-- [ADR 0002: границы контента и runtime-данных](decisions/0002-content-and-runtime-data.md).
-- [Backup and restore](runbooks/backup-restore.md), [transcription worker](runbooks/transcription-worker.md), [incident response](runbooks/incident-response.md).
-- [Руководство разработчика](../DEVELOPMENT.md) — запуск, deployment, backup и проверки.
-- [Участие в разработке](../CONTRIBUTING.md) — единый workflow изменений.
-- [Безопасность](../SECURITY.md) — секреты, персональные данные и реакция на инциденты.
-- [Правила для разработчиков и AI-агентов](../AGENTS.md).
+- [Архитектура](architecture.md) — текущее устройство и границы слоёв.
+- [ADR](decisions/) — принятые архитектурные решения.
+- [Backup and restore](runbooks/backup-restore.md), [хранение записей](runbooks/recording-retention.md) и
+  [incident response](runbooks/incident-response.md) — эксплуатационные процедуры.
+- [Рекомендации для AI-агентов](agent-guidelines.md) — выбор модели и вспомогательных инструментов.
+- [Архив проектных планов](archive/superpowers/) — исторические документы, не описывающие текущее состояние
+  системы.
+
+Запуск и конфигурация находятся в [DEVELOPMENT.md](../DEVELOPMENT.md), пользовательская инструкция — в
+[README.md](../README.md).

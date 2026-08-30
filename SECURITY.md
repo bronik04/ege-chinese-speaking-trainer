@@ -1,6 +1,6 @@
 # Политика безопасности
 
-Проект обрабатывает аккаунты, учебные назначения и аудиозаписи учеников. Любые такие данные следует считать конфиденциальными.
+Проект обрабатывает аккаунты, заявки на разбор и аудиозаписи учеников. Любые такие данные следует считать конфиденциальными.
 
 ## Сообщение об уязвимости
 
@@ -26,8 +26,6 @@
 
 - S3/R2 credential: операции только с нужным закрытым bucket и, по возможности, prefix.
 - SMTP credential: только отправка с разрешённого адреса, без административного доступа к почтовому аккаунту.
-- OpenAI API key: отдельный project key с лимитами и доступом только к необходимой транскрибации.
-- PostgreSQL: отдельный пользователь приложения без прав суперпользователя.
 - Production-секреты передаются через environment/secret manager и регулярно ротируются.
 
 ## Реакция на утечку
@@ -43,11 +41,10 @@
 
 Расширенная проверка обязательна для:
 
-- `src/trainer/domain/accounts.py`, `src/trainer/infrastructure/database/accounts.py`, auth-контроллеров и session/cookie logic;
-- `src/trainer/infrastructure/storage.py`, `audio.py` и маршрутов выдачи записей;
-- `src/trainer/infrastructure/mailer.py` и password reset/email verification;
+- `src/trainer/domain/accounts/`, `src/trainer/infrastructure/database/accounts.py`, auth-контроллеров и session/cookie logic;
+- `src/trainer/infrastructure/storage/`, `audio.py` и маршрутов выдачи записей;
+- `src/trainer/infrastructure/mailer/` и password reset/email verification;
 - `src/trainer/infrastructure/database/` и миграций;
-- `src/trainer/services/transcription.py`, `src/trainer/infrastructure/transcription.py` и worker;
 - Caddy/nginx, Docker Compose, `.env.example` и CI secrets.
 
 Для этих изменений проверяйте авторизацию, разграничение ролей, утечки в логах, path traversal, размер/тип загрузок, CORS/origin, права bucket и поведение при отказе внешней системы.

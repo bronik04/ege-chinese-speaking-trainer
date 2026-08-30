@@ -14,8 +14,8 @@
 |---|---|---|---|
 | Механическая правка: переименование, опечатка, форматирование, правка одной строки в JSON/JS/Python | Haiku 4.5 | low | не требует глубокого рассуждения, важна скорость |
 | Обычная фича/фикс в существующем слое: `api/routes`, `api/controllers`, `services/`, JS-модуль, тест | Sonnet 5 | medium | основной поток задач проекта |
-| `domain/`-правила, изменение границ слоёв, Alembic-миграция (dual-dialect SQL) | Sonnet 5 | high | нужно удерживать инварианты: frozen SQLite baseline, `API → domain → infrastructure` |
-| Security-sensitive зоны из [SECURITY.md](../SECURITY.md): accounts, storage, mailer, transcription, auth, deploy-конфигурация | Opus 5 | high/xhigh | документ явно требует расширенной проверки |
+| `domain/`-правила, изменение границ слоёв, Alembic-миграция SQLite | Sonnet 5 | high | нужно удерживать инварианты: frozen SQLite baseline и границы слоёв |
+| Security-sensitive зоны из [SECURITY.md](../SECURITY.md): accounts, storage, mailer, auth, SQLite и deploy-конфигурация | Opus 5 | high/xhigh | документ явно требует расширенной проверки |
 | Ревью перед мержем, `/code-review`, security-review | Opus 5 | xhigh | нужна независимая, придирчивая проверка |
 | Отладка непрозрачного бага (`systematic-debugging`) | Opus 5 | high | нужны множественные гипотезы, а не первая правдоподобная |
 | Контент/задания ЕГЭ через скилл `ege-chinese` | Sonnet 5; Opus 5 для спорных формулировок | high | точное соответствие спецификации ФИПИ важнее творческой свободы |

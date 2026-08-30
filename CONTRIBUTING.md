@@ -52,10 +52,10 @@ make docker-build
 
 ## Изменения базы данных
 
-- PostgreSQL-миграции добавляйте в `migrations/versions/` через Alembic.
-- SQLite использует `src/trainer/infrastructure/database/sqlite_migrations.py`; синхронно поддерживайте SQLite и PostgreSQL схемы и добавляйте тест совместимости.
+- Новые изменения схемы SQLite добавляйте в `migrations/versions/` через Alembic.
+- Baseline 1–7 в `src/trainer/infrastructure/database/sqlite_migrations.py` заморожен и не расширяется.
 - Не изменяйте существующую применённую миграцию: создавайте следующую версию.
-- Проверяйте чистую базу, базу с предыдущей версией и повторный запуск инициализации.
+- Проверяйте чистую базу, базу с предыдущей версией и повторный `alembic upgrade head`.
 
 ## Ветки и коммиты
 
