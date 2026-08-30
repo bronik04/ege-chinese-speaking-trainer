@@ -2,11 +2,18 @@ from __future__ import annotations
 
 import json
 import time
+from contextlib import suppress
 from dataclasses import asdict
 from pathlib import Path
 from typing import Callable
 
-from trainer.domain.materials import editor_allowed, material_payload, validate_slug
+from trainer.domain.materials import (
+    build_content,
+    editor_allowed,
+    material_asset_ids,
+    material_payload,
+    validate_slug,
+)
 from trainer.services.material_repository import (
     MaterialActor,
     MaterialAssetStorage,
@@ -187,3 +194,61 @@ class MaterialService:
         except MaterialConflictError as error:
             raise MaterialError("slug_exists") from error
         return {"id": normalized.slug, "status": "draft"}
+
+    def publish(
+        self,
+        material_id: str,
+        actor: MaterialActor,
+        metadata: MaterialRequestMetadata,
+    ) -> dict:
+        unused_assets = []
+        with self._repository.transaction() as session:
+            record = session.owned_material(material_id, actor.id)
+            if record is None:
+                raise MaterialError("not_found")
+            try:
+                content = build_content(
+                    record.kind,
+                    record.task_number,
+                    json.loads(record.content_json),
+                )
+                asset_ids = material_asset_ids(content)
+            except ValueError as error:
+                raise MaterialError("incomplete", str(error)) from error
+            if session.owned_asset_ids(record.id, asset_ids) != asset_ids:
+                raise MaterialError("foreign_asset")
+
+            assignment_asset_ids = set()
+            for snapshot in session.assignment_snapshots():
+                try:
+                    snapshot_payload = json.loads(snapshot)
+                    assignment_asset_ids.update(material_asset_ids(snapshot_payload.get("tasks", {})))
+                except (json.JSONDecodeError, ValueError, TypeError):
+                    continue
+            retained_asset_ids = asset_ids | assignment_asset_ids
+            unused_assets = [asset for asset in session.assets(record.id) if asset.id not in retained_asset_ids]
+
+            now = self._now()
+            session.publish(record.id, json.dumps(content, ensure_ascii=False), now)
+            session.remove_assets([asset.id for asset in unused_assets])
+            session.audit(
+                MaterialAudit(
+                    "material_published",
+                    actor,
+                    metadata,
+                    {"materialId": record.id},
+                )
+            )
+
+        for asset in unused_assets:
+            with suppress(Exception):
+                self._storage.delete(asset.storage_key)
+        return {"id": material_id, "status": "published"}
+
+    def archive(self, material_id: str, actor: MaterialActor) -> dict:
+        with self._repository.transaction() as session:
+            record = session.owned_material(material_id, actor.id)
+            if record is None:
+                raise MaterialError("not_found")
+            session.archive(record.id, self._now())
+        return {"ok": True}

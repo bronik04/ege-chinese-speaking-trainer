@@ -14,12 +14,9 @@ from trainer.api.errors import ApiError
 from trainer.api.results import ActionResult, FileResult, RequestContext
 from trainer.api.runtime import MATERIAL_ASSET_DIR, MAX_AUDIO_BODY, connect
 from trainer.domain.materials import (
-    build_content,
-    material_asset_ids,
     validate_slug,
 )
 from trainer.infrastructure.storage import storage_from_env
-from trainer.services import accounts as account_services
 from trainer.services.material_repository import (
     MaterialActor,
     MaterialRequestData,
@@ -64,6 +61,18 @@ def _service_error(error: MaterialError) -> ApiError:
             "material_slug_exists",
             "Материал с таким идентификатором уже существует",
             HTTPStatus.CONFLICT,
+        )
+    if error.reason == "incomplete":
+        return ApiError(
+            "material_incomplete",
+            error.message or "Материал не заполнен",
+            HTTPStatus.BAD_REQUEST,
+        )
+    if error.reason == "foreign_asset":
+        return ApiError(
+            "invalid_material_asset",
+            "Одно из изображений не принадлежит материалу",
+            HTTPStatus.BAD_REQUEST,
         )
     raise error
 
@@ -153,80 +162,23 @@ def material_update(material_id: str, payload, user: dict, context: RequestConte
 
 
 def material_publish(material_id: str, user: dict, context: RequestContext) -> ActionResult:
-    unused_assets = []
-    with connect() as database:
-        row = database.execute(
-            "SELECT * FROM materials WHERE slug = ? AND owner_id = ?", (material_id, user["id"])
-        ).fetchone()
-        if not row:
-            raise ApiError("material_not_found", "Материал не найден", HTTPStatus.NOT_FOUND)
-        try:
-            content = build_content(row["kind"], row["task_number"], json.loads(row["content_json"]))
-            asset_ids = material_asset_ids(content)
-        except ValueError as error:
-            raise ApiError("material_incomplete", str(error), HTTPStatus.BAD_REQUEST) from error
-        if asset_ids:
-            placeholders = ",".join("?" for _ in asset_ids)
-            owned = database.execute(
-                f"SELECT id FROM material_assets WHERE material_id=? AND id IN ({placeholders})",
-                (row["id"], *sorted(asset_ids)),
-            ).fetchall()
-            if len(owned) != len(asset_ids):
-                raise ApiError(
-                    "invalid_material_asset", "Одно из изображений не принадлежит материалу", HTTPStatus.BAD_REQUEST
-                )
-        now = int(time.time())
-        database.execute(
-            "UPDATE materials SET content_json=?,status='published',published_at=?,updated_at=? WHERE id=?",
-            (json.dumps(content, ensure_ascii=False), now, now, row["id"]),
+    try:
+        material = runtime.material_service().publish(
+            material_id,
+            _required_actor(user),
+            _metadata(context),
         )
-        all_assets = database.execute(
-            "SELECT id, storage_key FROM material_assets WHERE material_id = ?", (row["id"],)
-        ).fetchall()
-        assignment_asset_ids = set()
-        snapshots = database.execute(
-            "SELECT material_snapshot_json FROM assignments WHERE material_snapshot_json IS NOT NULL"
-        ).fetchall()
-        for snapshot in snapshots:
-            try:
-                snapshot_payload = json.loads(snapshot["material_snapshot_json"])
-                assignment_asset_ids.update(material_asset_ids(snapshot_payload.get("tasks", {})))
-            except (json.JSONDecodeError, ValueError, TypeError):
-                continue
-        retained_asset_ids = asset_ids | assignment_asset_ids
-        unused_assets = [asset for asset in all_assets if asset["id"] not in retained_asset_ids]
-        for asset in unused_assets:
-            database.execute("DELETE FROM material_assets WHERE id = ?", (asset["id"],))
-        account_services.audit(
-            database,
-            "material_published",
-            client_ip=context.client_ip,
-            user_agent=context.user_agent,
-            user_id=user["id"],
-            email=user["email"],
-            details={"materialId": row["id"]},
-        )
-    storage = storage_from_env(MATERIAL_ASSET_DIR)
-    for asset in unused_assets:
-        try:
-            storage.delete(asset["storage_key"])
-        except Exception:
-            continue
-    return ActionResult({"material": {"id": material_id, "status": "published"}})
+    except MaterialError as error:
+        raise _service_error(error) from error
+    return ActionResult({"material": material})
 
 
 def material_delete(material_id: str, user: dict, context: RequestContext) -> ActionResult:
-    with connect() as database:
-        row = database.execute(
-            "SELECT id FROM materials WHERE slug=? AND owner_id=?", (material_id, user["id"])
-        ).fetchone()
-        if not row:
-            raise ApiError("material_not_found", "Материал не найден", HTTPStatus.NOT_FOUND)
-        database.execute(
-            "UPDATE materials SET status='archived', published_at=NULL, updated_at=? WHERE id=?",
-            (int(time.time()), row["id"]),
-        )
-    return ActionResult({"ok": True})
+    try:
+        result = runtime.material_service().archive(material_id, _required_actor(user))
+    except MaterialError as error:
+        raise _service_error(error) from error
+    return ActionResult(result)
 
 
 def material_asset_create(

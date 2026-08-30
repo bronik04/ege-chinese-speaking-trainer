@@ -116,6 +116,8 @@ class ArchitectureBoundaryTest(unittest.TestCase):
             "material_get",
             "material_create",
             "material_update",
+            "material_publish",
+            "material_delete",
         }
         functions = {
             node.name: node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in targets

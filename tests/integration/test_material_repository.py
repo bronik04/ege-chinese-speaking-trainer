@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 import tempfile
 import unittest
@@ -190,6 +191,90 @@ class SQLiteMaterialRepositoryTest(unittest.TestCase):
                     replace(self.request_data, slug="published-newer"),
                     100,
                 )
+
+    def test_publication_queries_and_mutations_commit_together(self):
+        with closing(self.connect()) as database, database:
+            unused_asset_id = database.execute(
+                """INSERT INTO material_assets(material_id,storage_key,mime_type,size_bytes,created_at)
+                   VALUES (?,?,?,?,?)""",
+                (self.draft_newer_id, "materials/1/unused.webp", "image/webp", 20, 2),
+            ).lastrowid
+            group_id = database.execute(
+                "INSERT INTO study_groups(teacher_id,name,join_code,created_at) VALUES (?,?,?,?)",
+                (self.owner_id, "Snapshots", "SNAP01", 1),
+            ).lastrowid
+            snapshot = json.dumps({"tasks": {"2": {"images": [f"/api/material-assets/{self.asset_id}"]}}})
+            database.execute(
+                """INSERT INTO assignments
+                   (group_id,teacher_id,title,variant_id,tasks_json,created_at,material_snapshot_json)
+                   VALUES (?,?,?,?,?,?,?)""",
+                (group_id, self.owner_id, "Snapshot", "draft-newer", "[2]", 1, snapshot),
+            )
+
+        with self.repository.transaction() as session:
+            material = session.owned_material("draft-newer", self.owner_id)
+            owned_ids = session.owned_asset_ids(
+                self.draft_newer_id,
+                {self.asset_id, 999_999},
+            )
+            assets = session.assets(self.draft_newer_id)
+            snapshots = session.assignment_snapshots()
+            session.publish(self.draft_newer_id, '{"2":{"images":[]}}', 300)
+            session.remove_assets([unused_asset_id])
+            session.audit(
+                MaterialAudit(
+                    "material_published",
+                    self.actor,
+                    self.metadata,
+                    {"materialId": self.draft_newer_id},
+                )
+            )
+
+        self.assertEqual(material.id, self.draft_newer_id)
+        self.assertEqual(owned_ids, {self.asset_id})
+        self.assertEqual([asset.id for asset in assets], [self.asset_id, unused_asset_id])
+        self.assertEqual(snapshots, [snapshot])
+        with closing(self.connect()) as database:
+            row = database.execute(
+                "SELECT status,content_json,published_at,updated_at FROM materials WHERE id=?",
+                (self.draft_newer_id,),
+            ).fetchone()
+            removed = database.execute(
+                "SELECT id FROM material_assets WHERE id=?",
+                (unused_asset_id,),
+            ).fetchone()
+            audit = database.execute("SELECT action FROM audit_log WHERE action='material_published'").fetchone()
+        self.assertEqual(tuple(row), ("published", '{"2":{"images":[]}}', 300, 300))
+        self.assertIsNone(removed)
+        self.assertEqual(audit["action"], "material_published")
+
+    def test_publication_mutations_roll_back_together(self):
+        with self.assertRaises(RuntimeError):
+            with self.repository.transaction() as session:
+                session.publish(self.draft_newer_id, "{}", 400)
+                session.remove_assets([self.asset_id])
+                raise RuntimeError("rollback")
+
+        with closing(self.connect()) as database:
+            material = database.execute(
+                "SELECT status FROM materials WHERE id=?",
+                (self.draft_newer_id,),
+            ).fetchone()
+            asset = database.execute(
+                "SELECT id FROM material_assets WHERE id=?",
+                (self.asset_id,),
+            ).fetchone()
+        self.assertEqual(material["status"], "draft")
+        self.assertIsNotNone(asset)
+
+    def test_archive_uses_the_owner_checked_record(self):
+        with self.repository.transaction() as session:
+            self.assertIsNone(session.owned_material("draft-newer", self.other_owner_id))
+            material = session.owned_material("draft-newer", self.owner_id)
+            session.archive(material.id, 500)
+
+        row = self.repository.material("draft-newer")
+        self.assertEqual(row.status, "archived")
 
 
 if __name__ == "__main__":

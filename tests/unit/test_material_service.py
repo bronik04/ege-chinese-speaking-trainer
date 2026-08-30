@@ -8,6 +8,7 @@ from pathlib import Path
 
 from trainer.services.material_repository import (
     MaterialActor,
+    MaterialAssetRecord,
     MaterialConflictError,
     MaterialRecord,
     MaterialRequestData,
@@ -46,11 +47,17 @@ def material_record(
 
 
 class FakeStorage:
+    def __init__(self):
+        self.deleted = []
+        self.delete_error = None
+
     def put(self, key, source, content_type):
         raise AssertionError("read scenarios must not write storage")
 
     def delete(self, key):
-        raise AssertionError("read scenarios must not delete storage")
+        self.deleted.append(key)
+        if self.delete_error:
+            raise self.delete_error
 
 
 class FakeMaterialRepository:
@@ -61,7 +68,7 @@ class FakeMaterialRepository:
         owned: list[MaterialRecord] | None = None,
         materials: dict[str, MaterialRecord] | None = None,
     ):
-        self.published = list(published or [])
+        self._published = list(published or [])
         self.owned = list(owned or [])
         self.materials = dict(materials or {})
         self.transaction_count = 0
@@ -71,9 +78,15 @@ class FakeMaterialRepository:
         self.conflict_on_create = False
         self.conflict_on_update = False
         self.audits = []
+        self.asset_records = []
+        self.snapshot_jsons = []
+        self.owned_asset_ids_result = None
+        self.published_update = None
+        self.removed_asset_ids = []
+        self.archived = None
 
     def published_materials(self):
-        return list(self.published)
+        return list(self._published)
 
     def owned_materials(self, owner_id):
         return [item for item in self.owned if item.owner_id == owner_id]
@@ -110,6 +123,30 @@ class FakeMaterialRepository:
         }
         return self.update_result
 
+    def owned_asset_ids(self, material_id, asset_ids):
+        if self.owned_asset_ids_result is not None:
+            return set(self.owned_asset_ids_result)
+        return set(asset_ids)
+
+    def assets(self, material_id):
+        return [asset for asset in self.asset_records if asset.material_id == material_id]
+
+    def assignment_snapshots(self):
+        return list(self.snapshot_jsons)
+
+    def publish(self, material_id, content_json, now):
+        self.published_update = {
+            "material_id": material_id,
+            "content_json": content_json,
+            "now": now,
+        }
+
+    def remove_assets(self, asset_ids):
+        self.removed_asset_ids.extend(asset_ids)
+
+    def archive(self, material_id, now):
+        self.archived = {"material_id": material_id, "now": now}
+
     def audit(self, event):
         self.audits.append(event)
 
@@ -129,12 +166,16 @@ class MaterialServiceTest(unittest.TestCase):
             {"2": {}},
         )
 
-    def service(self, repository: FakeMaterialRepository | None = None) -> MaterialService:
+    def service(
+        self,
+        repository: FakeMaterialRepository | None = None,
+        storage: FakeStorage | None = None,
+    ) -> MaterialService:
         return MaterialService(
             repository or self.repository,
             project_root=ROOT,
             asset_root=ROOT / "tmp" / "material-service-test",
-            storage=FakeStorage(),
+            storage=storage or FakeStorage(),
             image_encoder=lambda body: body,
             editor_emails="author@example.test",
             max_image_body=5_000_000,
@@ -229,6 +270,92 @@ class MaterialServiceTest(unittest.TestCase):
             self.service().create(self.valid_data, self.actor, self.metadata)
 
         self.assertEqual(caught.exception.reason, "slug_exists")
+
+    def test_publish_retains_current_and_assignment_assets_and_deletes_only_unused(self):
+        self.repository.materials["author-task"] = material_record(
+            content={"2": {"images": ["/api/material-assets/1"] * 3}}
+        )
+        self.repository.asset_records = [
+            MaterialAssetRecord(1, 10, "materials/10/current.webp", "image/webp", 10),
+            MaterialAssetRecord(2, 10, "materials/10/assigned.webp", "image/webp", 20),
+            MaterialAssetRecord(3, 10, "materials/10/unused.webp", "image/webp", 30),
+        ]
+        self.repository.snapshot_jsons = [json.dumps({"tasks": {"2": {"images": ["/api/material-assets/2"]}}})]
+        storage = FakeStorage()
+
+        result = self.service(storage=storage).publish(
+            "author-task",
+            self.actor,
+            self.metadata,
+        )
+
+        self.assertEqual(result, {"id": "author-task", "status": "published"})
+        self.assertEqual(self.repository.removed_asset_ids, [3])
+        self.assertEqual(storage.deleted, ["materials/10/unused.webp"])
+        self.assertEqual(self.repository.published_update["now"], 123)
+        self.assertEqual(self.repository.audits[0].action, "material_published")
+
+    def test_publish_rejects_foreign_asset_before_mutation(self):
+        self.repository.materials["author-task"] = material_record(
+            content={"2": {"images": ["/api/material-assets/1"] * 3}}
+        )
+        self.repository.owned_asset_ids_result = set()
+
+        with self.assertRaises(MaterialError) as caught:
+            self.service().publish("author-task", self.actor, self.metadata)
+
+        self.assertEqual(caught.exception.reason, "foreign_asset")
+        self.assertIsNone(self.repository.published_update)
+        self.assertEqual(self.repository.removed_asset_ids, [])
+        self.assertEqual(self.repository.audits, [])
+
+    def test_publish_ignores_malformed_historical_assignment_snapshots(self):
+        self.repository.materials["author-task"] = material_record(
+            content={"2": {"images": ["/api/material-assets/1"] * 3}}
+        )
+        self.repository.asset_records = [
+            MaterialAssetRecord(1, 10, "materials/10/current.webp", "image/webp", 10),
+            MaterialAssetRecord(2, 10, "materials/10/unused.webp", "image/webp", 20),
+        ]
+        self.repository.snapshot_jsons = [
+            "{",
+            None,
+            json.dumps({"tasks": {"2": {"images": ["external.webp"]}}}),
+        ]
+
+        self.service().publish("author-task", self.actor, self.metadata)
+
+        self.assertEqual(self.repository.removed_asset_ids, [2])
+
+    def test_publish_treats_physical_asset_deletion_as_best_effort(self):
+        self.repository.materials["author-task"] = material_record(
+            content={"2": {"images": ["/api/material-assets/1"] * 3}}
+        )
+        self.repository.asset_records = [
+            MaterialAssetRecord(1, 10, "materials/10/current.webp", "image/webp", 10),
+            MaterialAssetRecord(2, 10, "materials/10/unused.webp", "image/webp", 20),
+        ]
+        storage = FakeStorage()
+        storage.delete_error = OSError("storage unavailable")
+
+        result = self.service(storage=storage).publish("author-task", self.actor, self.metadata)
+
+        self.assertEqual(result["status"], "published")
+        self.assertEqual(self.repository.removed_asset_ids, [2])
+        self.assertEqual(storage.deleted, ["materials/10/unused.webp"])
+
+    def test_archive_is_owner_bound_and_does_not_create_an_audit_event(self):
+        self.repository.materials["author-task"] = material_record()
+
+        result = self.service().archive("author-task", self.actor)
+
+        self.assertEqual(result, {"ok": True})
+        self.assertEqual(self.repository.archived, {"material_id": 10, "now": 123})
+        self.assertEqual(self.repository.audits, [])
+
+        with self.assertRaises(MaterialError) as caught:
+            self.service().archive("author-task", replace(self.actor, id=8))
+        self.assertEqual(caught.exception.reason, "not_found")
 
 
 if __name__ == "__main__":
