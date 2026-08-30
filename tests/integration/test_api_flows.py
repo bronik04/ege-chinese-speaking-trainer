@@ -125,9 +125,8 @@ class ApiFlowTest(unittest.TestCase):
         runtime.DB_PATH = root / "trainer.sqlite3"
         runtime.AUDIO_DIR = root / "audio"
         runtime.MATERIAL_ASSET_DIR = root / "material-assets"
-        runtime.ASSIGNMENT_ASSET_DIR = root / "assignment-assets"
+        runtime.REVIEW_ASSET_DIR = root / "assignment-assets"
         auth.MATERIAL_ASSET_DIR = runtime.MATERIAL_ASSET_DIR
-        auth.ASSIGNMENT_ASSET_DIR = runtime.ASSIGNMENT_ASSET_DIR
         dependencies.DATA_DIR = root
         dependencies.AUDIO_DIR = runtime.AUDIO_DIR
         recordings.DATA_DIR = root
@@ -536,7 +535,7 @@ class ApiFlowTest(unittest.TestCase):
                         database,
                         audio_root=runtime.AUDIO_DIR,
                         material_root=runtime.MATERIAL_ASSET_DIR,
-                        assignment_root=runtime.ASSIGNMENT_ASSET_DIR,
+                        assignment_root=runtime.REVIEW_ASSET_DIR,
                         now=int(time.time()),
                     )
                 )
@@ -695,7 +694,7 @@ class ApiFlowTest(unittest.TestCase):
         with runtime.connect() as database:
             self.assertIsNone(database.execute("SELECT id FROM review_requests WHERE id=?", (request_id,)).fetchone())
         self.assertFalse((runtime.AUDIO_DIR / audio_key).exists())
-        self.assertTrue(all(not (runtime.ASSIGNMENT_ASSET_DIR / key).exists() for key in asset_keys))
+        self.assertTrue(all(not (runtime.REVIEW_ASSET_DIR / key).exists() for key in asset_keys))
 
         status, queued_created, _ = self.request(
             "POST",
@@ -950,7 +949,7 @@ class ApiFlowTest(unittest.TestCase):
                 database,
                 audio_root=runtime.AUDIO_DIR,
                 material_root=runtime.MATERIAL_ASSET_DIR,
-                assignment_root=runtime.ASSIGNMENT_ASSET_DIR,
+                assignment_root=runtime.REVIEW_ASSET_DIR,
             )
             self.assertIsNone(database.execute("SELECT id FROM review_requests WHERE id=?", (request_id,)).fetchone())
         self.assertEqual(list((runtime.AUDIO_DIR / f"review-requests/{request_id}").glob("*")), [])
@@ -1208,7 +1207,7 @@ class ApiFlowTest(unittest.TestCase):
                 ),
             )
         review_audio_path = runtime.AUDIO_DIR / audio_key
-        review_asset_path = runtime.ASSIGNMENT_ASSET_DIR / asset_key
+        review_asset_path = runtime.REVIEW_ASSET_DIR / asset_key
         personal_audio_path = runtime.AUDIO_DIR / personal_key
         personal_audio_path.parent.mkdir(parents=True, exist_ok=True)
         personal_audio_path.write_bytes(b"personal-audio")

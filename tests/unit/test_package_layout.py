@@ -51,6 +51,12 @@ class PackageLayoutTest(unittest.TestCase):
         ):
             self.assertNotIn(f"class {name}(", source)
 
+    def test_review_asset_root_has_current_logical_name(self):
+        from trainer.api import runtime
+
+        self.assertEqual(runtime.REVIEW_ASSET_DIR, runtime.DATA_DIR / "assignment-assets")
+        self.assertFalse(hasattr(runtime, "ASSIGNMENT_ASSET_DIR"))
+
     def test_frontend_content_and_public_files_are_separated(self):
         root = Path(__file__).resolve().parents[2]
         expected = (

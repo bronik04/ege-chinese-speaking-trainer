@@ -24,7 +24,7 @@ def main() -> int:
                 database,
                 audio_root=runtime.AUDIO_DIR,
                 material_root=runtime.MATERIAL_ASSET_DIR,
-                assignment_root=runtime.ASSIGNMENT_ASSET_DIR,
+                assignment_root=runtime.REVIEW_ASSET_DIR,
                 limit=500,
                 now=cleanup_cutoff,
             )

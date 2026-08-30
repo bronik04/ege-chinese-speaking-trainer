@@ -18,7 +18,8 @@ DATA_DIR = Path(os.environ.get("TRAINER_DATA_DIR", ROOT / "var")).resolve()
 DB_PATH = DATA_DIR / "trainer.sqlite3"
 AUDIO_DIR = DATA_DIR / "audio"
 MATERIAL_ASSET_DIR = DATA_DIR / "material-assets"
-ASSIGNMENT_ASSET_DIR = DATA_DIR / "assignment-assets"
+# Physical name is retained for compatibility with existing local review snapshots.
+REVIEW_ASSET_DIR = DATA_DIR / "assignment-assets"
 SESSION_DAYS = 30
 MAX_BODY = int(os.environ.get("TRAINER_MAX_JSON_BYTES", "1000000"))
 MAX_AUDIO_BODY = int(os.environ.get("TRAINER_MAX_AUDIO_BYTES", "15000000"))
@@ -33,7 +34,7 @@ def connect() -> sqlite3.Connection:
 def init_database(*, cleanup: bool = True) -> None:
     initialize_database(DATA_DIR, AUDIO_DIR, DB_PATH)
     MATERIAL_ASSET_DIR.mkdir(parents=True, exist_ok=True)
-    ASSIGNMENT_ASSET_DIR.mkdir(parents=True, exist_ok=True)
+    REVIEW_ASSET_DIR.mkdir(parents=True, exist_ok=True)
     if not cleanup:
         return
     try:
@@ -43,7 +44,7 @@ def init_database(*, cleanup: bool = True) -> None:
                 database,
                 audio_root=AUDIO_DIR,
                 material_root=MATERIAL_ASSET_DIR,
-                assignment_root=ASSIGNMENT_ASSET_DIR,
+                assignment_root=REVIEW_ASSET_DIR,
             )
         logger.info(
             "Recording expiry and storage cleanup processed",

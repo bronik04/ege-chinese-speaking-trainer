@@ -77,11 +77,11 @@ class ReviewAssetServiceTest(unittest.TestCase):
         from trainer.api import runtime
 
         original_material_root = runtime.MATERIAL_ASSET_DIR
-        original_assignment_root = runtime.ASSIGNMENT_ASSET_DIR
+        original_review_root = runtime.REVIEW_ASSET_DIR
         runtime.MATERIAL_ASSET_DIR = self.source_storage.root
-        runtime.ASSIGNMENT_ASSET_DIR = self.target_storage.root
+        runtime.REVIEW_ASSET_DIR = self.target_storage.root
         self.addCleanup(setattr, runtime, "MATERIAL_ASSET_DIR", original_material_root)
-        self.addCleanup(setattr, runtime, "ASSIGNMENT_ASSET_DIR", original_assignment_root)
+        self.addCleanup(setattr, runtime, "REVIEW_ASSET_DIR", original_review_root)
 
         with closing(self.connect()) as database, database:
             material = self.create_material_fixture(database)

@@ -120,7 +120,7 @@ class AccountSecurityTest(unittest.TestCase):
             patch.object(runtime, "DB_PATH", self.database_path),
             patch.object(runtime, "AUDIO_DIR", audio_root),
             patch.object(runtime, "MATERIAL_ASSET_DIR", material_root),
-            patch.object(runtime, "ASSIGNMENT_ASSET_DIR", copied_asset_root),
+            patch.object(runtime, "REVIEW_ASSET_DIR", copied_asset_root),
             patch.object(auth, "process_cleanup_jobs", return_value=CleanupSummary(pending=1)),
         ):
             result = auth.account_delete(

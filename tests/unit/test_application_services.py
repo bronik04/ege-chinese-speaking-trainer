@@ -221,7 +221,7 @@ class StorageCleanupJobServiceTest(unittest.TestCase):
                 patch.object(runtime, "DATA_DIR", root),
                 patch.object(runtime, "AUDIO_DIR", root / "audio"),
                 patch.object(runtime, "MATERIAL_ASSET_DIR", root / "materials"),
-                patch.object(runtime, "ASSIGNMENT_ASSET_DIR", root / "assignments"),
+                patch.object(runtime, "REVIEW_ASSET_DIR", root / "assignments"),
             ):
                 runtime.init_database()
 

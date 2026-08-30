@@ -65,7 +65,7 @@ def _cleanup_orphaned(*, audio_keys: list[str] | None = None, assignment_keys: l
                 database,
                 audio_root=runtime.AUDIO_DIR,
                 material_root=runtime.MATERIAL_ASSET_DIR,
-                assignment_root=runtime.ASSIGNMENT_ASSET_DIR,
+                assignment_root=runtime.REVIEW_ASSET_DIR,
             )
 
 
@@ -372,7 +372,7 @@ def review_request_discard(request_id: int, user: dict, context: RequestContext)
                 database,
                 audio_root=runtime.AUDIO_DIR,
                 material_root=runtime.MATERIAL_ASSET_DIR,
-                assignment_root=runtime.ASSIGNMENT_ASSET_DIR,
+                assignment_root=runtime.REVIEW_ASSET_DIR,
             )
     return ActionResult({"ok": True})
 

@@ -347,7 +347,7 @@ def account_delete(payload: DeleteAccountRequest, user: dict, context: RequestCo
                 database,
                 audio_root=runtime.AUDIO_DIR,
                 material_root=runtime.MATERIAL_ASSET_DIR,
-                assignment_root=runtime.ASSIGNMENT_ASSET_DIR,
+                assignment_root=runtime.REVIEW_ASSET_DIR,
             )
         logging.getLogger("trainer.accounts").info(
             "Account storage cleanup processed",

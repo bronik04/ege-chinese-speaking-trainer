@@ -23,7 +23,7 @@ def copy_review_assets_from_env(database, request_id: int, material_snapshot: di
         request_id,
         material_snapshot,
         storage_from_env(runtime.MATERIAL_ASSET_DIR),
-        storage_from_env(runtime.ASSIGNMENT_ASSET_DIR),
+        storage_from_env(runtime.REVIEW_ASSET_DIR),
         created_keys,
         public_root=runtime.ROOT / "public",
     )

@@ -51,5 +51,5 @@ async def get_review_asset(
         stored,
         range_headers[0] if range_headers else None,
         range_header_count=len(range_headers),
-        storage_root=runtime.ASSIGNMENT_ASSET_DIR,
+        storage_root=runtime.REVIEW_ASSET_DIR,
     )
