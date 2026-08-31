@@ -424,7 +424,7 @@ class AccountService:
                         "account_deletion_failed",
                         metadata,
                         now,
-                        user_id=user_id,
+                        user_id=user.id if user else None,
                         email=email,
                     )
                 )

@@ -7,7 +7,7 @@ import unittest
 from contextlib import closing
 from pathlib import Path
 
-from trainer.domain.accounts import token_digest
+from trainer.domain.accounts import password_hash, token_digest
 from trainer.infrastructure.database.account_repository import SQLiteAccountRepository
 from trainer.infrastructure.database.migrations import upgrade_sqlite_database
 from trainer.services.account_repository import (
@@ -15,6 +15,7 @@ from trainer.services.account_repository import (
     AccountConflictError,
     AccountRequestMetadata,
 )
+from trainer.services.accounts import AccountError, AccountService
 
 
 class SQLiteAccountRepositoryTest(unittest.TestCase):
@@ -402,6 +403,36 @@ class SQLiteAccountRepositoryTest(unittest.TestCase):
         with closing(self.connect()) as database:
             self.assertIsNotNone(database.execute("SELECT id FROM users WHERE id=?", (user_id,)).fetchone())
             self.assertEqual(database.execute("SELECT COUNT(*) FROM storage_cleanup_jobs").fetchone()[0], 0)
+
+    def test_missing_account_deletion_keeps_semantic_error_and_durable_audit(self):
+        user_id = self.create_user(encoded_password=password_hash("password123"))
+        with self.repository.transaction() as transaction:
+            transaction.delete_user(user_id)
+        service = AccountService(
+            self.repository,
+            object(),
+            lambda: None,
+            owner_email="",
+            clock=lambda: 2000,
+        )
+
+        with self.assertRaises(AccountError) as raised:
+            service.delete_account(
+                user_id,
+                "user@example.test",
+                "password123",
+                self.metadata,
+            )
+
+        self.assertEqual(raised.exception.reason, "invalid_password")
+        with closing(self.connect()) as database:
+            audit = database.execute(
+                "SELECT user_id,email,action FROM audit_log WHERE action='account_deletion_failed'"
+            ).fetchone()
+        self.assertEqual(
+            (audit["user_id"], audit["email"], audit["action"]),
+            (None, "user@example.test", "account_deletion_failed"),
+        )
 
 
 if __name__ == "__main__":
