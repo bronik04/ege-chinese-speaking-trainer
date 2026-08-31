@@ -10,7 +10,6 @@ from unittest.mock import Mock, patch
 
 from trainer.api import runtime
 from trainer.infrastructure.database.migrations import upgrade_sqlite_database
-from trainer.services.accounts import delete_account_storage
 from trainer.services.recordings import delete_recordings, read_recording, write_recording
 from trainer.services.storage_cleanup import (
     account_review_storage_keys,
@@ -39,26 +38,6 @@ class RecordingStorageServiceTest(unittest.TestCase):
             delete_recordings(root, ["1/answer.webm"])
         storage.put.assert_called_once_with("1/answer.webm", source, "audio/webm")
         storage.delete.assert_called_once_with("1/answer.webm")
-
-
-class AccountStorageServiceTest(unittest.TestCase):
-    @patch("trainer.services.accounts.storage_from_env")
-    def test_account_cleanup_uses_each_private_storage_root(self, factory):
-        audio = Mock()
-        materials = Mock()
-        assignments = Mock()
-        factory.side_effect = [audio, materials, assignments]
-        delete_account_storage(
-            Path("audio"),
-            ["recording.webm"],
-            Path("materials"),
-            ["material.webp"],
-            Path("assignments"),
-            ["assignment.webp"],
-        )
-        audio.delete.assert_called_once_with("recording.webm")
-        materials.delete.assert_called_once_with("material.webp")
-        assignments.delete.assert_called_once_with("assignment.webp")
 
 
 class AccountServiceRuntimeTest(unittest.TestCase):
@@ -342,33 +321,6 @@ class StorageCleanupJobServiceTest(unittest.TestCase):
                 )
                 self.assertEqual((available.completed, available.failed, available.pending), (1, 0, 0))
                 factory.return_value.delete.assert_called_once_with("uploading.webm")
-
-    @patch("trainer.services.accounts.storage_from_env")
-    def test_account_cleanup_propagates_storage_failure(self, factory):
-        factory.return_value.delete.side_effect = OSError("storage unavailable")
-        with self.assertRaisesRegex(OSError, "storage unavailable"):
-            delete_account_storage(Path("audio"), ["recording.webm"], Path("materials"), [], Path("assignments"), [])
-
-    @patch("trainer.services.accounts.storage_from_env")
-    def test_account_cleanup_removes_every_key_despite_one_failure(self, factory):
-        audio = Mock()
-        audio.delete.side_effect = [OSError("first key is unreachable"), None]
-        assignments = Mock()
-        factory.side_effect = [audio, Mock(), assignments]
-
-        with self.assertRaisesRegex(OSError, "first key is unreachable"):
-            delete_account_storage(
-                Path("audio"),
-                ["broken.webm", "second.webm"],
-                Path("materials"),
-                [],
-                Path("assignments"),
-                ["assignment.webp"],
-            )
-
-        # Один сбойный ключ не должен оставлять остальные приватные файлы на диске.
-        self.assertEqual([call.args[0] for call in audio.delete.call_args_list], ["broken.webm", "second.webm"])
-        assignments.delete.assert_called_once_with("assignment.webp")
 
 
 if __name__ == "__main__":

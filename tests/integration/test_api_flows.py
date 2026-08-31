@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 import asgi
 from trainer import main as trainer_main
 from trainer.api import dependencies, routes, runtime
-from trainer.api.controllers import auth, personal_recordings, recordings, review_requests
+from trainer.api.controllers import personal_recordings, recordings, review_requests
 from trainer.api.errors import ApiError
 from trainer.api.results import FileResult, RequestContext
 from trainer.api.schemas import PersonalRecordingUpload
@@ -126,7 +126,6 @@ class ApiFlowTest(unittest.TestCase):
         runtime.AUDIO_DIR = root / "audio"
         runtime.MATERIAL_ASSET_DIR = root / "material-assets"
         runtime.REVIEW_ASSET_DIR = root / "assignment-assets"
-        auth.MATERIAL_ASSET_DIR = runtime.MATERIAL_ASSET_DIR
         dependencies.DATA_DIR = root
         dependencies.AUDIO_DIR = runtime.AUDIO_DIR
         recordings.DATA_DIR = root
@@ -1123,16 +1122,16 @@ class ApiFlowTest(unittest.TestCase):
         self.assertEqual(status, 201)
         cookie = self.cookie_from(headers)
 
-        original = auth.process_cleanup_jobs
+        original = runtime.process_cleanup_jobs
 
         def failing_cleanup(*_arguments, **_kwargs):
             raise OSError("storage down")
 
-        auth.process_cleanup_jobs = failing_cleanup
+        runtime.process_cleanup_jobs = failing_cleanup
         try:
             status, _, _ = self.request("DELETE", "/api/account", {"password": "password123"}, cookie)
         finally:
-            auth.process_cleanup_jobs = original
+            runtime.process_cleanup_jobs = original
 
         self.assertEqual(status, 200)
         with runtime.connect() as database:
@@ -1260,7 +1259,7 @@ class ApiFlowTest(unittest.TestCase):
         self.assertEqual(status, 404)
 
         cleanup_job = {}
-        original_cleanup = auth.process_cleanup_jobs
+        original_cleanup = runtime.process_cleanup_jobs
 
         def inspect_cleanup(database, **kwargs):
             cleanup_job["audio"] = json.loads(
@@ -1270,11 +1269,11 @@ class ApiFlowTest(unittest.TestCase):
             )
             return original_cleanup(database, **kwargs)
 
-        auth.process_cleanup_jobs = inspect_cleanup
+        runtime.process_cleanup_jobs = inspect_cleanup
         try:
             status, deleted, _ = self.request("DELETE", "/api/account", {"password": "student123"}, student_cookie)
         finally:
-            auth.process_cleanup_jobs = original_cleanup
+            runtime.process_cleanup_jobs = original_cleanup
         self.assertEqual(status, 200, deleted)
         self.assertIn(personal_key, cleanup_job["audio"])
         self.assertFalse(review_audio_path.exists())

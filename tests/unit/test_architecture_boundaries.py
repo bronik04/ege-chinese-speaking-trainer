@@ -194,6 +194,44 @@ class ArchitectureBoundaryTest(unittest.TestCase):
                 }
                 self.assertNotIn(("trainer.services", "accounts"), imported_names)
 
+    def test_account_controller_has_no_domain_or_database_access(self):
+        path = PACKAGE / "api" / "controllers" / "auth.py"
+        source = path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(path))
+        direct_calls = {
+            node.func.attr
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+        }
+        imports = file_imports(path)
+
+        self.assertFalse(any(module.startswith("trainer.infrastructure") for module in imports), imports)
+        self.assertFalse(any(module.startswith("trainer.domain") for module in imports), imports)
+        self.assertNotIn("execute", direct_calls)
+        self.assertNotIn("runtime.connect", source)
+        self.assertNotIn("process_cleanup_jobs", source)
+
+    def test_account_boundary_dependency_direction(self):
+        service_imports = file_imports(PACKAGE / "services" / "accounts.py")
+        adapter_imports = file_imports(PACKAGE / "infrastructure" / "database" / "account_repository.py")
+        sender_imports = file_imports(PACKAGE / "infrastructure" / "mailer" / "account_links.py")
+
+        self.assertFalse(any(module.startswith("trainer.api") for module in service_imports), service_imports)
+        self.assertFalse(
+            any(module.startswith("trainer.infrastructure") for module in service_imports), service_imports
+        )
+        self.assertNotIn("sqlite3", service_imports)
+        self.assertFalse(any(module.startswith("trainer.api") for module in adapter_imports | sender_imports))
+
+    def test_api_dependencies_uses_account_service_boundary(self):
+        path = PACKAGE / "api" / "dependencies.py"
+        source = path.read_text(encoding="utf-8")
+        imports = file_imports(path)
+
+        self.assertNotIn("trainer.api.runtime.connect", imports)
+        self.assertNotIn("trainer.services.accounts", imports)
+        self.assertNotIn("account_services", source)
+
 
 if __name__ == "__main__":
     unittest.main()

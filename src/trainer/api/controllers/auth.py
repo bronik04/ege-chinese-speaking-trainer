@@ -1,14 +1,10 @@
 from __future__ import annotations
 
-import logging
-import time
 from http import HTTPStatus
 
 from trainer.api import runtime
-from trainer.api.dependencies import account_public_url, owner_email_from_env
-from trainer.api.errors import ApiError, default_error_code
+from trainer.api.errors import ApiError
 from trainer.api.results import ActionResult, RequestContext
-from trainer.api.runtime import SESSION_DAYS, connect
 from trainer.api.schemas import (
     DeleteAccountRequest,
     EmailRequest,
@@ -17,150 +13,70 @@ from trainer.api.schemas import (
     RegisterRequest,
     TokenRequest,
 )
-from trainer.domain.accounts import (
-    password_hash,
-    password_matches,
-    registration_role,
-    token_digest,
-    validate_credentials,
-)
-from trainer.infrastructure.database.accounts import (
-    audit_events,
-    clear_rate_limit,
-    consume_rate_limit,
-    consume_token,
-    issue_token,
-)
-from trainer.infrastructure.database.core import INTEGRITY_ERRORS
-from trainer.services import accounts as account_services
-from trainer.services.storage_cleanup import account_review_storage_keys, enqueue_cleanup_job, process_cleanup_jobs
+from trainer.services.account_repository import AccountRequestMetadata
+from trainer.services.accounts import AccountError
+
+_ERROR_STATUS_AND_CODE = {
+    "invalid_input": (HTTPStatus.BAD_REQUEST, "invalid_request"),
+    "email_already_registered": (HTTPStatus.CONFLICT, "email_already_registered"),
+    "invalid_credentials": (HTTPStatus.UNAUTHORIZED, "invalid_credentials"),
+    "email_already_verified": (HTTPStatus.CONFLICT, "email_already_verified"),
+    "token_invalid": (HTTPStatus.BAD_REQUEST, "token_invalid"),
+    "invalid_password": (HTTPStatus.UNAUTHORIZED, "invalid_password"),
+    "rate_limited": (HTTPStatus.TOO_MANY_REQUESTS, "rate_limited"),
+}
 
 
-def _ensure_auth_attempt_allowed(kind: str, email: str, client_ip: str) -> None:
-    with connect() as database:
-        retry_after = consume_rate_limit(database, kind, client_ip, email)
-    if retry_after:
-        raise ApiError(
-            "rate_limited",
-            "Слишком много попыток. Попробуйте позже",
-            HTTPStatus.TOO_MANY_REQUESTS,
-            headers={"Retry-After": str(retry_after)},
-            retryAfter=retry_after,
+def _metadata(context: RequestContext) -> AccountRequestMetadata:
+    return AccountRequestMetadata(context.client_ip, context.user_agent)
+
+
+def _api_error(error: AccountError) -> ApiError:
+    status, code = _ERROR_STATUS_AND_CODE.get(
+        error.reason,
+        (HTTPStatus.BAD_REQUEST, "invalid_request"),
+    )
+    if error.reason == "rate_limited" and error.retry_after is not None:
+        return ApiError(
+            code,
+            error.message,
+            status,
+            headers={"Retry-After": str(error.retry_after)},
+            retryAfter=error.retry_after,
         )
+    return ApiError(code, error.message, status)
 
 
 def auth_register(payload: RegisterRequest, context: RequestContext) -> ActionResult:
-    email, password, error = validate_credentials(payload.email, payload.password)
-    _ensure_auth_attempt_allowed("register", email, context.client_ip)
-    if error:
-        raise ApiError(default_error_code(HTTPStatus.BAD_REQUEST), error, HTTPStatus.BAD_REQUEST)
-    role = registration_role(email, owner_email_from_env())
-    display_name = payload.displayName.strip()
-    if not 2 <= len(display_name) <= 80:
-        raise ApiError(
-            default_error_code(HTTPStatus.BAD_REQUEST),
-            "Укажите имя длиной от 2 до 80 символов",
-            HTTPStatus.BAD_REQUEST,
-        )
     try:
-        with connect() as database:
-            cursor = database.execute(
-                "INSERT INTO users(email, password_hash, display_name, role, created_at) VALUES (?, ?, ?, ?, ?)",
-                (email, password_hash(password), display_name, role, int(time.time())),
-            )
-            user_id = cursor.lastrowid
-            verification_token = issue_token(database, "email_verification", user_id)
-            account_services.audit(
-                database,
-                "account_registered",
-                client_ip=context.client_ip,
-                user_agent=context.user_agent,
-                user_id=user_id,
-                email=email,
-                details={"role": role},
-            )
-    except INTEGRITY_ERRORS as error:
-        raise ApiError(
-            "email_already_registered", "Аккаунт с таким email уже существует", HTTPStatus.CONFLICT
-        ) from error
-    token = account_services.create_session(connect, user_id, SESSION_DAYS)
-    with connect() as database:
-        clear_rate_limit(database, "register", context.client_ip, email)
-    delivery = account_services.send_account_link(
-        connect,
-        runtime.DATA_DIR,
-        "email_verification",
-        email,
-        verification_token,
-        public_url=account_public_url(),
-        client_ip=context.client_ip,
-        user_agent=context.user_agent,
-    )
+        result = runtime.account_service().register(
+            payload.email,
+            payload.password,
+            payload.displayName,
+            _metadata(context),
+        )
+    except AccountError as error:
+        raise _api_error(error) from error
     return ActionResult(
-        {
-            "user": account_services.user_payload(user_id, email, display_name, role, None),
-            "verificationDelivery": delivery,
-        },
+        {"user": result.user, "verificationDelivery": result.verification_delivery},
         status=HTTPStatus.CREATED,
-        session_token=token,
+        session_token=result.session_token,
     )
 
 
 def auth_login(payload: LoginRequest, context: RequestContext) -> ActionResult:
-    email = payload.email.strip().lower()
-    password = payload.password
-    _ensure_auth_attempt_allowed("login", email, context.client_ip)
-    with connect() as database:
-        user = database.execute(
-            "SELECT id, email, password_hash, display_name, role, email_verified_at FROM users WHERE email = ?",
-            (email,),
-        ).fetchone()
-    if not user or not password_matches(password, user["password_hash"]):
-        with connect() as database:
-            account_services.audit(
-                database,
-                "login_failed",
-                client_ip=context.client_ip,
-                user_agent=context.user_agent,
-                user_id=user["id"] if user else None,
-                email=email,
-            )
-        raise ApiError("invalid_credentials", "Неверный email или пароль", HTTPStatus.UNAUTHORIZED)
-    token = account_services.create_session(connect, user["id"], SESSION_DAYS)
-    with connect() as database:
-        clear_rate_limit(database, "login", context.client_ip, email)
-        account_services.audit(
-            database,
-            "login_succeeded",
-            client_ip=context.client_ip,
-            user_agent=context.user_agent,
-            user_id=user["id"],
-            email=email,
-        )
-    return ActionResult(
-        {
-            "user": account_services.user_payload(
-                user["id"], user["email"], user["display_name"], user["role"], user["email_verified_at"]
-            )
-        },
-        session_token=token,
-    )
+    try:
+        result = runtime.account_service().login(payload.email, payload.password, _metadata(context))
+    except AccountError as error:
+        raise _api_error(error) from error
+    return ActionResult({"user": result.user}, session_token=result.session_token)
 
 
 def auth_logout(token: str | None, context: RequestContext) -> ActionResult:
-    if token:
-        with connect() as database:
-            user = account_services.user_for_token(database, token)
-            if user:
-                account_services.audit(
-                    database,
-                    "logout",
-                    client_ip=context.client_ip,
-                    user_agent=context.user_agent,
-                    user_id=user["id"],
-                    email=user["email"],
-                )
-            database.execute("DELETE FROM sessions WHERE token_hash = ?", (token_digest(token),))
+    try:
+        runtime.account_service().logout(token, _metadata(context))
+    except AccountError as error:
+        raise _api_error(error) from error
     return ActionResult({"ok": True}, clear_session=True)
 
 
@@ -171,198 +87,46 @@ def auth_me(user: dict | None) -> ActionResult:
 
 
 def email_verification_request(user: dict, context: RequestContext) -> ActionResult:
-    if user["emailVerified"]:
-        raise ApiError("email_already_verified", "Email уже подтверждён", HTTPStatus.CONFLICT)
-    _ensure_auth_attempt_allowed("email_verification", user["email"], context.client_ip)
-    with connect() as database:
-        token = issue_token(database, "email_verification", user["id"])
-        account_services.audit(
-            database,
-            "email_verification_requested",
-            client_ip=context.client_ip,
-            user_agent=context.user_agent,
-            user_id=user["id"],
-            email=user["email"],
+    try:
+        delivery = runtime.account_service().request_email_verification(
+            user["id"], user["email"], user["emailVerified"], _metadata(context)
         )
-    delivery = account_services.send_account_link(
-        connect,
-        runtime.DATA_DIR,
-        "email_verification",
-        user["email"],
-        token,
-        public_url=account_public_url(),
-        client_ip=context.client_ip,
-        user_agent=context.user_agent,
-    )
+    except AccountError as error:
+        raise _api_error(error) from error
     return ActionResult({"ok": True, "delivery": delivery})
 
 
 def email_verification_confirm(payload: TokenRequest, context: RequestContext) -> ActionResult:
-    with connect() as database:
-        user = consume_token(database, "email_verification", payload.token)
-        if not user:
-            raise ApiError("token_invalid", "Ссылка недействительна или устарела", HTTPStatus.BAD_REQUEST)
-        verified_at = int(time.time())
-        database.execute("UPDATE users SET email_verified_at = ? WHERE id = ?", (verified_at, user["id"]))
-        account_services.audit(
-            database,
-            "email_verified",
-            client_ip=context.client_ip,
-            user_agent=context.user_agent,
-            user_id=user["id"],
-            email=user["email"],
-        )
+    try:
+        runtime.account_service().confirm_email_verification(payload.token, _metadata(context))
+    except AccountError as error:
+        raise _api_error(error) from error
     return ActionResult({"ok": True})
 
 
 def password_reset_request(payload: EmailRequest, context: RequestContext) -> ActionResult:
-    email = payload.email.strip().lower()
-    _ensure_auth_attempt_allowed("password_reset", email, context.client_ip)
-    with connect() as database:
-        user = database.execute("SELECT id, email FROM users WHERE email = ?", (email,)).fetchone()
-        if user:
-            token = issue_token(database, "password_reset", user["id"])
-            account_services.audit(
-                database,
-                "password_reset_requested",
-                client_ip=context.client_ip,
-                user_agent=context.user_agent,
-                user_id=user["id"],
-                email=email,
-            )
-        else:
-            token = None
-            account_services.audit(
-                database,
-                "password_reset_requested_unknown",
-                client_ip=context.client_ip,
-                user_agent=context.user_agent,
-                email=email,
-            )
-    if token:
-        account_services.send_account_link(
-            connect,
-            runtime.DATA_DIR,
-            "password_reset",
-            email,
-            token,
-            public_url=account_public_url(),
-            client_ip=context.client_ip,
-            user_agent=context.user_agent,
-        )
+    try:
+        runtime.account_service().request_password_reset(payload.email, _metadata(context))
+    except AccountError as error:
+        raise _api_error(error) from error
     return ActionResult({"ok": True, "message": "Если аккаунт существует, инструкция отправлена"})
 
 
 def password_reset_confirm(payload: PasswordResetRequest, context: RequestContext) -> ActionResult:
-    password = payload.password
-    if not 8 <= len(password) <= 128:
-        raise ApiError(
-            default_error_code(HTTPStatus.BAD_REQUEST),
-            "Пароль должен содержать от 8 до 128 символов",
-            HTTPStatus.BAD_REQUEST,
-        )
-    with connect() as database:
-        user = consume_token(database, "password_reset", payload.token)
-        if not user:
-            raise ApiError("token_invalid", "Ссылка недействительна или устарела", HTTPStatus.BAD_REQUEST)
-        database.execute("UPDATE users SET password_hash = ? WHERE id = ?", (password_hash(password), user["id"]))
-        database.execute("DELETE FROM sessions WHERE user_id = ?", (user["id"],))
-        clear_rate_limit(database, "login", context.client_ip, user["email"])
-        account_services.audit(
-            database,
-            "password_reset_completed",
-            client_ip=context.client_ip,
-            user_agent=context.user_agent,
-            user_id=user["id"],
-            email=user["email"],
-        )
+    try:
+        runtime.account_service().confirm_password_reset(payload.token, payload.password, _metadata(context))
+    except AccountError as error:
+        raise _api_error(error) from error
     return ActionResult({"ok": True}, clear_session=True)
 
 
 def account_audit(user: dict) -> ActionResult:
-    with connect() as database:
-        events = audit_events(database, user["id"])
-    return ActionResult({"events": events})
+    return ActionResult({"events": runtime.account_service().audit_events(user["id"])})
 
 
 def account_delete(payload: DeleteAccountRequest, user: dict, context: RequestContext) -> ActionResult:
-    password = payload.password
-    with connect() as database:
-        row = database.execute("SELECT password_hash FROM users WHERE id = ?", (user["id"],)).fetchone()
-        if not row or not password_matches(password, row["password_hash"]):
-            account_services.audit(
-                database,
-                "account_deletion_failed",
-                client_ip=context.client_ip,
-                user_agent=context.user_agent,
-                user_id=user["id"],
-                email=user["email"],
-            )
-            raise ApiError("invalid_password", "Неверный пароль", HTTPStatus.UNAUTHORIZED)
-        files = database.execute(
-            """
-            SELECT recordings.file_name FROM recordings
-            JOIN submissions ON submissions.id = recordings.submission_id
-            JOIN assignments ON assignments.id = submissions.assignment_id
-            WHERE submissions.student_id = ? OR assignments.teacher_id = ?
-            """,
-            (user["id"], user["id"]),
-        ).fetchall()
-        material_assets = database.execute(
-            """SELECT material_assets.storage_key FROM material_assets
-               JOIN materials ON materials.id=material_assets.material_id
-               WHERE materials.owner_id=?""",
-            (user["id"],),
-        ).fetchall()
-        assignment_assets = database.execute(
-            """SELECT assignment_material_assets.storage_key FROM assignment_material_assets
-               JOIN assignments ON assignments.id=assignment_material_assets.assignment_id
-               WHERE assignments.teacher_id=?""",
-            (user["id"],),
-        ).fetchall()
-        review_audio_keys, review_asset_keys = account_review_storage_keys(database, user["id"])
-        audio_keys = [item["file_name"] for item in files] + review_audio_keys
-        material_keys = [item["storage_key"] for item in material_assets]
-        assignment_keys = [item["storage_key"] for item in assignment_assets] + review_asset_keys
-        enqueue_cleanup_job(
-            database,
-            audio_keys=audio_keys,
-            material_keys=material_keys,
-            assignment_keys=assignment_keys,
-        )
-        account_services.audit(
-            database,
-            "account_deleted",
-            client_ip=context.client_ip,
-            user_agent=context.user_agent,
-            user_id=user["id"],
-            email=user["email"],
-        )
-        database.execute("DELETE FROM users WHERE id = ?", (user["id"],))
-    # Файлы удаляем только после коммита: иначе откат транзакции оставил бы
-    # живой аккаунт со строками, ссылающимися на уже уничтоженные файлы.
     try:
-        with connect() as database:
-            summary = process_cleanup_jobs(
-                database,
-                audio_root=runtime.AUDIO_DIR,
-                material_root=runtime.MATERIAL_ASSET_DIR,
-                assignment_root=runtime.REVIEW_ASSET_DIR,
-            )
-        logging.getLogger("trainer.accounts").info(
-            "Account storage cleanup processed",
-            extra={
-                "event": "account_storage_cleanup_processed",
-                "fields": {"completed": summary.completed, "failed": summary.failed, "pending": summary.pending},
-            },
-        )
-    except Exception:
-        # Аккаунт уже удалён; задача остаётся в БД для следующей попытки.
-        logging.getLogger("trainer.accounts").exception(
-            "Account storage cleanup failed",
-            extra={
-                "event": "account_storage_cleanup_failed",
-                "fields": {"userId": user["id"]},
-            },
-        )
+        runtime.account_service().delete_account(user["id"], user["email"], payload.password, _metadata(context))
+    except AccountError as error:
+        raise _api_error(error) from error
     return ActionResult({"ok": True}, clear_session=True)
