@@ -22,8 +22,11 @@ from trainer.api.schemas import PersonalRecordingUpload
 from trainer.api.security import request_has_same_origin
 from trainer.domain.accounts import password_hash, password_matches
 from trainer.domain.recording_retention import expires_at
+from trainer.infrastructure.database.personal_recording_repository import SQLitePersonalRecordingRepository
 from trainer.infrastructure.database.queries import review_requests as review_request_queries
-from trainer.services.storage_cleanup import process_cleanup_jobs
+from trainer.infrastructure.storage import LocalAudioStorage
+from trainer.services.personal_recordings import PersonalRecordingService
+from trainer.services.storage_cleanup import UPLOAD_INTENT_GRACE_SECONDS, process_cleanup_jobs
 
 
 class SecurityHelpersTest(unittest.TestCase):
@@ -132,8 +135,8 @@ class ApiFlowTest(unittest.TestCase):
         recordings.AUDIO_DIR = runtime.AUDIO_DIR
         cls.original_validate_duration = runtime.validate_duration
         runtime.validate_duration = lambda path, task: 1.0
-        cls.original_personal_validate_duration = personal_recordings.validate_duration
-        personal_recordings.validate_duration = lambda path, task: 1.0
+        cls.original_personal_validate_duration = runtime.validate_personal_recording_duration
+        runtime.validate_personal_recording_duration = lambda path, task: 1.0
         cls.client_context = TestClient(asgi.app)
         cls.client = cls.client_context.__enter__()
         cls.origin = "http://testserver"
@@ -142,7 +145,7 @@ class ApiFlowTest(unittest.TestCase):
     def tearDownClass(cls):
         cls.client_context.__exit__(None, None, None)
         runtime.validate_duration = cls.original_validate_duration
-        personal_recordings.validate_duration = cls.original_personal_validate_duration
+        runtime.validate_personal_recording_duration = cls.original_personal_validate_duration
         if cls.original_owner_email is None:
             os.environ.pop("TRAINER_OWNER_EMAIL", None)
         else:
@@ -474,26 +477,24 @@ class ApiFlowTest(unittest.TestCase):
             label="Answer",
         )
         user = {"id": 1, "email": "student@example.test", "role": "student"}
-        original_connect = runtime.connect
-        connect_calls = 0
-        with original_connect() as database:
+        with runtime.connect() as database:
             jobs_before = database.execute("SELECT COUNT(*) FROM storage_cleanup_jobs").fetchone()[0]
 
-        def fail_second_connect():
-            nonlocal connect_calls
-            connect_calls += 1
-            if connect_calls == 2:
-                raise sqlite3.OperationalError("database unavailable after storage write")
-            return original_connect()
+        class FailingFinalizeRepository(SQLitePersonalRecordingRepository):
+            def finalize_recording(self, *args, **kwargs):
+                raise sqlite3.OperationalError("metadata insert failed")
+
+        service = PersonalRecordingService(
+            FailingFinalizeRepository(runtime.connect),
+            LocalAudioStorage(runtime.AUDIO_DIR),
+            temporary_root=runtime.DATA_DIR / "tmp",
+            max_audio_body=runtime.MAX_AUDIO_BODY,
+            duration_validator=lambda path, task: 1.0,
+            upload_intent_grace_seconds=UPLOAD_INTENT_GRACE_SECONDS,
+        )
 
         with (
-            patch.object(personal_recordings.runtime, "connect", side_effect=fail_second_connect),
-            patch.object(personal_recordings, "validate_duration", return_value=1.0),
-            patch.object(
-                personal_recordings,
-                "create_personal_recording",
-                side_effect=sqlite3.OperationalError("metadata insert failed"),
-            ),
+            patch.object(personal_recordings.runtime, "personal_recording_service", return_value=service),
             self.assertRaises(sqlite3.OperationalError),
         ):
             personal_recordings.personal_recording_create(
@@ -504,7 +505,7 @@ class ApiFlowTest(unittest.TestCase):
                 RequestContext(client_ip="127.0.0.1", user_agent="test"),
             )
 
-        with original_connect() as database:
+        with runtime.connect() as database:
             jobs = database.execute("SELECT audio_keys_json FROM storage_cleanup_jobs").fetchall()
         self.assertEqual(len(jobs), jobs_before + 1)
         self.assertIn("personal-recordings/1/", jobs[-1]["audio_keys_json"])
@@ -523,26 +524,32 @@ class ApiFlowTest(unittest.TestCase):
             questionNumber=1,
             label="Answer",
         )
-        original_write = personal_recordings.write_recording
         cleanup_summaries = []
 
-        def write_while_cleanup_runs(root, storage_key, source, mime_type):
-            original_write(root, storage_key, source, mime_type)
-            with runtime.connect() as database:
-                cleanup_summaries.append(
-                    process_cleanup_jobs(
-                        database,
-                        audio_root=runtime.AUDIO_DIR,
-                        material_root=runtime.MATERIAL_ASSET_DIR,
-                        assignment_root=runtime.REVIEW_ASSET_DIR,
-                        now=int(time.time()),
+        class CleanupDuringPutStorage(LocalAudioStorage):
+            def put(self, storage_key, source, mime_type):
+                super().put(storage_key, source, mime_type)
+                with runtime.connect() as database:
+                    cleanup_summaries.append(
+                        process_cleanup_jobs(
+                            database,
+                            audio_root=runtime.AUDIO_DIR,
+                            material_root=runtime.MATERIAL_ASSET_DIR,
+                            assignment_root=runtime.REVIEW_ASSET_DIR,
+                            now=int(time.time()),
+                        )
                     )
-                )
 
-        with (
-            patch.object(personal_recordings, "validate_duration", return_value=1.0),
-            patch.object(personal_recordings, "write_recording", side_effect=write_while_cleanup_runs),
-        ):
+        service = PersonalRecordingService(
+            SQLitePersonalRecordingRepository(runtime.connect),
+            CleanupDuringPutStorage(runtime.AUDIO_DIR),
+            temporary_root=runtime.DATA_DIR / "tmp",
+            max_audio_body=runtime.MAX_AUDIO_BODY,
+            duration_validator=lambda path, task: 1.0,
+            upload_intent_grace_seconds=UPLOAD_INTENT_GRACE_SECONDS,
+        )
+
+        with patch.object(personal_recordings.runtime, "personal_recording_service", return_value=service):
             result = personal_recordings.personal_recording_create(
                 payload,
                 b"concurrent-audio",
@@ -574,9 +581,18 @@ class ApiFlowTest(unittest.TestCase):
         )
         temporary_directory = runtime.DATA_DIR / "tmp"
         before = set(temporary_directory.glob("personal-recording-*"))
+        repository = SQLitePersonalRecordingRepository(runtime.connect)
+        service = PersonalRecordingService(
+            repository,
+            LocalAudioStorage(runtime.AUDIO_DIR),
+            temporary_root=temporary_directory,
+            max_audio_body=runtime.MAX_AUDIO_BODY,
+            duration_validator=lambda path, task: 1.0,
+            upload_intent_grace_seconds=UPLOAD_INTENT_GRACE_SECONDS,
+        )
         with (
-            patch.object(personal_recordings.runtime, "connect", side_effect=sqlite3.OperationalError("database down")),
-            patch.object(personal_recordings, "validate_duration", return_value=1.0),
+            patch.object(repository, "create_upload_intent", side_effect=sqlite3.OperationalError("database down")),
+            patch.object(personal_recordings.runtime, "personal_recording_service", return_value=service),
             self.assertRaises(sqlite3.OperationalError),
         ):
             personal_recordings.personal_recording_create(

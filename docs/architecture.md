@@ -102,6 +102,23 @@ Controller преобразует API-входы и semantic errors в преж�
 загрузки. SQLite adapter владеет SQL, транзакциями и audit persistence, а Pillow adapter — декодированием,
 проверкой и WebP-кодированием изображений. Публичные маршруты, payloads и правила storage при этом не меняются.
 
+### Вертикальная граница личных записей
+
+Создание, список и выдача личных тренировочных записей проходят через отдельный прикладной сервис:
+
+```text
+personal_recordings controller
+  → PersonalRecordingService
+    → PersonalRecordingRepository / storage ports
+      → SQLitePersonalRecordingRepository / configured storage
+```
+
+Controller только преобразует Pydantic schema, `PersonalRecordingError` и `FileResult`. Service проверяет позицию
+ответа, MIME, размер и длительность, управляет временным файлом и порядком записи в хранилище. Перед загрузкой
+SQLite adapter отдельной транзакцией фиксирует cleanup intent с защитным интервалом. После успешной загрузки он
+атомарно создаёт метаданные и удаляет intent; при сбое хранилища или финализации intent остаётся для повторной
+очистки. SQL, SQLite-транзакции, ffprobe и выбор local/S3 storage не попадают в controller или service.
+
 ## Потоки данных
 
 ```text

@@ -69,6 +69,34 @@ class AccountServiceRuntimeTest(unittest.TestCase):
         )
 
 
+class PersonalRecordingServiceRuntimeTest(unittest.TestCase):
+    def test_factory_composes_current_runtime_dependencies_without_cache(self):
+        repository = object()
+        storage = object()
+        service = object()
+        with (
+            patch.object(runtime, "SQLitePersonalRecordingRepository", return_value=repository) as repository_type,
+            patch.object(runtime, "storage_from_env", return_value=storage) as storage_factory,
+            patch.object(runtime, "PersonalRecordingService", return_value=service) as service_type,
+        ):
+            first = runtime.personal_recording_service()
+            second = runtime.personal_recording_service()
+
+        self.assertIs(first, service)
+        self.assertIs(second, service)
+        self.assertEqual(repository_type.call_count, 2)
+        repository_type.assert_called_with(runtime.connect)
+        storage_factory.assert_called_with(runtime.AUDIO_DIR)
+        service_type.assert_called_with(
+            repository,
+            storage,
+            temporary_root=runtime.DATA_DIR / "tmp",
+            max_audio_body=runtime.MAX_AUDIO_BODY,
+            duration_validator=runtime.validate_personal_recording_duration,
+            upload_intent_grace_seconds=runtime.UPLOAD_INTENT_GRACE_SECONDS,
+        )
+
+
 class StorageCleanupJobServiceTest(unittest.TestCase):
     @patch("trainer.services.storage_cleanup.storage_from_env")
     def test_expiry_removes_metadata_before_failed_physical_delete_and_retries(self, factory):

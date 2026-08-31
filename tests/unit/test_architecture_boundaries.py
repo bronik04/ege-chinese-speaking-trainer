@@ -232,6 +232,42 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         self.assertNotIn("trainer.services.accounts", imports)
         self.assertNotIn("account_services", source)
 
+    def test_personal_recording_service_and_port_are_adapter_neutral(self):
+        service_imports = file_imports(PACKAGE / "services" / "personal_recordings.py")
+        port_path = PACKAGE / "services" / "personal_recording_repository.py"
+
+        self.assertTrue(port_path.is_file())
+        port_imports = file_imports(port_path)
+        for imports in (service_imports, port_imports):
+            self.assertFalse(any(module.startswith("trainer.api") for module in imports), imports)
+            self.assertFalse(any(module.startswith("trainer.infrastructure") for module in imports), imports)
+            self.assertNotIn("sqlite3", imports)
+
+    def test_personal_recording_controller_has_no_database_storage_or_file_orchestration(self):
+        path = PACKAGE / "api" / "controllers" / "personal_recordings.py"
+        source = path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(path))
+        imports = file_imports(path)
+        direct_calls = {
+            node.func.attr
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+        }
+
+        self.assertFalse(any(module.startswith("trainer.infrastructure") for module in imports), imports)
+        self.assertNotIn("sqlite3", imports)
+        self.assertNotIn("tempfile", imports)
+        self.assertNotIn("subprocess", imports)
+        self.assertNotIn("pathlib", imports)
+        self.assertNotIn("execute", direct_calls)
+        self.assertNotIn("runtime.connect", source)
+        self.assertNotIn("write_recording", source)
+        self.assertNotIn("enqueue_cleanup_job", source)
+
+    def test_personal_recording_adapter_does_not_depend_on_api(self):
+        imports = file_imports(PACKAGE / "infrastructure" / "database" / "personal_recording_repository.py")
+        self.assertFalse(any(module.startswith("trainer.api") for module in imports), imports)
+
 
 if __name__ == "__main__":
     unittest.main()
