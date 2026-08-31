@@ -27,6 +27,7 @@ from trainer.services.account_repository import (
     AccountRepositorySession,
     AuthAttemptKind,
 )
+from trainer.services.storage_cleanup import account_review_storage_keys, enqueue_cleanup_job
 
 
 def _profile(row: sqlite3.Row) -> AccountProfile:
@@ -161,6 +162,38 @@ class SQLiteAccountRepositorySession:
             details=dict(event.details),
             now=event.created_at,
         )
+
+    def enqueue_account_cleanup(self, user_id: int, now: int) -> None:
+        legacy_recordings = self.database.execute(
+            """SELECT recordings.file_name FROM recordings
+               JOIN submissions ON submissions.id=recordings.submission_id
+               JOIN assignments ON assignments.id=submissions.assignment_id
+               WHERE submissions.student_id=? OR assignments.teacher_id=?""",
+            (user_id, user_id),
+        ).fetchall()
+        material_assets = self.database.execute(
+            """SELECT material_assets.storage_key FROM material_assets
+               JOIN materials ON materials.id=material_assets.material_id
+               WHERE materials.owner_id=?""",
+            (user_id,),
+        ).fetchall()
+        assignment_assets = self.database.execute(
+            """SELECT assignment_material_assets.storage_key FROM assignment_material_assets
+               JOIN assignments ON assignments.id=assignment_material_assets.assignment_id
+               WHERE assignments.teacher_id=?""",
+            (user_id,),
+        ).fetchall()
+        review_audio_keys, review_asset_keys = account_review_storage_keys(self.database, user_id)
+        enqueue_cleanup_job(
+            self.database,
+            audio_keys=[row["file_name"] for row in legacy_recordings] + review_audio_keys,
+            material_keys=[row["storage_key"] for row in material_assets],
+            assignment_keys=[row["storage_key"] for row in assignment_assets] + review_asset_keys,
+            now=now,
+        )
+
+    def delete_user(self, user_id: int) -> None:
+        self.database.execute("DELETE FROM users WHERE id=?", (user_id,))
 
 
 class SQLiteAccountRepository:

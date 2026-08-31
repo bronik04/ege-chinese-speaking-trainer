@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 import tempfile
 import unittest
@@ -43,6 +44,103 @@ class SQLiteAccountRepositoryTest(unittest.TestCase):
     ) -> int:
         with self.repository.transaction() as transaction:
             return transaction.create_user(email, encoded_password, "User", role, created_at)
+
+    def seed_account_storage_graph(self):
+        user_id = self.create_user(role="teacher")
+        legacy_audio = "legacy/submission-answer.webm"
+        review_audio = "review-requests/1/review-answer.webm"
+        personal_audio = "personal-recordings/1/personal-answer.webm"
+        material_key = "materials/1/source.webp"
+        assignment_key = "assignments/1/copied.webp"
+        review_asset_key = "review-requests/1/copied.webp"
+        with closing(self.connect()) as database, database:
+            group_id = database.execute(
+                "INSERT INTO study_groups(teacher_id,name,join_code,created_at) VALUES (?,?,?,?)",
+                (user_id, "Group", "ACCOUNT1", 1),
+            ).lastrowid
+            assignment_id = database.execute(
+                """INSERT INTO assignments(
+                       group_id,teacher_id,title,variant_id,tasks_json,due_at,created_at
+                   ) VALUES (?,?,?,?,?,?,?)""",
+                (group_id, user_id, "Assignment", "open-2026", "[2]", None, 1),
+            ).lastrowid
+            submission_id = database.execute(
+                """INSERT INTO submissions(
+                       assignment_id,student_id,attempt_number,status,run_json,submitted_at
+                   ) VALUES (?,?,?,?,?,?)""",
+                (assignment_id, user_id, 1, "submitted", "{}", 2),
+            ).lastrowid
+            database.execute(
+                """INSERT INTO recordings(
+                       submission_id,task_number,question_number,label,file_name,mime_type,size_bytes,created_at
+                   ) VALUES (?,?,?,?,?,?,?,?)""",
+                (submission_id, 2, None, "Legacy", legacy_audio, "audio/webm", 1, 2),
+            )
+            material_id = database.execute(
+                """INSERT INTO materials(
+                       slug,owner_id,kind,task_number,title,year,source,status,content_json,created_at,updated_at
+                   ) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                ("account-material", user_id, "task", 2, "Material", 2026, "Test", "draft", "{}", 1, 1),
+            ).lastrowid
+            database.execute(
+                """INSERT INTO material_assets(material_id,storage_key,mime_type,size_bytes,created_at)
+                   VALUES (?,?,?,?,?)""",
+                (material_id, material_key, "image/webp", 1, 1),
+            )
+            database.execute(
+                """INSERT INTO assignment_material_assets(
+                       assignment_id,storage_key,mime_type,size_bytes,created_at
+                   ) VALUES (?,?,?,?,?)""",
+                (assignment_id, assignment_key, "image/webp", 1, 1),
+            )
+            request_id = database.execute(
+                """INSERT INTO review_requests(student_id,kind,status,variant_id,run_json,submitted_at)
+                   VALUES (?,?,?,?,?,?)""",
+                (user_id, "task", "uploading", "open-2026", "{}", None),
+            ).lastrowid
+            item_id = database.execute(
+                """INSERT INTO review_request_items(request_id,task_number,task_snapshot_json)
+                   VALUES (?,?,?)""",
+                (request_id, 2, "{}"),
+            ).lastrowid
+            database.execute(
+                """INSERT INTO review_request_recordings(
+                       item_id,question_number,label,storage_key,mime_type,size_bytes,duration_seconds,
+                       created_at,expires_at
+                   ) VALUES (?,?,?,?,?,?,?,?,?)""",
+                (item_id, None, "Review", review_audio, "audio/webm", 1, 1.0, 2, 9999999999),
+            )
+            database.execute(
+                """INSERT INTO review_request_assets(request_id,storage_key,mime_type,size_bytes,created_at)
+                   VALUES (?,?,?,?,?)""",
+                (request_id, review_asset_key, "image/webp", 1, 1),
+            )
+            database.execute(
+                """INSERT INTO personal_recordings(
+                       student_id,run_id,variant_id,task_number,question_number,label,storage_key,mime_type,
+                       size_bytes,duration_seconds,created_at,expires_at
+                   ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    user_id,
+                    "run-1",
+                    "open-2026",
+                    2,
+                    1,
+                    "Personal",
+                    personal_audio,
+                    "audio/webm",
+                    1,
+                    1.0,
+                    2,
+                    9999999999,
+                ),
+            )
+        return (
+            user_id,
+            {legacy_audio, review_audio, personal_audio},
+            {material_key},
+            {assignment_key, review_asset_key},
+        )
 
     def test_transaction_commits_and_rolls_back_user_and_audit_together(self):
         with self.repository.transaction() as transaction:
@@ -259,6 +357,51 @@ class SQLiteAccountRepositoryTest(unittest.TestCase):
         self.assertEqual(older["email"], "user@example.test")
         self.assertEqual(len(older["ip_address"]), 64)
         self.assertEqual(len(older["user_agent"]), 300)
+
+    def test_account_cleanup_collects_every_key_before_user_cascade(self):
+        user_id, expected_audio, expected_material, expected_assignment = self.seed_account_storage_graph()
+
+        with self.repository.transaction() as transaction:
+            transaction.enqueue_account_cleanup(user_id, 2000)
+            transaction.audit(
+                AccountAuditEvent(
+                    "account_deleted",
+                    self.metadata,
+                    2000,
+                    user_id=user_id,
+                    email="user@example.test",
+                )
+            )
+            transaction.delete_user(user_id)
+
+        with closing(self.connect()) as database:
+            self.assertIsNone(database.execute("SELECT id FROM users WHERE id=?", (user_id,)).fetchone())
+            job = database.execute(
+                """SELECT audio_keys_json,material_keys_json,assignment_keys_json
+                   FROM storage_cleanup_jobs"""
+            ).fetchone()
+            audit = database.execute("SELECT user_id,email,action FROM audit_log").fetchone()
+
+        self.assertEqual(set(json.loads(job["audio_keys_json"])), expected_audio)
+        self.assertEqual(set(json.loads(job["material_keys_json"])), expected_material)
+        self.assertEqual(set(json.loads(job["assignment_keys_json"])), expected_assignment)
+        self.assertEqual(
+            (audit["user_id"], audit["email"], audit["action"]),
+            (None, "user@example.test", "account_deleted"),
+        )
+
+    def test_cleanup_job_and_user_delete_roll_back_together(self):
+        user_id = self.create_user()
+
+        with self.assertRaisesRegex(RuntimeError, "rollback"):
+            with self.repository.transaction() as transaction:
+                transaction.enqueue_account_cleanup(user_id, 2000)
+                transaction.delete_user(user_id)
+                raise RuntimeError("rollback")
+
+        with closing(self.connect()) as database:
+            self.assertIsNotNone(database.execute("SELECT id FROM users WHERE id=?", (user_id,)).fetchone())
+            self.assertEqual(database.execute("SELECT COUNT(*) FROM storage_cleanup_jobs").fetchone()[0], 0)
 
 
 if __name__ == "__main__":
