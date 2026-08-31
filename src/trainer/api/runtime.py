@@ -6,14 +6,18 @@ import re
 import sqlite3
 from pathlib import Path
 
-from trainer.config import PROJECT_ROOT
+from trainer.config import PROJECT_ROOT, account_public_url, owner_email
 from trainer.infrastructure.audio import validate_duration
+from trainer.infrastructure.database.account_repository import SQLiteAccountRepository
 from trainer.infrastructure.database.core import connect as database_connect
 from trainer.infrastructure.database.core import initialize as initialize_database
 from trainer.infrastructure.database.material_repository import SQLiteMaterialRepository
 from trainer.infrastructure.database.review_request_repository import SQLiteReviewRequestRepository
 from trainer.infrastructure.images import encode_material_image
+from trainer.infrastructure.mailer.account_links import MailAccountLinkSender
 from trainer.infrastructure.storage import storage_from_env
+from trainer.services.account_repository import AccountCleanupSummary
+from trainer.services.accounts import AccountService
 from trainer.services.materials import MaterialService
 from trainer.services.review_requests import ReviewRequestService
 from trainer.services.storage_cleanup import expire_recordings, process_cleanup_jobs
@@ -65,6 +69,27 @@ def material_service() -> MaterialService:
         image_encoder=encode_material_image,
         editor_emails=os.environ.get("TRAINER_EDITOR_EMAILS", ""),
         max_image_body=min(MAX_AUDIO_BODY, 5_000_000),
+    )
+
+
+def _process_account_cleanup() -> AccountCleanupSummary:
+    with connect() as database:
+        summary = process_cleanup_jobs(
+            database,
+            audio_root=AUDIO_DIR,
+            material_root=MATERIAL_ASSET_DIR,
+            assignment_root=REVIEW_ASSET_DIR,
+        )
+    return AccountCleanupSummary(summary.completed, summary.failed, summary.pending)
+
+
+def account_service() -> AccountService:
+    return AccountService(
+        SQLiteAccountRepository(connect),
+        MailAccountLinkSender(DATA_DIR, account_public_url()),
+        _process_account_cleanup,
+        owner_email=owner_email(),
+        session_days=SESSION_DAYS,
     )
 
 

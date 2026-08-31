@@ -61,6 +61,35 @@ class AccountStorageServiceTest(unittest.TestCase):
         assignments.delete.assert_called_once_with("assignment.webp")
 
 
+class AccountServiceRuntimeTest(unittest.TestCase):
+    def test_factory_composes_current_runtime_dependencies_without_cache(self):
+        repository = object()
+        sender = object()
+        service = object()
+        with (
+            patch.object(runtime, "SQLiteAccountRepository", return_value=repository) as repository_type,
+            patch.object(runtime, "MailAccountLinkSender", return_value=sender) as sender_type,
+            patch.object(runtime, "AccountService", return_value=service) as service_type,
+            patch.object(runtime, "account_public_url", return_value="https://trainer.example"),
+            patch.object(runtime, "owner_email", return_value="owner@example.test"),
+        ):
+            first = runtime.account_service()
+            second = runtime.account_service()
+
+        self.assertIs(first, service)
+        self.assertIs(second, service)
+        self.assertEqual(repository_type.call_count, 2)
+        repository_type.assert_called_with(runtime.connect)
+        sender_type.assert_called_with(runtime.DATA_DIR, "https://trainer.example")
+        service_type.assert_called_with(
+            repository,
+            sender,
+            runtime._process_account_cleanup,
+            owner_email="owner@example.test",
+            session_days=runtime.SESSION_DAYS,
+        )
+
+
 class StorageCleanupJobServiceTest(unittest.TestCase):
     @patch("trainer.services.storage_cleanup.storage_from_env")
     def test_expiry_removes_metadata_before_failed_physical_delete_and_retries(self, factory):
