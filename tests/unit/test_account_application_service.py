@@ -135,7 +135,9 @@ class FakeAccountRepositorySession:
     def delete_user(self, user_id):
         self._record("delete_user")
         self.repository.users.pop(user_id, None)
-        self.delete_user_sessions(user_id)
+        self.repository.sessions = {
+            token: session for token, session in self.repository.sessions.items() if session[0] != user_id
+        }
 
 
 class FakeAccountRepository:
@@ -497,6 +499,123 @@ class AccountServiceRecoveryTest(unittest.TestCase):
                     "Пароль должен содержать от 8 до 128 символов",
                 )
                 self.assertEqual(len(self.repository.transactions), transaction_count)
+
+
+class AccountServiceLifecycleTest(unittest.TestCase):
+    def setUp(self):
+        self.repository = FakeAccountRepository()
+        self.sender = FakeLinkSender()
+        self.cleanup = FakeCleanupRunner()
+        self.service = AccountService(
+            self.repository,
+            self.sender,
+            self.cleanup,
+            owner_email="owner@example.test",
+            session_days=30,
+            clock=lambda: 1_700_000_000,
+        )
+        self.metadata = AccountRequestMetadata("127.0.0.1", "unit-test")
+
+    def test_audit_events_preserve_public_field_names(self):
+        self.repository.read_audit_events = [
+            AccountAuditRecord(
+                "login_succeeded",
+                "127.0.0.1",
+                "agent",
+                {"source": "test"},
+                100,
+            )
+        ]
+
+        events = self.service.audit_events(7)
+
+        self.assertEqual(
+            events,
+            [
+                {
+                    "action": "login_succeeded",
+                    "ipAddress": "127.0.0.1",
+                    "userAgent": "agent",
+                    "details": {"source": "test"},
+                    "createdAt": 100,
+                }
+            ],
+        )
+        self.assertEqual(self.repository.audit_limits, [(7, 50)])
+
+    def test_invalid_deletion_password_commits_failed_audit_without_cleanup(self):
+        user_id = self.repository.add_user("user@example.test", "correct-password")
+
+        with self.assertRaises(AccountError) as raised:
+            self.service.delete_account(
+                user_id,
+                "user@example.test",
+                "wrong-password",
+                self.metadata,
+            )
+
+        self.assertEqual(raised.exception.reason, "invalid_password")
+        self.assertEqual(self.repository.audit_actions(), ["account_deletion_failed"])
+        self.assertIn(user_id, self.repository.users)
+        self.assertEqual(self.repository.cleanup_enqueues, [])
+        self.assertEqual(self.cleanup.calls, 0)
+
+    def test_missing_account_uses_the_same_invalid_password_contract(self):
+        with self.assertRaises(AccountError) as raised:
+            self.service.delete_account(
+                404,
+                "missing@example.test",
+                "password123",
+                self.metadata,
+            )
+
+        self.assertEqual(raised.exception.reason, "invalid_password")
+        self.assertEqual(self.repository.audit_actions(), ["account_deletion_failed"])
+
+    def test_account_deletion_enqueues_and_deletes_in_one_transaction_then_runs_cleanup(self):
+        user_id = self.repository.add_user("user@example.test", "correct-password")
+        self.repository.sessions["active"] = (user_id, 1_800_000_000, 1_600_000_000)
+
+        with self.assertLogs("trainer.accounts", level="INFO") as captured:
+            self.service.delete_account(
+                user_id,
+                "user@example.test",
+                "correct-password",
+                self.metadata,
+            )
+
+        self.assertNotIn(user_id, self.repository.users)
+        self.assertNotIn("active", self.repository.sessions)
+        self.assertEqual(self.repository.cleanup_enqueues, [(user_id, 1_700_000_000)])
+        self.assertEqual(self.repository.audit_actions(), ["account_deleted"])
+        self.assertEqual(self.cleanup.calls, 1)
+        self.assertIn("Account storage cleanup processed", captured.output[0])
+        self.assertEqual(
+            self.repository.transactions[-1],
+            [
+                "user_by_id",
+                "enqueue_account_cleanup",
+                "audit:account_deleted",
+                "delete_user",
+            ],
+        )
+
+    def test_cleanup_failure_does_not_reverse_committed_account_deletion(self):
+        user_id = self.repository.add_user("user@example.test", "correct-password")
+        self.cleanup.error = OSError("storage down")
+
+        with self.assertLogs("trainer.accounts", level="ERROR") as captured:
+            self.service.delete_account(
+                user_id,
+                "user@example.test",
+                "correct-password",
+                self.metadata,
+            )
+
+        self.assertNotIn(user_id, self.repository.users)
+        self.assertEqual(self.cleanup.calls, 1)
+        self.assertIn("Account storage cleanup failed", captured.output[0])
+        self.assertNotIn("storage down", captured.output[0])
 
 
 if __name__ == "__main__":

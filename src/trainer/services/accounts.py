@@ -402,6 +402,76 @@ class AccountService:
                 )
             )
 
+    def audit_events(self, user_id: int) -> list[dict]:
+        return [
+            {
+                "action": event.action,
+                "ipAddress": event.ip_address,
+                "userAgent": event.user_agent,
+                "details": dict(event.details),
+                "createdAt": event.created_at,
+            }
+            for event in self._repository.audit_events(user_id, 50)
+        ]
+
+    def delete_account(
+        self,
+        user_id: int,
+        email: str,
+        password: str,
+        metadata: AccountRequestMetadata,
+    ) -> None:
+        now = self._now()
+        invalid_password = False
+        with self._repository.transaction() as transaction:
+            user = transaction.user_by_id(user_id)
+            if not user or not password_matches(password, user.password_hash):
+                transaction.audit(
+                    self._audit_event(
+                        "account_deletion_failed",
+                        metadata,
+                        now,
+                        user_id=user_id,
+                        email=email,
+                    )
+                )
+                invalid_password = True
+            else:
+                transaction.enqueue_account_cleanup(user_id, now)
+                transaction.audit(
+                    self._audit_event(
+                        "account_deleted",
+                        metadata,
+                        now,
+                        user_id=user_id,
+                        email=email,
+                    )
+                )
+                transaction.delete_user(user_id)
+        if invalid_password:
+            raise AccountError("invalid_password", "Неверный пароль")
+        try:
+            summary = self._cleanup_runner()
+            logger.info(
+                "Account storage cleanup processed",
+                extra={
+                    "event": "account_storage_cleanup_processed",
+                    "fields": {
+                        "completed": summary.completed,
+                        "failed": summary.failed,
+                        "pending": summary.pending,
+                    },
+                },
+            )
+        except Exception:
+            logger.error(
+                "Account storage cleanup failed",
+                extra={
+                    "event": "account_storage_cleanup_failed",
+                    "fields": {"userId": user_id},
+                },
+            )
+
 
 def create_session(connect_factory, user_id: int, session_days: int, now: int | None = None) -> str:
     token = secrets.token_urlsafe(32)
