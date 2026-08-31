@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from contextlib import contextmanager
 
-from trainer.domain.accounts import password_hash
+from trainer.domain.accounts import password_hash, password_matches
 from trainer.services.account_repository import (
     AccountAuditEvent,
     AccountAuditRecord,
@@ -85,6 +85,9 @@ class FakeAccountRepositorySession:
         self._record(f"consume_token:{kind}")
         stored = self.repository.tokens.pop(token, None)
         if not stored or stored[0] != kind:
+            return None
+        ttl = 86400 if kind == "email_verification" else 3600
+        if now >= stored[2] + ttl:
             return None
         user = self.repository.users.get(stored[1])
         if not user:
@@ -194,6 +197,11 @@ class FakeAccountRepository:
 
     def audit_actions(self) -> list[str]:
         return [event.action for event in self.written_audits]
+
+    def seed_token(self, kind: str, user_id: int, *, issued_at: int = 1_700_000_000) -> str:
+        token = f"{kind}-{user_id}-seeded"
+        self.tokens[token] = (kind, user_id, issued_at)
+        return token
 
 
 class FakeLinkSender:
@@ -351,6 +359,144 @@ class AccountServiceCoreTest(unittest.TestCase):
 
         self.assertEqual(self.repository.audit_actions(), ["logout"])
         self.assertNotIn("valid", self.repository.sessions)
+
+
+class AccountServiceRecoveryTest(unittest.TestCase):
+    def setUp(self):
+        self.repository = FakeAccountRepository()
+        self.sender = FakeLinkSender()
+        self.cleanup = FakeCleanupRunner()
+        self.service = AccountService(
+            self.repository,
+            self.sender,
+            self.cleanup,
+            owner_email="owner@example.test",
+            session_days=30,
+            clock=lambda: 1_700_000_000,
+        )
+        self.metadata = AccountRequestMetadata("127.0.0.1", "unit-test")
+
+    def test_email_verification_request_rejects_verified_user_before_rate_limit(self):
+        with self.assertRaises(AccountError) as raised:
+            self.service.request_email_verification(1, "user@example.test", True, self.metadata)
+
+        self.assertEqual(raised.exception.reason, "email_already_verified")
+        self.assertEqual(self.repository.rate_limit_calls, [])
+
+    def test_email_verification_request_replaces_token_audits_and_delivers(self):
+        delivery = self.service.request_email_verification(7, "user@example.test", False, self.metadata)
+
+        self.assertEqual(delivery, "outbox")
+        self.assertEqual(
+            self.sender.messages,
+            [("email_verification", "user@example.test", "email_verification-7-1")],
+        )
+        self.assertEqual(self.repository.audit_actions(), ["email_verification_requested"])
+        self.assertEqual(self.repository.rate_limit_calls[0][0], "email_verification")
+
+    def test_delivery_failure_is_best_effort_and_audited(self):
+        self.sender.error = OSError("smtp down")
+
+        with self.assertLogs("trainer.accounts", level="WARNING") as captured:
+            delivery = self.service.request_email_verification(7, "user@example.test", False, self.metadata)
+
+        self.assertEqual(delivery, "failed")
+        self.assertIn("Account email delivery failed", captured.output[0])
+        self.assertNotIn("user@example.test", captured.output[0])
+        self.assertEqual(
+            self.repository.audit_actions(),
+            ["email_verification_requested", "email_delivery_failed"],
+        )
+        self.assertEqual(self.repository.written_audits[-1].details, {"kind": "email_verification"})
+
+    def test_registration_delivery_failure_keeps_created_account_and_session(self):
+        self.sender.error = OSError("smtp down")
+
+        with self.assertLogs("trainer.accounts", level="WARNING") as captured:
+            result = self.service.register("user@example.test", "password123", "Ученик", self.metadata)
+
+        self.assertEqual(result.verification_delivery, "failed")
+        self.assertNotIn("user@example.test", captured.output[0])
+        self.assertIn(result.user["id"], self.repository.users)
+        self.assertIn(result.session_token, self.repository.sessions)
+        self.assertEqual(
+            self.repository.audit_actions(),
+            ["account_registered", "email_delivery_failed"],
+        )
+
+    def test_verification_confirm_consumes_token_updates_user_and_audits_atomically(self):
+        user_id = self.repository.add_user("user@example.test", "password123")
+        token = self.repository.seed_token("email_verification", user_id)
+
+        self.service.confirm_email_verification(token, self.metadata)
+
+        self.assertEqual(self.repository.users[user_id].email_verified_at, 1_700_000_000)
+        self.assertEqual(self.repository.audit_actions(), ["email_verified"])
+        self.assertNotIn(token, self.repository.tokens)
+
+    def test_verification_confirm_rejects_invalid_token_without_audit(self):
+        with self.assertRaises(AccountError) as raised:
+            self.service.confirm_email_verification("unknown", self.metadata)
+
+        self.assertEqual(raised.exception.reason, "token_invalid")
+        self.assertEqual(raised.exception.message, "Ссылка недействительна или устарела")
+        self.assertEqual(self.repository.audit_actions(), [])
+
+    def test_verification_confirm_rejects_expired_token(self):
+        user_id = self.repository.add_user("user@example.test", "password123")
+        token = self.repository.seed_token("email_verification", user_id, issued_at=1_699_913_599)
+
+        with self.assertRaises(AccountError) as raised:
+            self.service.confirm_email_verification(token, self.metadata)
+
+        self.assertEqual(raised.exception.reason, "token_invalid")
+
+    def test_password_reset_request_does_not_reveal_unknown_email(self):
+        result = self.service.request_password_reset(" UNKNOWN@example.test ", self.metadata)
+
+        self.assertIsNone(result)
+        self.assertEqual(self.sender.messages, [])
+        self.assertEqual(self.repository.audit_actions(), ["password_reset_requested_unknown"])
+
+    def test_password_reset_request_issues_token_and_delivers_for_known_email(self):
+        user_id = self.repository.add_user("user@example.test", "old-password")
+
+        self.service.request_password_reset(" USER@example.test ", self.metadata)
+
+        self.assertEqual(
+            self.sender.messages,
+            [("password_reset", "user@example.test", f"password_reset-{user_id}-1")],
+        )
+        self.assertEqual(self.repository.audit_actions(), ["password_reset_requested"])
+        self.assertEqual(self.repository.rate_limit_calls[0][0], "password_reset")
+
+    def test_password_reset_confirm_changes_hash_revokes_sessions_clears_limit_and_audits(self):
+        user_id = self.repository.add_user("user@example.test", "old-password")
+        token = self.repository.seed_token("password_reset", user_id)
+        self.repository.sessions["old-session"] = (user_id, 1_800_000_000, 1_600_000_000)
+
+        self.service.confirm_password_reset(token, "new-password123", self.metadata)
+
+        self.assertTrue(password_matches("new-password123", self.repository.users[user_id].password_hash))
+        self.assertEqual(self.repository.sessions, {})
+        self.assertEqual(
+            self.repository.cleared_limits,
+            [("login", "127.0.0.1", "user@example.test")],
+        )
+        self.assertEqual(self.repository.audit_actions(), ["password_reset_completed"])
+
+    def test_password_reset_confirm_validates_length_before_transaction(self):
+        for password in ("short", "x" * 129):
+            with self.subTest(length=len(password)):
+                transaction_count = len(self.repository.transactions)
+                with self.assertRaises(AccountError) as raised:
+                    self.service.confirm_password_reset("unused", password, self.metadata)
+                self.assertEqual(raised.exception.reason, "invalid_input")
+                self.assertEqual(
+                    raised.exception.message,
+                    "Пароль должен содержать от 8 до 128 символов",
+                )
+                self.assertEqual(len(self.repository.transactions), transaction_count)
 
 
 if __name__ == "__main__":

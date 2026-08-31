@@ -22,6 +22,7 @@ from trainer.services.account_repository import (
     AccountAuditEvent,
     AccountCleanupRunner,
     AccountConflictError,
+    AccountLinkKind,
     AccountLinkSender,
     AccountProfile,
     AccountRepository,
@@ -129,6 +130,38 @@ class AccountService:
                 retry_after=retry_after,
             )
 
+    def _deliver(
+        self,
+        kind: AccountLinkKind,
+        user_id: int,
+        email: str,
+        token: str,
+        metadata: AccountRequestMetadata,
+    ) -> str:
+        try:
+            return self._link_sender.send(kind, email, token)
+        except Exception as error:
+            now = self._now()
+            with self._repository.transaction() as transaction:
+                transaction.audit(
+                    self._audit_event(
+                        "email_delivery_failed",
+                        metadata,
+                        now,
+                        user_id=user_id,
+                        email=email,
+                        details={"kind": kind},
+                    )
+                )
+            logger.warning(
+                "Account email delivery failed",
+                extra={
+                    "event": "account_email_delivery_failed",
+                    "fields": {"kind": kind, "error": type(error).__name__},
+                },
+            )
+            return "failed"
+
     def register(
         self,
         raw_email: str,
@@ -178,7 +211,13 @@ class AccountService:
             )
         with self._repository.transaction() as transaction:
             transaction.clear_rate_limit("register", metadata.client_ip, email)
-        delivery = self._link_sender.send("email_verification", email, verification_token)
+        delivery = self._deliver(
+            "email_verification",
+            user_id,
+            email,
+            verification_token,
+            metadata,
+        )
         return RegistrationResult(
             user_payload(user_id, email, display_name, role, None),
             session_token,
@@ -250,6 +289,118 @@ class AccountService:
                     )
                 )
             transaction.delete_session(token)
+
+    def request_email_verification(
+        self,
+        user_id: int,
+        email: str,
+        email_verified: bool,
+        metadata: AccountRequestMetadata,
+    ) -> str:
+        if email_verified:
+            raise AccountError("email_already_verified", "Email уже подтверждён")
+        normalized_email = email.strip().lower()
+        now = self._now()
+        self._consume_attempt("email_verification", normalized_email, metadata, now)
+        with self._repository.transaction() as transaction:
+            token = transaction.issue_token("email_verification", user_id, now)
+            transaction.audit(
+                self._audit_event(
+                    "email_verification_requested",
+                    metadata,
+                    now,
+                    user_id=user_id,
+                    email=normalized_email,
+                )
+            )
+        return self._deliver(
+            "email_verification",
+            user_id,
+            normalized_email,
+            token,
+            metadata,
+        )
+
+    def confirm_email_verification(
+        self,
+        token: str,
+        metadata: AccountRequestMetadata,
+    ) -> None:
+        now = self._now()
+        with self._repository.transaction() as transaction:
+            user = transaction.consume_token("email_verification", token, now)
+            if not user:
+                raise AccountError("token_invalid", "Ссылка недействительна или устарела")
+            transaction.verify_email(user.id, now)
+            transaction.audit(
+                self._audit_event(
+                    "email_verified",
+                    metadata,
+                    now,
+                    user_id=user.id,
+                    email=user.email,
+                )
+            )
+
+    def request_password_reset(
+        self,
+        raw_email: str,
+        metadata: AccountRequestMetadata,
+    ) -> None:
+        email = raw_email.strip().lower()
+        now = self._now()
+        self._consume_attempt("password_reset", email, metadata, now)
+        with self._repository.transaction() as transaction:
+            user = transaction.user_by_email(email)
+            if user:
+                token = transaction.issue_token("password_reset", user.id, now)
+                transaction.audit(
+                    self._audit_event(
+                        "password_reset_requested",
+                        metadata,
+                        now,
+                        user_id=user.id,
+                        email=email,
+                    )
+                )
+            else:
+                token = None
+                transaction.audit(
+                    self._audit_event(
+                        "password_reset_requested_unknown",
+                        metadata,
+                        now,
+                        email=email,
+                    )
+                )
+        if user and token:
+            self._deliver("password_reset", user.id, email, token, metadata)
+
+    def confirm_password_reset(
+        self,
+        token: str,
+        password: str,
+        metadata: AccountRequestMetadata,
+    ) -> None:
+        if not 8 <= len(password) <= 128:
+            raise AccountError("invalid_input", "Пароль должен содержать от 8 до 128 символов")
+        now = self._now()
+        with self._repository.transaction() as transaction:
+            user = transaction.consume_token("password_reset", token, now)
+            if not user:
+                raise AccountError("token_invalid", "Ссылка недействительна или устарела")
+            transaction.replace_password(user.id, password_hash(password))
+            transaction.delete_user_sessions(user.id)
+            transaction.clear_rate_limit("login", metadata.client_ip, user.email)
+            transaction.audit(
+                self._audit_event(
+                    "password_reset_completed",
+                    metadata,
+                    now,
+                    user_id=user.id,
+                    email=user.email,
+                )
+            )
 
 
 def create_session(connect_factory, user_id: int, session_days: int, now: int | None = None) -> str:
