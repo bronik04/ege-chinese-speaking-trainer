@@ -6,13 +6,13 @@ from contextlib import closing, contextmanager
 from pathlib import Path
 
 from trainer.domain.materials import material_payload
+from trainer.infrastructure.database.accounts import record_audit
 from trainer.infrastructure.database.core import begin_immediate
 from trainer.infrastructure.database.queries.review_requests import (
     review_request_detail,
     student_review_requests,
     teacher_review_requests,
 )
-from trainer.services import accounts as account_services
 from trainer.services.review_request_repository import (
     MaterialAsset,
     RecordingRow,
@@ -79,10 +79,10 @@ class _SQLiteReviewRequestSession:
         metadata: RequestMetadata,
         details: Mapping[str, object],
     ) -> None:
-        account_services.audit(
+        record_audit(
             self.database,
             action,
-            client_ip=metadata.client_ip,
+            ip_address=metadata.client_ip,
             user_agent=metadata.user_agent,
             user_id=actor.id,
             email=actor.email,

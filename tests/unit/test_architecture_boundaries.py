@@ -173,6 +173,27 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         self.assertFalse(any(module.startswith("trainer.infrastructure") for module in port_imports), port_imports)
         self.assertFalse(any(module.startswith("trainer.api") for module in adapter_imports | image_imports))
 
+    def test_account_port_has_no_adapter_dependencies(self):
+        path = PACKAGE / "services" / "account_repository.py"
+        self.assertTrue(path.is_file())
+        imports = file_imports(path)
+        self.assertNotIn("sqlite3", imports)
+        self.assertFalse(any(module.startswith("trainer.api") for module in imports), imports)
+        self.assertFalse(any(module.startswith("trainer.infrastructure") for module in imports), imports)
+
+    def test_database_adapters_do_not_import_concrete_account_service(self):
+        for name in ("material_repository.py", "review_request_repository.py"):
+            with self.subTest(name=name):
+                path = PACKAGE / "infrastructure" / "database" / name
+                tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+                imported_names = {
+                    (node.module, alias.name)
+                    for node in ast.walk(tree)
+                    if isinstance(node, ast.ImportFrom)
+                    for alias in node.names
+                }
+                self.assertNotIn(("trainer.services", "accounts"), imported_names)
+
 
 if __name__ == "__main__":
     unittest.main()

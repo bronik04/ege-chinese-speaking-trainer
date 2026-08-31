@@ -5,8 +5,8 @@ import sqlite3
 from collections.abc import Callable, Collection, Iterator
 from contextlib import closing, contextmanager
 
+from trainer.infrastructure.database.accounts import record_audit
 from trainer.infrastructure.database.core import INTEGRITY_ERRORS
-from trainer.services import accounts as account_services
 from trainer.services.material_repository import (
     MaterialAssetAccess,
     MaterialAssetRecord,
@@ -161,10 +161,10 @@ class _SQLiteMaterialRepositorySession:
         ).lastrowid
 
     def audit(self, event: MaterialAudit) -> None:
-        account_services.audit(
+        record_audit(
             self.database,
             event.action,
-            client_ip=event.metadata.client_ip,
+            ip_address=event.metadata.client_ip,
             user_agent=event.metadata.user_agent,
             user_id=event.actor.id,
             email=event.actor.email,
