@@ -46,6 +46,26 @@ compatibility-слои и параллельные реализации не с�
 thread pool и преобразуют результат в response. Это сохраняет transport на границе API и позволяет тестировать
 сценарии без web framework.
 
+### Вертикальная граница аккаунтов
+
+Все десять сценариев аутентификации и жизненного цикла аккаунта проходят через прикладной сервис:
+
+```text
+accounts routes/dependencies → auth controller → AccountService
+AccountService → AccountRepository / AccountLinkSender / cleanup runner ports
+runtime → SQLiteAccountRepository / MailAccountLinkSender / durable cleanup processor
+```
+
+Routes и dependencies отвечают за cookies и получение текущего пользователя, controller преобразует схемы и
+`AccountError` в прежний HTTP-контракт. `AccountService` владеет регистрацией, входом, сессиями, подтверждением
+email, восстановлением пароля, аудитом и удалением аккаунта, не импортируя API или infrastructure. SQLite adapter
+владеет SQL, rate limits, account tokens и границами транзакций; mail adapter формирует и отправляет ссылки.
+
+При удалении аккаунта SQLite adapter собирает ключи всех приватных файлов и ставит durable cleanup job в той же
+транзакции, где записываются `account_deleted` и удаляется пользователь. Физическое удаление из storage начинается
+только после commit. Если storage недоступен, аккаунт остаётся удалённым, а задача сохраняется для повторной
+обработки.
+
 ### Вертикальная граница review requests
 
 Все восемь review-request сценариев проходят через одну прикладную границу:
@@ -62,8 +82,8 @@ Controller разбирает HTTP-значения, проверяет owner-on
 SQLite adapter владеет SQL, audit, cleanup jobs и обычными/immediate transactions. Snapshot helper получает
 только `ReviewAssetRegistry`, а не database connection.
 
-Это проверенная вертикальная миграция одного bounded context, а не общий DI framework. Остальные контроллеры
-могут сохранять переходную структуру и переносятся только отдельными проверяемыми изменениями.
+Каждая вертикальная миграция ограничена своим bounded context и не вводит общий DI framework. Остальные
+контроллеры могут сохранять переходную структуру и переносятся только отдельными проверяемыми изменениями.
 
 ### Вертикальная граница материалов
 
