@@ -118,6 +118,49 @@ class FileResponseTest(unittest.IsolatedAsyncioTestCase):
 
 
 class ApiFlowTest(unittest.TestCase):
+    def test_progress_round_trip_replacement_and_isolation(self):
+        student = self.register_student("progress-one")
+        other = self.register_student("progress-two")
+        status, empty, _ = self.request("GET", "/api/progress", cookie=student)
+        self.assertEqual((status, empty), (200, {"progress": None, "updatedAt": None}))
+        document = {"version": 1, "runs": [None] * 200, "extra": "中文", "updatedAt": "client"}
+        status, saved, _ = self.request("PUT", "/api/progress", {"progress": document}, student)
+        self.assertEqual(status, 200, saved)
+        self.assertEqual(set(saved), {"ok", "updatedAt"})
+        self.assertIs(saved["ok"], True)
+        self.assertIsInstance(saved["updatedAt"], int)
+        status, loaded, _ = self.request("GET", "/api/progress", cookie=student)
+        self.assertEqual((status, loaded), (200, {"progress": document, "updatedAt": saved["updatedAt"]}))
+        self.assertEqual(self.request("GET", "/api/progress", cookie=other)[1], {"progress": None, "updatedAt": None})
+        for version in (1, True, 1.0):
+            replacement = {"version": version}
+            self.assertEqual(self.request("PUT", "/api/progress", {"progress": replacement}, student)[0], 200)
+            self.assertEqual(self.request("GET", "/api/progress", cookie=student)[1]["progress"], replacement)
+
+    def test_progress_invalid_input_does_not_replace_saved_history(self):
+        student = self.register_student("progress-validation")
+        original = {"version": 1, "runs": []}
+        self.assertEqual(self.request("PUT", "/api/progress", {"progress": original}, student)[0], 200)
+        cases = (
+            ({}, "Invalid progress document"),
+            ({"version": "1"}, "Invalid progress document"),
+            ({"version": 1, "runs": None}, "Progress history is too large"),
+            ({"version": 1, "runs": [None] * 201}, "Progress history is too large"),
+        )
+        for document, message in cases:
+            status, error, _ = self.request("PUT", "/api/progress", {"progress": document}, student)
+            self.assertEqual((status, error["code"], error["message"]), (400, "invalid_request", message))
+        for payload in ({}, {"progress": []}, {"progress": original, "extra": 1}):
+            self.assertEqual(self.request("PUT", "/api/progress", payload, student)[0], 422)
+        self.assertEqual(self.request("GET", "/api/progress", cookie=student)[1]["progress"], original)
+
+    def test_progress_auth_and_role_restrictions_remain(self):
+        owner = self.verified_owner_cookie()
+        for method in ("GET", "PUT"):
+            payload = {"progress": {"version": 1}} if method == "PUT" else None
+            self.assertEqual(self.request(method, "/api/progress", payload)[0], 401)
+            self.assertEqual(self.request(method, "/api/progress", payload, owner)[0], 403)
+
     @classmethod
     def setUpClass(cls):
         cls.original_owner_email = os.environ.get("TRAINER_OWNER_EMAIL")

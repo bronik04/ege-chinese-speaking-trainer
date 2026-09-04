@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import os
-import re
 import sqlite3
 from pathlib import Path
 
@@ -13,6 +12,7 @@ from trainer.infrastructure.database.core import connect as database_connect
 from trainer.infrastructure.database.core import initialize as initialize_database
 from trainer.infrastructure.database.material_repository import SQLiteMaterialRepository
 from trainer.infrastructure.database.personal_recording_repository import SQLitePersonalRecordingRepository
+from trainer.infrastructure.database.progress_repository import SQLiteProgressRepository
 from trainer.infrastructure.database.review_request_repository import SQLiteReviewRequestRepository
 from trainer.infrastructure.images import encode_material_image
 from trainer.infrastructure.mailer.account_links import MailAccountLinkSender
@@ -21,6 +21,7 @@ from trainer.services.account_repository import AccountCleanupSummary
 from trainer.services.accounts import AccountService
 from trainer.services.materials import MaterialService
 from trainer.services.personal_recordings import PersonalRecordingService
+from trainer.services.progress import ProgressService
 from trainer.services.review_requests import ReviewRequestService
 from trainer.services.storage_cleanup import UPLOAD_INTENT_GRACE_SECONDS, expire_recordings, process_cleanup_jobs
 
@@ -36,12 +37,14 @@ REVIEW_ASSET_DIR = DATA_DIR / "assignment-assets"
 SESSION_DAYS = 30
 MAX_BODY = int(os.environ.get("TRAINER_MAX_JSON_BYTES", "1000000"))
 MAX_AUDIO_BODY = int(os.environ.get("TRAINER_MAX_AUDIO_BYTES", "15000000"))
-EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
-GROUP_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 
 def connect() -> sqlite3.Connection:
     return database_connect(DB_PATH)
+
+
+def progress_service() -> ProgressService:
+    return ProgressService(SQLiteProgressRepository(connect))
 
 
 def review_request_service() -> ReviewRequestService:

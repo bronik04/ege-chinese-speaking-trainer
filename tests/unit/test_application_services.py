@@ -351,5 +351,24 @@ class StorageCleanupJobServiceTest(unittest.TestCase):
                 factory.return_value.delete.assert_called_once_with("uploading.webm")
 
 
+class ProgressServiceRuntimeTest(unittest.TestCase):
+    def test_factory_composes_uncached_repository_without_external_services(self):
+        repository, service = object(), object()
+        with (
+            patch.object(runtime, "SQLiteProgressRepository", return_value=repository) as repository_type,
+            patch.object(runtime, "ProgressService", return_value=service) as service_type,
+            patch.object(runtime, "storage_from_env") as storage_factory,
+            patch.object(runtime, "MailAccountLinkSender") as mail_sender,
+        ):
+            self.assertIs(runtime.progress_service(), service)
+            self.assertIs(runtime.progress_service(), service)
+        self.assertEqual(repository_type.call_count, 2)
+        self.assertEqual(service_type.call_count, 2)
+        repository_type.assert_called_with(runtime.connect)
+        service_type.assert_called_with(repository)
+        storage_factory.assert_not_called()
+        mail_sender.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

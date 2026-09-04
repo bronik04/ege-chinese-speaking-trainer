@@ -27,6 +27,22 @@ def imported_modules(directory: Path) -> set[str]:
 
 
 class ArchitectureBoundaryTest(unittest.TestCase):
+    def test_progress_boundary_and_retired_names(self):
+        for area in ("controllers", "routes"):
+            self.assertFalse((PACKAGE / "api" / area / "groups.py").exists())
+        controller = PACKAGE / "api" / "controllers" / "progress.py"
+        source = controller.read_text(encoding="utf-8")
+        for token in (".execute(", "connect", "import json", "import time", "trainer.infrastructure", "trainer.domain"):
+            self.assertNotIn(token, source)
+        for relative in ("domain/progress.py", "services/progress.py", "services/progress_repository.py"):
+            imports = file_imports(PACKAGE / relative)
+            self.assertFalse(
+                any(item.startswith(("trainer.api", "trainer.infrastructure", "sqlite3")) for item in imports)
+            )
+        runtime_source = (PACKAGE / "api" / "runtime.py").read_text(encoding="utf-8")
+        self.assertNotIn("GROUP_CODE_ALPHABET", runtime_source)
+        self.assertNotIn("EMAIL_RE", runtime_source)
+
     def test_transitional_backend_namespace_is_removed(self):
         self.assertFalse((PACKAGE / "backend").exists())
         self.assertNotIn("trainer.backend", "\n".join(imported_modules(PACKAGE)))

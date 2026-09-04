@@ -327,7 +327,7 @@ class SQLiteProgressRepository:
 
 **Interfaces:** Consumes Tasks 1–2. Produces `runtime.progress_service() -> ProgressService`, transport functions `progress_get(user)` / `progress_put(payload, user)`, unchanged GET/PUT endpoints.
 
-- [ ] Add `tests/unit/test_progress_controller.py` before the renamed module exists. Use these transport assertions:
+- [x] Add `tests/unit/test_progress_controller.py` before the renamed module exists. Use these transport assertions:
 
 ```python
 import unittest
@@ -373,7 +373,7 @@ class ProgressControllerTest(unittest.TestCase):
             self.assertIs(raised.exception, unexpected)
 ```
 
-- [ ] Add the following methods to existing `ApiFlowTest` in `tests/integration/test_api_flows.py`; existing helpers supply sessions, origin headers and temporary SQLite. Keep `test_legacy_assignment_routes_are_not_active` unchanged.
+- [x] Add the following methods to existing `ApiFlowTest` in `tests/integration/test_api_flows.py`; existing helpers supply sessions, origin headers and temporary SQLite. Keep `test_legacy_assignment_routes_are_not_active` unchanged.
 
 ```python
 def test_progress_round_trip_replacement_and_isolation(self):
@@ -417,7 +417,7 @@ def test_progress_auth_and_role_restrictions_remain(self):
         self.assertEqual(self.request(method, "/api/progress", payload, owner)[0], 403)
 ```
 
-- [ ] Add this test to `ArchitectureBoundaryTest`, using its existing `PACKAGE` and `file_imports` helpers:
+- [x] Add this test to `ArchitectureBoundaryTest`, using its existing `PACKAGE` and `file_imports` helpers:
 
 ```python
 def test_progress_boundary_and_retired_names(self):
@@ -435,8 +435,8 @@ def test_progress_boundary_and_retired_names(self):
     self.assertNotIn("EMAIL_RE", runtime_source)
 ```
 
-- [ ] Run controller and architecture tests, observe RED for absent modules/runtime factory and retained groups names. Run the new API tests against the old implementation to establish compatible baseline behavior before cutover.
-- [ ] Replace the old controller with `api/controllers/progress.py` using this complete transport implementation:
+- [x] Run controller and architecture tests, observe RED for absent modules/runtime factory and retained groups names. Run the new API tests against the old implementation to establish compatible baseline behavior before cutover.
+- [x] Replace the old controller with `api/controllers/progress.py` using this complete transport implementation:
 
 ```python
 from trainer.api import runtime
@@ -465,15 +465,15 @@ def progress_put(payload: ProgressRequest, user: dict) -> ActionResult:
     return ActionResult({"ok": True, "updatedAt": updated_at})
 ```
 
-- [ ] Move the route module with `apply_patch` Move-to support, changing its controller import to `from trainer.api.controllers import progress as actions`. Preserve its remaining contents. In main replace the router import name `groups` with `progress` and registration with `app.include_router(progress.router)`.
-- [ ] In runtime import `SQLiteProgressRepository` and `ProgressService` from their defined modules; add the factory below. Delete only `EMAIL_RE`, `GROUP_CODE_ALPHABET`, and the now-unused `import re`.
+- [x] Move the route module with `apply_patch` Move-to support, changing its controller import to `from trainer.api.controllers import progress as actions`. Preserve its remaining contents. In main replace the router import name `groups` with `progress` and registration with `app.include_router(progress.router)`.
+- [x] In runtime import `SQLiteProgressRepository` and `ProgressService` from their defined modules; add the factory below. Delete only `EMAIL_RE`, `GROUP_CODE_ALPHABET`, and the now-unused `import re`.
 
 ```python
 def progress_service() -> ProgressService:
     return ProgressService(SQLiteProgressRepository(connect))
 ```
 
-- [ ] Add `ProgressServiceRuntimeTest` to `tests/unit/test_application_services.py` using existing Mock/patch/runtime/unittest imports:
+- [x] Add `ProgressServiceRuntimeTest` to `tests/unit/test_application_services.py` using existing Mock/patch/runtime/unittest imports:
 
 ```python
 class ProgressServiceRuntimeTest(unittest.TestCase):
@@ -493,7 +493,7 @@ class ProgressServiceRuntimeTest(unittest.TestCase):
         mail_sender.assert_not_called()
 ```
 
-- [ ] Add this section to `docs/architecture.md` alongside other vertical boundaries:
+- [x] Add this section to `docs/architecture.md` alongside other vertical boundaries:
 
 ```markdown
 ### Вертикальная граница прогресса
@@ -508,9 +508,9 @@ JSON persistence и транзакциями. Успешный PUT возвра�
 исторические таблицы групп, назначений и submissions сохранены без изменений.
 ```
 
-- [ ] Run `.venv/bin/python -m unittest tests.unit.test_progress_service tests.unit.test_progress_controller tests.unit.test_application_services tests.unit.test_architecture_boundaries tests.integration.test_progress_repository tests.integration.test_api_flows -v` and observe GREEN. Run Ruff formatting only on changed Python files when needed.
-- [ ] Inspect `git diff --check` and active imports with `rg -n 'GROUP_CODE_ALPHABET|EMAIL_RE|groups\.router|controllers import groups' src tests`. The remaining domain accounts `EMAIL_RE` is expected; no active groups route/controller reference is allowed. Historical docs remain unchanged.
-- [ ] Run fresh `make check`. UI is unchanged, so no additional Playwright run is required by AGENTS. Commit the coherent cutover with `refactor: route progress through service boundary`.
+- [x] Run `.venv/bin/python -m unittest tests.unit.test_progress_service tests.unit.test_progress_controller tests.unit.test_application_services tests.unit.test_architecture_boundaries tests.integration.test_progress_repository tests.integration.test_api_flows -v` and observe GREEN. Run Ruff formatting only on changed Python files when needed.
+- [x] Inspect `git diff --check` and active imports with `rg -n 'GROUP_CODE_ALPHABET|EMAIL_RE|groups\.router|controllers import groups' src tests`. The remaining domain accounts `EMAIL_RE` is expected; no active groups route/controller reference is allowed. Historical docs remain unchanged.
+- [x] Run fresh `make check`. UI is unchanged, so no additional Playwright run is required by AGENTS. Commit the coherent cutover with `refactor: route progress through service boundary`.
 - [ ] Use `requesting-code-review` for the complete branch diff against its main fork point. Fix any real important findings through regression tests; rerun `make check` after code corrections. Do not merge or push without user authorization. Use `finishing-a-development-branch` for integration handoff.
 
 ## Plan Self-Review and Handoff
@@ -519,4 +519,4 @@ JSON persistence и транзакциями. Успешный PUT возвра�
 - [x] Interfaces agree across tasks: `ProgressRecord.document/updated_at`, repository `get/save`, service `get/put`, service factory `progress_service`.
 - [x] No dependency additions, migrations, frontend edits, server merge, broader cleanup or deletion of compatibility data.
 - [x] Concrete RED/GREEN commands and fixtures provided; existing application remains usable until atomic route/controller cutover.
-- [ ] Execution has not started. Select subagent-driven or inline execution, establish isolated workspace consent, then execute tasks in order.
+- [x] User selected sequential inline execution without implementation subagents and approved isolation. Worktree: `.worktrees/progress-service-boundary`, branch: `codex/progress-service-boundary`.

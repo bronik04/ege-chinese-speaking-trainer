@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from starlette.concurrency import run_in_threadpool
 
-from trainer.api.controllers import groups as actions
+from trainer.api.controllers import progress as actions
 from trainer.api.dependencies import require_student
 from trainer.api.routes import respond
 from trainer.api.schemas import ProgressRequest
