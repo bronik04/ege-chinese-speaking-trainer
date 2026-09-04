@@ -511,7 +511,7 @@ JSON persistence и транзакциями. Успешный PUT возвра�
 - [x] Run `.venv/bin/python -m unittest tests.unit.test_progress_service tests.unit.test_progress_controller tests.unit.test_application_services tests.unit.test_architecture_boundaries tests.integration.test_progress_repository tests.integration.test_api_flows -v` and observe GREEN. Run Ruff formatting only on changed Python files when needed.
 - [x] Inspect `git diff --check` and active imports with `rg -n 'GROUP_CODE_ALPHABET|EMAIL_RE|groups\.router|controllers import groups' src tests`. The remaining domain accounts `EMAIL_RE` is expected; no active groups route/controller reference is allowed. Historical docs remain unchanged.
 - [x] Run fresh `make check`. UI is unchanged, so no additional Playwright run is required by AGENTS. Commit the coherent cutover with `refactor: route progress through service boundary`.
-- [ ] Use `requesting-code-review` for the complete branch diff against its main fork point. Fix any real important findings through regression tests; rerun `make check` after code corrections. Do not merge or push without user authorization. Use `finishing-a-development-branch` for integration handoff.
+- [x] Use `requesting-code-review` for the complete branch diff against its main fork point. Fix any real important findings through regression tests; rerun `make check` after code corrections. Do not merge or push without user authorization. Use `finishing-a-development-branch` for integration handoff.
 
 ## Plan Self-Review and Handoff
 
@@ -520,3 +520,13 @@ JSON persistence и транзакциями. Успешный PUT возвра�
 - [x] No dependency additions, migrations, frontend edits, server merge, broader cleanup or deletion of compatibility data.
 - [x] Concrete RED/GREEN commands and fixtures provided; existing application remains usable until atomic route/controller cutover.
 - [x] User selected sequential inline execution without implementation subagents and approved isolation. Worktree: `.worktrees/progress-service-boundary`, branch: `codex/progress-service-boundary`.
+
+## Execution Result
+
+- All three implementation tasks completed sequentially using test-first RED/GREEN checks.
+- Compatibility tests passed against the old API before cutover and against the new boundary afterward.
+- Full `make check` passed: 18 JavaScript tests, 214 Python unit tests, 128 integration tests
+  (2 PostgreSQL tests skipped because `TEST_DATABASE_URL` is not configured), 93% Python coverage.
+- Independent read-only review of `d92d909..26069fc`: no actionable findings; ready to merge.
+- No frontend, migration, schema or compatibility-data changes. Main and unrelated worktrees remain untouched.
+- Implementation is committed; local merge or publication awaits the user's choice.
