@@ -198,7 +198,7 @@ class ProgressService:
 
 **Interfaces:** Consumes `ProgressRecord` and repository signatures from Task 1. Produces `SQLiteProgressRepository(connect: Callable[[], sqlite3.Connection])` with durable `save` and user-filtered `get`.
 
-- [ ] Write these integration tests first; all use temporary SQLite and real migrations.
+- [x] Write these integration tests first; all use temporary SQLite and real migrations.
 
 ```python
 import json
@@ -279,8 +279,8 @@ class SQLiteProgressRepositoryTest(unittest.TestCase):
         self.assertEqual(self.repository.get(1), ProgressRecord({"version": 1}, 1000))
 ```
 
-- [ ] Run `.venv/bin/python -m unittest tests.integration.test_progress_repository -v`. Expected RED: adapter module absent.
-- [ ] Implement the adapter with explicit commit, rollback and closing; do not rely on `ClosingConnection.__exit__` because injected plain connections must work too:
+- [x] Run `.venv/bin/python -m unittest tests.integration.test_progress_repository -v`. Expected RED: adapter module absent.
+- [x] Implement the adapter with explicit commit, rollback and closing; do not rely on `ClosingConnection.__exit__` because injected plain connections must work too:
 
 ```python
 import json
@@ -319,7 +319,7 @@ class SQLiteProgressRepository:
                 raise
 ```
 
-- [ ] Run repository and service suites, observe GREEN. Run `make check` before committing with `refactor: add sqlite progress repository`.
+- [x] Run repository and service suites, observe GREEN. Run `make check` before committing with `refactor: add sqlite progress repository`.
 
 ## Task 3: API Cutover, Dead-Code Removal and Regression Gates
 
