@@ -1,0 +1,13 @@
+from dataclasses import dataclass
+from typing import Any, Protocol
+
+
+@dataclass(frozen=True)
+class ProgressRecord:
+    document: Any
+    updated_at: int
+
+
+class ProgressRepository(Protocol):
+    def get(self, user_id: int) -> ProgressRecord | None: ...
+    def save(self, user_id: int, document: dict[str, Any], updated_at: int) -> None: ...

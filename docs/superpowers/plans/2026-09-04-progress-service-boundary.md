@@ -51,7 +51,7 @@ Files and responsibilities:
 - Produces `ProgressRepository.get(user_id: int) -> ProgressRecord | None` and `save(user_id: int, document: dict[str, Any], updated_at: int) -> None`.
 - Produces `ProgressService(repository, *, clock=time.time)`, `get(user_id) -> ProgressRecord | None`, `put(user_id, document) -> int`, and `ProgressError(reason: str)`.
 
-- [ ] Write the failing tests below in `tests/unit/test_progress_service.py`.
+- [x] Write the failing tests below in `tests/unit/test_progress_service.py`.
 
 ```python
 import unittest
@@ -119,8 +119,8 @@ class ProgressServiceTest(unittest.TestCase):
             service.get(7)
 ```
 
-- [ ] Run `.venv/bin/python -m unittest tests.unit.test_progress_service -v` (use the worktree Python command above when needed). Expected RED: new modules do not exist.
-- [ ] Implement the pure validator in `domain/progress.py`:
+- [x] Run `.venv/bin/python -m unittest tests.unit.test_progress_service -v` (use the worktree Python command above when needed). Expected RED: new modules do not exist.
+- [x] Implement the pure validator in `domain/progress.py`:
 
 ```python
 class ProgressValidationError(ValueError):
@@ -137,7 +137,7 @@ def validate_progress(document: object) -> None:
         raise ProgressValidationError("history_too_large")
 ```
 
-- [ ] Implement the port in `services/progress_repository.py`:
+- [x] Implement the port in `services/progress_repository.py`:
 
 ```python
 from dataclasses import dataclass
@@ -155,7 +155,7 @@ class ProgressRepository(Protocol):
     def save(self, user_id: int, document: dict[str, Any], updated_at: int) -> None: ...
 ```
 
-- [ ] Implement `services/progress.py`:
+- [x] Implement `services/progress.py`:
 
 ```python
 import time
@@ -190,7 +190,7 @@ class ProgressService:
         return updated_at
 ```
 
-- [ ] Rerun `tests.unit.test_progress_service` and architecture tests, observe GREEN. Run `make check` before committing the standalone modules and tests with `refactor: define progress service boundary`.
+- [x] Rerun `tests.unit.test_progress_service` and architecture tests, observe GREEN. Run `make check` before committing the standalone modules and tests with `refactor: define progress service boundary`.
 
 ## Task 2: SQLite Progress Repository
 
