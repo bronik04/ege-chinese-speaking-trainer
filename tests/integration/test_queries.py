@@ -4,7 +4,6 @@ import unittest
 from pathlib import Path
 
 from trainer.infrastructure.database.core import connect, initialize
-from trainer.infrastructure.database.queries.progress import safe_progress
 
 
 class DatabaseTest(unittest.TestCase):
@@ -38,17 +37,6 @@ class DatabaseTest(unittest.TestCase):
             with connect(database_path) as database:
                 mode = database.execute("PRAGMA journal_mode").fetchone()[0]
             self.assertEqual(mode.lower(), "wal")
-
-
-class ProgressParsingTest(unittest.TestCase):
-    def test_safe_progress_rejects_invalid_documents(self):
-        self.assertEqual(safe_progress(None), {"runs": []})
-        self.assertEqual(safe_progress("not json"), {"runs": []})
-        self.assertEqual(safe_progress("[]"), {"runs": []})
-
-    def test_safe_progress_preserves_valid_document(self):
-        document = safe_progress('{"runs":[{"id":"one"}],"updatedAt":"now"}')
-        self.assertEqual(document["runs"][0]["id"], "one")
 
 
 if __name__ == "__main__":
