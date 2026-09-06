@@ -60,7 +60,7 @@
 - Produces `StorageCleanupService.expire_batch(*, limit=500, now=None)` and `process_batch(*, limit=50, now=None)`.
 - Temporarily retains the old free functions at the bottom of `storage_cleanup.py` so the repository stays green until Task 6 removes them.
 
-- [ ] **Step 1: Write failing service tests**
+- [x] **Step 1: Write failing service tests**
 
 Create `tests/unit/test_storage_cleanup_service.py` with a fake repository and literal storage adapters. Cover expiry delegation, lazy factories, all three categories, missing files, first failure, decode errors, retry/lease timestamps and empty ready batches:
 
@@ -155,7 +155,7 @@ class StorageCleanupServiceTest(unittest.TestCase):
         self.assertEqual(self.service.process_batch(now=200), CleanupSummary(pending=3))
 ~~
 
-- [ ] **Step 2: Run the new tests to observe RED**
+- [x] **Step 2: Run the new tests to observe RED**
 
 Run:
 
@@ -165,7 +165,7 @@ PYTHONPATH=src .venv/bin/python -m unittest tests.unit.test_storage_cleanup_serv
 
 Expected: import failures for `StorageCleanupService` and the repository models.
 
-- [ ] **Step 3: Define the port and value objects**
+- [x] **Step 3: Define the port and value objects**
 
 Create `src/trainer/services/storage_cleanup_repository.py`:
 
@@ -217,7 +217,7 @@ class StorageCleanupRepository(Protocol):
     def pending_jobs(self) -> int: ...
 ~~~
 
-- [ ] **Step 4: Add the service without removing the legacy functions yet**
+- [x] **Step 4: Add the service without removing the legacy functions yet**
 
 At the top of `src/trainer/services/storage_cleanup.py`, define `CleanupStorage`, `StorageFactory`, `CleanupSummary` and `StorageCleanupService`. Use `moment = int(self._clock()) if now is None else int(now)`, `maximum = max(0, int(limit))`, `lease_until = moment + self._lease_seconds` and `retry_at = moment + self._retry_delay_seconds`. Cache one factory result or factory exception per category for the whole batch. Convert `CleanupBatchResult` to the public `CleanupSummary`.
 
@@ -271,7 +271,7 @@ result = self._repository.finish_jobs(
 )
 ~~~
 
-- [ ] **Step 5: Run service tests and the existing cleanup tests**
+- [x] **Step 5: Run service tests and the existing cleanup tests**
 
 Run:
 
@@ -283,7 +283,7 @@ PYTHONPATH=src .venv/bin/python -m unittest \
 
 Expected: PASS; existing callers still use the temporarily retained functions.
 
-- [ ] **Step 6: Commit the service contract**
+- [x] **Step 6: Commit the service contract**
 
 ~~~bash
 git add src/trainer/services/storage_cleanup.py \
