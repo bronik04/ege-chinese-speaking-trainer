@@ -304,7 +304,7 @@ git commit -m "refactor: define storage cleanup service"
 - Produces `SQLiteStorageCleanupQueue(database).cancel(job_id) -> bool`.
 - Produces `SQLiteStorageCleanupRepository(connect_factory)` implementing expiry, claim, finish and pending operations.
 
-- [ ] **Step 1: Write queue and expiry integration tests**
+- [x] **Step 1: Write queue and expiry integration tests**
 
 Create a temporary migrated SQLite database in `tests/integration/test_storage_cleanup_repository.py`. Add tests that:
 
@@ -328,7 +328,7 @@ self.assertFalse(queue.cancel(job_id))
 
 Also seed one personal and one review recording with the same key. Assert `expire_recordings(now=10, limit=2)` removes both rows and enqueues one deduplicated audio key. Patch `SQLiteStorageCleanupQueue.enqueue` to raise and assert both metadata deletes roll back.
 
-- [ ] **Step 2: Write lease, malformed payload and stale outcome tests**
+- [x] **Step 2: Write lease, malformed payload and stale outcome tests**
 
 Enqueue two ready jobs and assert:
 
@@ -343,7 +343,7 @@ self.assertEqual({job.id for job in reclaimed}, {first_job_id, second_job_id})
 
 Finish the stale first claim with `lease_until=3700` after reclaim and assert it applies zero completed/failed and leaves the row. Finish the newer claim with `lease_until=7300` and assert it removes the row. Insert invalid JSON manually, claim it, and assert the returned job contains a `ValueError:` error instead of raising.
 
-- [ ] **Step 3: Run adapter tests to observe RED**
+- [x] **Step 3: Run adapter tests to observe RED**
 
 Run:
 
@@ -353,7 +353,7 @@ PYTHONPATH=src .venv/bin/python -m unittest tests.integration.test_storage_clean
 
 Expected: import failure because the SQLite adapter does not exist.
 
-- [ ] **Step 4: Implement the transaction-local queue**
+- [x] **Step 4: Implement the transaction-local queue**
 
 In `src/trainer/infrastructure/database/storage_cleanup_repository.py`, add stable filtering and strict decoding:
 
@@ -371,7 +371,7 @@ def _decode(value: str) -> tuple[str, ...]:
 
 `enqueue` inserts the three JSON arrays, `attempts=0`, `created_at=updated_at=now`, and `available_at=now` unless explicitly supplied. `cancel` deletes by ID and returns `rowcount == 1`. Neither method commits or rolls back.
 
-- [ ] **Step 5: Implement repository expiry and claim**
+- [x] **Step 5: Implement repository expiry and claim**
 
 Use `closing(self._connect())`, `begin_immediate(database)`, explicit commit/rollback and the existing union query/order from the legacy function. `expire_recordings` uses `SQLiteStorageCleanupQueue(database).enqueue(...)` before commit.
 
@@ -385,7 +385,7 @@ WHERE id=? AND available_at<=?
 
 Commit before decoding. Decode every selected row independently; convert decode exceptions to `ClaimedCleanupJob(..., error="TypeName: message")`.
 
-- [ ] **Step 6: Implement outcome persistence and pending count**
+- [x] **Step 6: Implement outcome persistence and pending count**
 
 Under `BEGIN IMMEDIATE`, process each outcome with lease ownership:
 
@@ -403,7 +403,7 @@ WHERE id=? AND available_at=?
 
 Count completed/failed only when `rowcount == 1`, then read total pending and commit. `pending_jobs` performs a read-only count on its own connection.
 
-- [ ] **Step 7: Run adapter, service and migration tests**
+- [x] **Step 7: Run adapter, service and migration tests**
 
 Run:
 
@@ -416,7 +416,7 @@ PYTHONPATH=src .venv/bin/python -m unittest \
 
 Expected: PASS, including the two-worker lease regression and clean/update migration coverage.
 
-- [ ] **Step 8: Commit the SQLite adapter**
+- [x] **Step 8: Commit the SQLite adapter**
 
 ~~~bash
 git add src/trainer/infrastructure/database/storage_cleanup_repository.py \
