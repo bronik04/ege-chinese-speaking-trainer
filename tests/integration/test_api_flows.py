@@ -1439,13 +1439,8 @@ class ApiFlowTest(unittest.TestCase):
 
     def test_legacy_assignment_routes_are_not_active(self):
         student_cookie = self.register_student("retired-routes")
-        progress = {
-            "version": 1,
-            "updatedAt": "2026-08-19T12:00:00.000Z",
-            "settings": {"fastMode": False},
-            "activeRun": None,
-            "runs": [{"id": "direct-progress", "status": "completed", "completedTasks": [1]}],
-        }
+        progress = copy.deepcopy(PROGRESS_MIGRATION_CASE["input"])
+        expected = copy.deepcopy(PROGRESS_MIGRATION_CASE["expected"])
         for path, payload in (
             ("/api/teacher/groups", {"name": "Retired group"}),
             ("/api/groups/join", {"code": "ABC123"}),
@@ -1463,7 +1458,7 @@ class ApiFlowTest(unittest.TestCase):
         self.assertEqual(status, 200, written)
         status, restored, _ = self.request("GET", "/api/progress", cookie=student_cookie)
         self.assertEqual(status, 200, restored)
-        self.assertEqual(restored["progress"], progress)
+        self.assertEqual(restored["progress"], expected)
 
     def test_owner_registration_derives_teacher_role(self):
         original_owner_email = os.environ.get("TRAINER_OWNER_EMAIL")
