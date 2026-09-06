@@ -1,3 +1,4 @@
+import copy
 import json
 import os
 import secrets
@@ -29,6 +30,16 @@ from trainer.infrastructure.database.recording_access_repository import SQLiteRe
 from trainer.infrastructure.storage import LocalAudioStorage
 from trainer.services.personal_recordings import UPLOAD_INTENT_GRACE_SECONDS, PersonalRecordingService
 from trainer.services.recording_access import RecordingAccessService
+
+PROGRESS_MIGRATION_CASE = next(
+    case
+    for case in json.loads(
+        (Path(__file__).parents[2] / "tests" / "fixtures" / "progress_v1_migration_cases.json").read_text(
+            encoding="utf-8"
+        )
+    )["cases"]
+    if case["name"] == "valid completed run survives and unknown fields disappear"
+)
 
 
 class SecurityHelpersTest(unittest.TestCase):
@@ -125,36 +136,79 @@ class ApiFlowTest(unittest.TestCase):
         other = self.register_student("progress-two")
         status, empty, _ = self.request("GET", "/api/progress", cookie=student)
         self.assertEqual((status, empty), (200, {"progress": None, "updatedAt": None}))
-        document = {"version": 1, "runs": [None] * 200, "extra": "中文", "updatedAt": "client"}
-        status, saved, _ = self.request("PUT", "/api/progress", {"progress": document}, student)
+        legacy = copy.deepcopy(PROGRESS_MIGRATION_CASE["input"])
+        expected = copy.deepcopy(PROGRESS_MIGRATION_CASE["expected"])
+        status, saved, _ = self.request("PUT", "/api/progress", {"progress": legacy}, student)
         self.assertEqual(status, 200, saved)
         self.assertEqual(set(saved), {"ok", "updatedAt"})
         self.assertIs(saved["ok"], True)
         self.assertIsInstance(saved["updatedAt"], int)
         status, loaded, _ = self.request("GET", "/api/progress", cookie=student)
-        self.assertEqual((status, loaded), (200, {"progress": document, "updatedAt": saved["updatedAt"]}))
+        self.assertEqual((status, loaded), (200, {"progress": expected, "updatedAt": saved["updatedAt"]}))
         self.assertEqual(self.request("GET", "/api/progress", cookie=other)[1], {"progress": None, "updatedAt": None})
-        for version in (1, True, 1.0):
-            replacement = {"version": version}
-            self.assertEqual(self.request("PUT", "/api/progress", {"progress": replacement}, student)[0], 200)
-            self.assertEqual(self.request("GET", "/api/progress", cookie=student)[1]["progress"], replacement)
+        self.assertEqual(self.request("PUT", "/api/progress", {"progress": expected}, student)[0], 200)
+        self.assertEqual(self.request("GET", "/api/progress", cookie=student)[1]["progress"], expected)
 
     def test_progress_invalid_input_does_not_replace_saved_history(self):
         student = self.register_student("progress-validation")
-        original = {"version": 1, "runs": []}
+        original = copy.deepcopy(PROGRESS_MIGRATION_CASE["expected"])
         self.assertEqual(self.request("PUT", "/api/progress", {"progress": original}, student)[0], 200)
-        cases = (
-            ({}, "Invalid progress document"),
-            ({"version": "1"}, "Invalid progress document"),
-            ({"version": 1, "runs": None}, "Progress history is too large"),
+        legacy_cases = (
+            ({"version": 1, "runs": None}, "Invalid progress document"),
             ({"version": 1, "runs": [None] * 201}, "Progress history is too large"),
         )
-        for document, message in cases:
+        for document, message in legacy_cases:
             status, error, _ = self.request("PUT", "/api/progress", {"progress": document}, student)
             self.assertEqual((status, error["code"], error["message"]), (400, "invalid_request", message))
-        for payload in ({}, {"progress": []}, {"progress": original, "extra": 1}):
-            self.assertEqual(self.request("PUT", "/api/progress", payload, student)[0], 422)
+
+        bad_extra = copy.deepcopy(original)
+        bad_extra["settings"]["extra"] = True
+        bad_task = copy.deepcopy(original)
+        bad_task["runs"][0]["tasks"] = ["2"]
+        bad_relationship = copy.deepcopy(original)
+        bad_relationship["runs"][0]["currentTask"] = 3
+        invalid_payloads = (
+            {},
+            {"progress": []},
+            {"progress": {}},
+            {"progress": {"version": True}},
+            {"progress": {"version": 1.0}},
+            {"progress": {"version": "1"}},
+            {"progress": {"version": 9}},
+            {"progress": bad_extra},
+            {"progress": bad_task},
+            {"progress": bad_relationship},
+            {"progress": {**original, "version": 2.0}},
+            {"progress": original, "extra": 1},
+        )
+        for payload in invalid_payloads:
+            with self.subTest(payload=payload):
+                status, error, _ = self.request("PUT", "/api/progress", payload, student)
+                self.assertEqual((status, error.get("code")), (422, "request_validation_failed"))
         self.assertEqual(self.request("GET", "/api/progress", cookie=student)[1]["progress"], original)
+
+    def test_progress_incompatible_storage_returns_conflict_without_overwrite(self):
+        for index, encoded in enumerate(("not-json", "[]", '{"version":9}')):
+            prefix = f"progress-corrupt-{index}"
+            student = self.register_student(prefix)
+            with runtime.connect() as database:
+                user_id = database.execute(
+                    "SELECT id FROM users WHERE email LIKE ? ORDER BY id DESC LIMIT 1", (f"{prefix}-%",)
+                ).fetchone()["id"]
+                database.execute(
+                    "INSERT INTO user_progress(user_id,progress_json,updated_at) VALUES (?,?,?)",
+                    (user_id, encoded, 1000),
+                )
+            status, error, _ = self.request("GET", "/api/progress", cookie=student)
+            self.assertEqual(
+                (status, error["code"], error["message"]),
+                (409, "progress_data_incompatible", "Сохранённый прогресс имеет несовместимый формат"),
+            )
+            with runtime.connect() as database:
+                stored = database.execute(
+                    "SELECT progress_json FROM user_progress WHERE user_id=?", (user_id,)
+                ).fetchone()["progress_json"]
+            self.assertEqual(stored, encoded)
 
     def test_progress_auth_and_role_restrictions_remain(self):
         owner = self.verified_owner_cookie()

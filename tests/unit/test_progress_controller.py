@@ -13,18 +13,33 @@ class ProgressControllerTest(unittest.TestCase):
     def test_transport_results_and_delegation(self):
         service = Mock()
         payload = ProgressRequest(progress={"version": 1})
+        canonical = {
+            "version": 2,
+            "updatedAt": "1970-01-01T00:00:00.000Z",
+            "settings": {"lastVariant": None, "fastMode": False},
+            "runs": [],
+            "activeRun": None,
+        }
         with patch.object(runtime, "progress_service", return_value=service):
             service.get.return_value = None
             self.assertEqual(progress.progress_get({"id": 7}).payload, {"progress": None, "updatedAt": None})
-            service.get.return_value = ProgressRecord(payload.progress, 1000)
-            self.assertEqual(
-                progress.progress_get({"id": 7}).payload, {"progress": payload.progress, "updatedAt": 1000}
-            )
+            service.get.return_value = ProgressRecord(canonical, 1000)
+            self.assertEqual(progress.progress_get({"id": 7}).payload, {"progress": canonical, "updatedAt": 1000})
             service.get.assert_called_with(7)
             service.put.return_value = 1001
             result = progress.progress_put(payload, {"id": 7})
             self.assertEqual((result.status, result.payload), (200, {"ok": True, "updatedAt": 1001}))
-            service.put.assert_called_once_with(7, payload.progress)
+            service.put.assert_called_once_with(7, {"version": 1})
+
+    def test_incompatible_stored_document_has_a_stable_conflict_response(self):
+        service = Mock()
+        service.get.side_effect = ProgressError("stored_document_invalid")
+        with patch.object(runtime, "progress_service", return_value=service), self.assertRaises(ApiError) as raised:
+            progress.progress_get({"id": 7})
+        self.assertEqual(
+            (raised.exception.status, raised.exception.code, raised.exception.message),
+            (409, "progress_data_incompatible", "Сохранённый прогресс имеет несовместимый формат"),
+        )
 
     def test_semantic_errors_keep_http_contract(self):
         service = Mock()
@@ -35,7 +50,7 @@ class ProgressControllerTest(unittest.TestCase):
             ):
                 service.put.side_effect = ProgressError(reason)
                 with self.assertRaises(ApiError) as raised:
-                    progress.progress_put(ProgressRequest(progress={}), {"id": 7})
+                    progress.progress_put(ProgressRequest(progress={"version": 1}), {"id": 7})
                 self.assertEqual(
                     (raised.exception.status, raised.exception.code, raised.exception.message),
                     (400, "invalid_request", message),
@@ -43,5 +58,5 @@ class ProgressControllerTest(unittest.TestCase):
             unexpected = ProgressError("unexpected")
             service.put.side_effect = unexpected
             with self.assertRaises(ProgressError) as raised:
-                progress.progress_put(ProgressRequest(progress={}), {"id": 7})
+                progress.progress_put(ProgressRequest(progress={"version": 1}), {"id": 7})
             self.assertIs(raised.exception, unexpected)
