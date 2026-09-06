@@ -166,3 +166,4 @@ retention, новый storage API, серверный proxy файлов, изм
 ## Статус
 
 Дизайн согласован пользователем по частям. Реализация не начата.
+План реализации: docs/superpowers/plans/2026-09-06-recording-access-service-boundary.md.
