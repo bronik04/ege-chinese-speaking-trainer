@@ -15,17 +15,18 @@ from trainer.infrastructure.database.personal_recording_repository import SQLite
 from trainer.infrastructure.database.progress_repository import SQLiteProgressRepository
 from trainer.infrastructure.database.recording_access_repository import SQLiteRecordingAccessRepository
 from trainer.infrastructure.database.review_request_repository import SQLiteReviewRequestRepository
+from trainer.infrastructure.database.storage_cleanup_repository import SQLiteStorageCleanupRepository
 from trainer.infrastructure.images import encode_material_image
 from trainer.infrastructure.mailer.account_links import MailAccountLinkSender
 from trainer.infrastructure.storage import storage_from_env
 from trainer.services.account_repository import AccountCleanupSummary
 from trainer.services.accounts import AccountService
 from trainer.services.materials import MaterialService
-from trainer.services.personal_recordings import PersonalRecordingService
+from trainer.services.personal_recordings import UPLOAD_INTENT_GRACE_SECONDS, PersonalRecordingService
 from trainer.services.progress import ProgressService
 from trainer.services.recording_access import RecordingAccessService
 from trainer.services.review_requests import ReviewRequestService
-from trainer.services.storage_cleanup import UPLOAD_INTENT_GRACE_SECONDS, expire_recordings, process_cleanup_jobs
+from trainer.services.storage_cleanup import CleanupSummary, StorageCleanupService
 
 logger = logging.getLogger("trainer.storage_cleanup")
 
@@ -58,12 +59,7 @@ def recording_access_service() -> RecordingAccessService:
 
 def review_request_service() -> ReviewRequestService:
     return ReviewRequestService(
-        SQLiteReviewRequestRepository(
-            connect,
-            audio_root=AUDIO_DIR,
-            material_root=MATERIAL_ASSET_DIR,
-            review_asset_root=REVIEW_ASSET_DIR,
-        ),
+        SQLiteReviewRequestRepository(connect),
         project_root=ROOT,
         audio_root=AUDIO_DIR,
         material_asset_root=MATERIAL_ASSET_DIR,
@@ -71,6 +67,7 @@ def review_request_service() -> ReviewRequestService:
         temporary_root=DATA_DIR / "tmp",
         max_audio_body=MAX_AUDIO_BODY,
         duration_validator=validate_duration,
+        cleanup_runner=_process_storage_cleanup,
     )
 
 
@@ -97,14 +94,21 @@ def personal_recording_service() -> PersonalRecordingService:
     )
 
 
+def storage_cleanup_service() -> StorageCleanupService:
+    return StorageCleanupService(
+        SQLiteStorageCleanupRepository(connect),
+        audio_storage=lambda: storage_from_env(AUDIO_DIR),
+        material_storage=lambda: storage_from_env(MATERIAL_ASSET_DIR),
+        assignment_storage=lambda: storage_from_env(REVIEW_ASSET_DIR),
+    )
+
+
+def _process_storage_cleanup() -> CleanupSummary:
+    return storage_cleanup_service().process_batch()
+
+
 def _process_account_cleanup() -> AccountCleanupSummary:
-    with connect() as database:
-        summary = process_cleanup_jobs(
-            database,
-            audio_root=AUDIO_DIR,
-            material_root=MATERIAL_ASSET_DIR,
-            assignment_root=REVIEW_ASSET_DIR,
-        )
+    summary = _process_storage_cleanup()
     return AccountCleanupSummary(summary.completed, summary.failed, summary.pending)
 
 
@@ -125,14 +129,9 @@ def init_database(*, cleanup: bool = True) -> None:
     if not cleanup:
         return
     try:
-        with connect() as database:
-            expired = expire_recordings(database)
-            summary = process_cleanup_jobs(
-                database,
-                audio_root=AUDIO_DIR,
-                material_root=MATERIAL_ASSET_DIR,
-                assignment_root=REVIEW_ASSET_DIR,
-            )
+        service = storage_cleanup_service()
+        expired = service.expire_batch()
+        summary = service.process_batch()
         logger.info(
             "Recording expiry and storage cleanup processed",
             extra={

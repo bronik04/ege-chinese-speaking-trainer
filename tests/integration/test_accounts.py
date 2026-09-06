@@ -13,7 +13,7 @@ from trainer.domain.recording_retention import expires_at
 from trainer.infrastructure.database.accounts import consume_rate_limit, consume_token, issue_token, record_audit
 from trainer.infrastructure.database.core import connect, initialize
 from trainer.infrastructure.mailer import send_email
-from trainer.services.storage_cleanup import CleanupSummary, process_cleanup_jobs
+from trainer.services.storage_cleanup import CleanupSummary
 
 
 class AccountSecurityTest(unittest.TestCase):
@@ -121,7 +121,7 @@ class AccountSecurityTest(unittest.TestCase):
             patch.object(runtime, "AUDIO_DIR", audio_root),
             patch.object(runtime, "MATERIAL_ASSET_DIR", material_root),
             patch.object(runtime, "REVIEW_ASSET_DIR", copied_asset_root),
-            patch.object(runtime, "process_cleanup_jobs", return_value=CleanupSummary(pending=1)),
+            patch.object(runtime, "_process_storage_cleanup", return_value=CleanupSummary(pending=1)),
         ):
             result = auth.account_delete(
                 DeleteAccountRequest(password="password123"),
@@ -136,18 +136,18 @@ class AccountSecurityTest(unittest.TestCase):
         self.assertTrue(audio_path.is_file())
         self.assertTrue(copied_asset_path.is_file())
 
-        with patch.dict(os.environ, {"TRAINER_AUDIO_STORAGE": "local"}):
+        with (
+            patch.dict(os.environ, {"TRAINER_AUDIO_STORAGE": "local"}),
+            patch.object(runtime, "DB_PATH", self.database_path),
+            patch.object(runtime, "AUDIO_DIR", audio_root),
+            patch.object(runtime, "MATERIAL_ASSET_DIR", material_root),
+            patch.object(runtime, "REVIEW_ASSET_DIR", copied_asset_root),
+        ):
             with connect(self.database_path) as database:
                 available_at = database.execute(
                     "SELECT available_at FROM storage_cleanup_jobs ORDER BY id DESC LIMIT 1"
                 ).fetchone()[0]
-                summary = process_cleanup_jobs(
-                    database,
-                    audio_root=audio_root,
-                    material_root=material_root,
-                    assignment_root=copied_asset_root,
-                    now=available_at,
-                )
+            summary = runtime.storage_cleanup_service().process_batch(now=available_at)
 
         self.assertEqual((summary.completed, summary.failed, summary.pending), (1, 0, 0))
         self.assertFalse(audio_path.exists())

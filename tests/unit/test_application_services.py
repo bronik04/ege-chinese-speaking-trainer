@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from contextlib import closing
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 from trainer.api import runtime
 from trainer.infrastructure.database.migrations import upgrade_sqlite_database
@@ -124,6 +124,66 @@ class RecordingAccessRuntimeTest(unittest.TestCase):
         repository_type.assert_called_with(runtime.connect)
         service_type.assert_called_with(repository, owner_email="owner@example.test")
         storage_factory.assert_not_called()
+
+
+class StorageCleanupRuntimeTest(unittest.TestCase):
+    def test_factory_composes_uncached_repository_and_lazy_storage_factories(self):
+        repository = object()
+        service = object()
+        with (
+            patch.object(
+                runtime,
+                "SQLiteStorageCleanupRepository",
+                return_value=repository,
+            ) as repository_type,
+            patch.object(runtime, "StorageCleanupService", return_value=service) as service_type,
+            patch.object(runtime, "storage_from_env") as storage_factory,
+        ):
+            first = runtime.storage_cleanup_service()
+            second = runtime.storage_cleanup_service()
+
+            self.assertIs(first, service)
+            self.assertIs(second, service)
+            self.assertEqual(repository_type.call_args_list, [call(runtime.connect), call(runtime.connect)])
+            self.assertEqual(service_type.call_count, 2)
+            storage_factory.assert_not_called()
+
+            factories = service_type.call_args.kwargs
+            factories["audio_storage"]()
+            factories["material_storage"]()
+            factories["assignment_storage"]()
+
+        self.assertEqual(
+            storage_factory.call_args_list,
+            [call(runtime.AUDIO_DIR), call(runtime.MATERIAL_ASSET_DIR), call(runtime.REVIEW_ASSET_DIR)],
+        )
+
+    @patch("trainer.api.runtime.initialize_database")
+    @patch.object(runtime.logger, "exception")
+    def test_startup_cleanup_failure_is_best_effort(self, log_error, _initialize):
+        service = Mock()
+        service.expire_batch.side_effect = OSError("storage unavailable")
+        with patch.object(runtime, "storage_cleanup_service", return_value=service):
+            runtime.init_database()
+
+        service.process_batch.assert_not_called()
+        log_error.assert_called_once_with(
+            "Storage cleanup startup attempt failed",
+            extra={"event": "storage_cleanup_startup_failed"},
+        )
+
+    def test_review_factory_injects_cleanup_callback_without_repository_roots(self):
+        repository = object()
+        service = object()
+        with (
+            patch.object(runtime, "SQLiteReviewRequestRepository", return_value=repository) as repository_type,
+            patch.object(runtime, "ReviewRequestService", return_value=service) as service_type,
+        ):
+            self.assertIs(runtime.review_request_service(), service)
+
+        repository_type.assert_called_once_with(runtime.connect)
+        self.assertIs(service_type.call_args.args[0], repository)
+        self.assertIs(service_type.call_args.kwargs["cleanup_runner"], runtime._process_storage_cleanup)
 
 
 class StorageCleanupJobServiceTest(unittest.TestCase):
@@ -274,26 +334,6 @@ class StorageCleanupJobServiceTest(unittest.TestCase):
                 )
                 audio_keys, _ = account_review_storage_keys(database, student_id)
                 self.assertEqual(audio_keys, ["personal.webm"])
-
-    @patch("trainer.api.runtime.process_cleanup_jobs")
-    @patch("trainer.api.runtime.expire_recordings", side_effect=OSError("storage unavailable"))
-    @patch("trainer.api.runtime.initialize_database")
-    @patch.object(runtime.logger, "exception")
-    def test_startup_cleanup_failure_is_best_effort(self, log_error, _initialize, _expire, process):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            with (
-                patch.object(runtime, "DATA_DIR", root),
-                patch.object(runtime, "AUDIO_DIR", root / "audio"),
-                patch.object(runtime, "MATERIAL_ASSET_DIR", root / "materials"),
-                patch.object(runtime, "REVIEW_ASSET_DIR", root / "assignments"),
-            ):
-                runtime.init_database()
-
-        process.assert_not_called()
-        log_error.assert_called_once_with(
-            "Storage cleanup startup attempt failed", extra={"event": "storage_cleanup_startup_failed"}
-        )
 
     @patch("trainer.services.storage_cleanup.storage_from_env")
     def test_failed_job_is_retained_and_successful_retry_removes_it(self, factory):

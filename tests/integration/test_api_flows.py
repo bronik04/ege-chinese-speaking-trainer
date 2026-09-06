@@ -27,9 +27,8 @@ from trainer.infrastructure.database.personal_recording_repository import SQLite
 from trainer.infrastructure.database.queries import review_requests as review_request_queries
 from trainer.infrastructure.database.recording_access_repository import SQLiteRecordingAccessRepository
 from trainer.infrastructure.storage import LocalAudioStorage
-from trainer.services.personal_recordings import PersonalRecordingService
+from trainer.services.personal_recordings import UPLOAD_INTENT_GRACE_SECONDS, PersonalRecordingService
 from trainer.services.recording_access import RecordingAccessService
-from trainer.services.storage_cleanup import UPLOAD_INTENT_GRACE_SECONDS, process_cleanup_jobs
 
 
 class SecurityHelpersTest(unittest.TestCase):
@@ -584,16 +583,7 @@ class ApiFlowTest(unittest.TestCase):
         class CleanupDuringPutStorage(LocalAudioStorage):
             def put(self, storage_key, source, mime_type):
                 super().put(storage_key, source, mime_type)
-                with runtime.connect() as database:
-                    cleanup_summaries.append(
-                        process_cleanup_jobs(
-                            database,
-                            audio_root=runtime.AUDIO_DIR,
-                            material_root=runtime.MATERIAL_ASSET_DIR,
-                            assignment_root=runtime.REVIEW_ASSET_DIR,
-                            now=int(time.time()),
-                        )
-                    )
+                cleanup_summaries.append(runtime.storage_cleanup_service().process_batch(now=int(time.time())))
 
         service = PersonalRecordingService(
             SQLitePersonalRecordingRepository(runtime.connect),
@@ -1032,13 +1022,8 @@ class ApiFlowTest(unittest.TestCase):
         self.assertNotIn("result", upload_outcome)
         self.assertIsInstance(upload_outcome.get("error"), ApiError)
         self.assertEqual(upload_outcome["error"].code, "review_request_not_found")
+        runtime.storage_cleanup_service().process_batch()
         with runtime.connect() as database:
-            process_cleanup_jobs(
-                database,
-                audio_root=runtime.AUDIO_DIR,
-                material_root=runtime.MATERIAL_ASSET_DIR,
-                assignment_root=runtime.REVIEW_ASSET_DIR,
-            )
             self.assertIsNone(database.execute("SELECT id FROM review_requests WHERE id=?", (request_id,)).fetchone())
         self.assertEqual(list((runtime.AUDIO_DIR / f"review-requests/{request_id}").glob("*")), [])
 
@@ -1193,16 +1178,16 @@ class ApiFlowTest(unittest.TestCase):
         self.assertEqual(status, 201)
         cookie = self.cookie_from(headers)
 
-        original = runtime.process_cleanup_jobs
+        original = runtime._process_storage_cleanup
 
-        def failing_cleanup(*_arguments, **_kwargs):
+        def failing_cleanup():
             raise OSError("storage down")
 
-        runtime.process_cleanup_jobs = failing_cleanup
+        runtime._process_storage_cleanup = failing_cleanup
         try:
             status, _, _ = self.request("DELETE", "/api/account", {"password": "password123"}, cookie)
         finally:
-            runtime.process_cleanup_jobs = original
+            runtime._process_storage_cleanup = original
 
         self.assertEqual(status, 200)
         with runtime.connect() as database:
@@ -1330,21 +1315,22 @@ class ApiFlowTest(unittest.TestCase):
         self.assertEqual(status, 404)
 
         cleanup_job = {}
-        original_cleanup = runtime.process_cleanup_jobs
+        original_cleanup = runtime._process_storage_cleanup
 
-        def inspect_cleanup(database, **kwargs):
-            cleanup_job["audio"] = json.loads(
-                database.execute(
-                    "SELECT audio_keys_json FROM storage_cleanup_jobs ORDER BY id DESC LIMIT 1"
-                ).fetchone()[0]
-            )
-            return original_cleanup(database, **kwargs)
+        def inspect_cleanup():
+            with runtime.connect() as database:
+                cleanup_job["audio"] = json.loads(
+                    database.execute(
+                        "SELECT audio_keys_json FROM storage_cleanup_jobs ORDER BY id DESC LIMIT 1"
+                    ).fetchone()[0]
+                )
+            return original_cleanup()
 
-        runtime.process_cleanup_jobs = inspect_cleanup
+        runtime._process_storage_cleanup = inspect_cleanup
         try:
             status, deleted, _ = self.request("DELETE", "/api/account", {"password": "student123"}, student_cookie)
         finally:
-            runtime.process_cleanup_jobs = original_cleanup
+            runtime._process_storage_cleanup = original_cleanup
         self.assertEqual(status, 200, deleted)
         self.assertIn(personal_key, cleanup_job["audio"])
         self.assertFalse(review_audio_path.exists())

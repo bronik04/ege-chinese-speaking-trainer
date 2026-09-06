@@ -625,7 +625,7 @@ git commit -m "refactor: delegate review cleanup processing"
 - Preserves `runtime._process_account_cleanup() -> AccountCleanupSummary`.
 - Makes the CLI use one service and one fixed cutoff.
 
-- [ ] **Step 1: Write runtime composition tests**
+- [x] **Step 1: Write runtime composition tests**
 
 Replace patches of `runtime.expire_recordings`/`runtime.process_cleanup_jobs` with a fake service. Assert the factory is uncached and receives:
 
@@ -641,7 +641,7 @@ StorageCleanupService(
 
 Each category factory must remain uncalled during composition and invoke `storage_from_env` only when called. Assert `init_database()` calls `expire_batch()` before `process_batch()` and keeps `storage_cleanup_startup_failed` on either exception. Assert `review_request_service()` passes `runtime._process_storage_cleanup` and constructs `SQLiteReviewRequestRepository(runtime.connect)` without roots.
 
-- [ ] **Step 2: Rewrite CLI tests against the service**
+- [x] **Step 2: Rewrite CLI tests against the service**
 
 In `tests/unit/test_storage_cleanup_command.py`, make `runtime.storage_cleanup_service.return_value` the fake service. Preserve the existing side effects and assert:
 
@@ -658,7 +658,7 @@ service.process_batch.call_args_list == [
 
 Also assert the exact accumulated stdout and nonzero result for failed/pending work.
 
-- [ ] **Step 3: Run runtime and CLI tests to observe RED**
+- [x] **Step 3: Run runtime and CLI tests to observe RED**
 
 Run:
 
@@ -670,7 +670,7 @@ PYTHONPATH=src .venv/bin/python -m unittest \
 
 Expected: failures because runtime and CLI do not expose or consume the service factory.
 
-- [ ] **Step 4: Implement runtime composition**
+- [x] **Step 4: Implement runtime composition**
 
 Import `UPLOAD_INTENT_GRACE_SECONDS` from `personal_recordings`, and import `StorageCleanupService` plus `SQLiteStorageCleanupRepository`. Add:
 
@@ -692,7 +692,7 @@ Make `_process_account_cleanup` map `_process_storage_cleanup()`. Make `init_dat
 
 Construct `SQLiteReviewRequestRepository(connect)` without roots and pass `cleanup_runner=_process_storage_cleanup` to `ReviewRequestService`.
 
-- [ ] **Step 5: Cut the CLI over to the service**
+- [x] **Step 5: Cut the CLI over to the service**
 
 Remove the database context and old function imports. After `runtime.init_database(cleanup=False)` and `cleanup_cutoff = int(time())`, create one service and keep the two batch loops:
 
@@ -704,7 +704,7 @@ batch = service.process_batch(limit=500, now=cleanup_cutoff)
 
 Accumulate and print the same summary and preserve the current loop termination conditions.
 
-- [ ] **Step 6: Update API/integration patch points**
+- [x] **Step 6: Update API/integration patch points**
 
 In `tests/integration/test_accounts.py` and `tests/integration/test_api_flows.py`:
 
@@ -714,7 +714,7 @@ In `tests/integration/test_accounts.py` and `tests/integration/test_api_flows.py
 - import `UPLOAD_INTENT_GRACE_SECONDS` from `trainer.services.personal_recordings`;
 - preserve assertions for durable jobs, concurrent upload protection and physical deletion.
 
-- [ ] **Step 7: Run runtime, CLI, account and API-flow tests**
+- [x] **Step 7: Run runtime, CLI, account and API-flow tests**
 
 Run:
 
@@ -728,7 +728,7 @@ PYTHONPATH=src .venv/bin/python -m unittest \
 
 Expected: PASS with exact CLI output and unchanged HTTP behavior.
 
-- [ ] **Step 8: Commit runtime cutover**
+- [x] **Step 8: Commit runtime cutover**
 
 ~~~bash
 git add src/trainer/api/runtime.py scripts/cleanup_storage.py \
