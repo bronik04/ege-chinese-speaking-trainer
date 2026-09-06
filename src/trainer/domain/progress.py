@@ -118,11 +118,11 @@ def _timestamp(value: object) -> tuple[str, datetime]:
     text = value[:-1] + "+00:00" if value.endswith("Z") else value
     try:
         parsed = datetime.fromisoformat(text)
-    except ValueError as error:
+        if parsed.tzinfo is None:
+            raise _invalid()
+        utc = parsed.astimezone(timezone.utc)
+    except (ValueError, OverflowError) as error:
         raise _invalid() from error
-    if parsed.tzinfo is None:
-        raise _invalid()
-    utc = parsed.astimezone(timezone.utc)
     return utc.isoformat(timespec="milliseconds").replace("+00:00", "Z"), utc
 
 

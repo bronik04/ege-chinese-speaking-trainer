@@ -113,9 +113,51 @@
       }
     },
     {
+      "name": "invalid calendar timestamp falls back to epoch",
+      "input": {
+        "version": 1,
+        "updatedAt": "2026-02-30T10:00:00Z"
+      },
+      "expected": {
+        "version": 2,
+        "updatedAt": "1970-01-01T00:00:00.000Z",
+        "settings": {
+          "lastVariant": null,
+          "fastMode": false
+        },
+        "runs": [],
+        "activeRun": null
+      }
+    },
+    {
+      "name": "overflowing timezone timestamp falls back to epoch",
+      "input": {
+        "version": 1,
+        "updatedAt": "9999-12-31T23:59:59-23:59"
+      },
+      "expected": {
+        "version": 2,
+        "updatedAt": "1970-01-01T00:00:00.000Z",
+        "settings": {
+          "lastVariant": null,
+          "fastMode": false
+        },
+        "runs": [],
+        "activeRun": null
+      }
+    },
+    {
       "name": "boolean is not version one",
       "input": {
         "version": true
+      },
+      "expectedError": "invalid_document"
+    },
+    {
+      "name": "legacy history must be a list",
+      "input": {
+        "version": 1,
+        "runs": null
       },
       "expectedError": "invalid_document"
     },

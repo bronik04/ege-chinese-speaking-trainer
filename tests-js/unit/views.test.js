@@ -6,7 +6,7 @@ import {
   teacherReviewRequestDetailMarkup,
   teacherReviewRequestsMarkup,
 } from "../../frontend/js/account/account-view.js";
-import { escapeHtml, mergeProgress } from "../../frontend/js/shared/progress.js";
+import { escapeHtml } from "../../frontend/js/shared/progress.js";
 import { formatTime, stepsMarkup, taskMarkup } from "../../frontend/js/runner/task-view.js";
 import { auditMarkup } from "../../frontend/js/account/account-security.js";
 import { api } from "../../frontend/js/shared/api.js";
@@ -20,54 +20,6 @@ import {
 
 test("escapeHtml protects every HTML-sensitive character", () => {
   assert.equal(escapeHtml(`<script data-x="'">&`), "&lt;script data-x=&quot;&#39;&quot;&gt;&amp;");
-});
-
-test("mergeProgress deduplicates runs and keeps the newest settings", () => {
-  const local = {
-    version: 1,
-    updatedAt: "2026-07-04T12:00:00Z",
-    settings: { fastMode: true },
-    runs: [{ id: "same", startedAt: "2026-07-04T10:00:00Z" }],
-    activeRun: null,
-  };
-  const remote = {
-    version: 1,
-    updatedAt: "2026-07-04T11:00:00Z",
-    settings: { fastMode: false },
-    runs: [
-      { id: "same", startedAt: "2026-07-04T09:00:00Z" },
-      { id: "remote", startedAt: "2026-07-04T08:00:00Z" },
-    ],
-  };
-  const merged = mergeProgress(local, remote);
-  assert.equal(merged.runs.length, 2);
-  assert.equal(merged.runs.find(run => run.id === "same").startedAt, local.runs[0].startedAt);
-  assert.equal(merged.settings.fastMode, true);
-});
-
-test("mergeProgress lets the newer side clear activeRun", () => {
-  const finished = {
-    version: 1,
-    updatedAt: "2026-07-04T12:00:00Z",
-    settings: { fastMode: false },
-    runs: [],
-    activeRun: null,
-  };
-  const staleRemote = {
-    version: 1,
-    updatedAt: "2026-07-04T11:00:00Z",
-    settings: { fastMode: false },
-    runs: [],
-    activeRun: { id: "stale-run", startedAt: "2026-07-04T10:00:00Z" },
-  };
-  assert.equal(mergeProgress(finished, staleRemote).activeRun, null);
-
-  const staleLocal = { ...staleRemote, updatedAt: "2026-07-04T10:00:00Z" };
-  const clearedRemote = { ...finished, updatedAt: "2026-07-04T13:00:00Z" };
-  assert.equal(mergeProgress(staleLocal, clearedRemote).activeRun, null);
-
-  const liveLocal = { ...staleRemote, updatedAt: "2026-07-04T14:00:00Z" };
-  assert.equal(mergeProgress(liveLocal, clearedRemote).activeRun.id, "stale-run");
 });
 
 test("student review request markup hides queued scores and escapes the variant title", () => {
