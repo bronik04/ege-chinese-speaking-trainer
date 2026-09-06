@@ -13,6 +13,7 @@ from trainer.infrastructure.database.core import initialize as initialize_databa
 from trainer.infrastructure.database.material_repository import SQLiteMaterialRepository
 from trainer.infrastructure.database.personal_recording_repository import SQLitePersonalRecordingRepository
 from trainer.infrastructure.database.progress_repository import SQLiteProgressRepository
+from trainer.infrastructure.database.recording_access_repository import SQLiteRecordingAccessRepository
 from trainer.infrastructure.database.review_request_repository import SQLiteReviewRequestRepository
 from trainer.infrastructure.images import encode_material_image
 from trainer.infrastructure.mailer.account_links import MailAccountLinkSender
@@ -22,6 +23,7 @@ from trainer.services.accounts import AccountService
 from trainer.services.materials import MaterialService
 from trainer.services.personal_recordings import PersonalRecordingService
 from trainer.services.progress import ProgressService
+from trainer.services.recording_access import RecordingAccessService
 from trainer.services.review_requests import ReviewRequestService
 from trainer.services.storage_cleanup import UPLOAD_INTENT_GRACE_SECONDS, expire_recordings, process_cleanup_jobs
 
@@ -45,6 +47,13 @@ def connect() -> sqlite3.Connection:
 
 def progress_service() -> ProgressService:
     return ProgressService(SQLiteProgressRepository(connect))
+
+
+def recording_access_service() -> RecordingAccessService:
+    return RecordingAccessService(
+        SQLiteRecordingAccessRepository(connect),
+        owner_email=owner_email(),
+    )
 
 
 def review_request_service() -> ReviewRequestService:

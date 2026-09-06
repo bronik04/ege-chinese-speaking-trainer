@@ -97,6 +97,35 @@ class PersonalRecordingServiceRuntimeTest(unittest.TestCase):
         )
 
 
+class RecordingAccessRuntimeTest(unittest.TestCase):
+    def test_factory_composes_uncached_repository_without_storage(self):
+        repository, service = object(), object()
+        with (
+            patch.object(
+                runtime,
+                "SQLiteRecordingAccessRepository",
+                return_value=repository,
+            ) as repository_type,
+            patch.object(
+                runtime,
+                "RecordingAccessService",
+                return_value=service,
+            ) as service_type,
+            patch.object(runtime, "owner_email", return_value="owner@example.test"),
+            patch.object(runtime, "storage_from_env") as storage_factory,
+        ):
+            first = runtime.recording_access_service()
+            second = runtime.recording_access_service()
+
+        self.assertIs(first, service)
+        self.assertIs(second, service)
+        self.assertEqual(repository_type.call_count, 2)
+        self.assertEqual(service_type.call_count, 2)
+        repository_type.assert_called_with(runtime.connect)
+        service_type.assert_called_with(repository, owner_email="owner@example.test")
+        storage_factory.assert_not_called()
+
+
 class StorageCleanupJobServiceTest(unittest.TestCase):
     @patch("trainer.services.storage_cleanup.storage_from_env")
     def test_expiry_removes_metadata_before_failed_physical_delete_and_retries(self, factory):

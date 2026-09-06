@@ -1,70 +1,46 @@
-import time
-
-from trainer.api.dependencies import owner_email_from_env
-from trainer.api.errors import ApiError, default_error_code
+from trainer.api import runtime
+from trainer.api.errors import ApiError
 from trainer.api.results import FileResult
-from trainer.api.runtime import connect
+from trainer.services.recording_access import RecordingAccessError
+from trainer.services.recording_access_repository import RecordingActor, StoredFile
+
+_ERRORS = {
+    "legacy_recording_not_found": ("not_found", "Запись не найдена"),
+    "review_recording_not_found": ("recording_not_found", "Запись не найдена"),
+    "review_asset_not_found": ("asset_not_found", "Изображение не найдено"),
+}
 
 
-def recording_get(recording_id: int, user: dict) -> FileResult:
-    """Read a pre-migration assignment recording without exposing it in live UI."""
-    with connect() as database:
-        row = database.execute(
-            """
-            SELECT recordings.file_name, recordings.mime_type, recordings.size_bytes,
-                   submissions.status, submissions.student_id, assignments.teacher_id
-            FROM recordings JOIN submissions ON submissions.id = recordings.submission_id
-            JOIN assignments ON assignments.id = submissions.assignment_id
-            WHERE recordings.id = ?
-            """,
-            (recording_id,),
-        ).fetchone()
-    if (
-        not row
-        or user["id"] not in {row["student_id"], row["teacher_id"]}
-        or (row["status"] == "uploading" and user["id"] != row["student_id"])
-    ):
-        raise ApiError(default_error_code(404), "Запись не найдена", 404)
-    return FileResult(key=row["file_name"], mime_type=row["mime_type"], size_bytes=row["size_bytes"])
-
-
-def _review_file_allowed(row, user: dict) -> bool:
-    if row["student_id"] == user["id"]:
-        return True
-    return bool(
-        row["status"] in {"queued", "reviewed"}
-        and user.get("role") == "teacher"
-        and user.get("emailVerified")
-        and str(user.get("email", "")).strip().lower() == owner_email_from_env()
+def _actor(user: dict) -> RecordingActor:
+    return RecordingActor(
+        user["id"],
+        str(user.get("role", "")),
+        str(user.get("email", "")),
+        bool(user.get("emailVerified")),
     )
 
 
+def _result(stored: StoredFile) -> FileResult:
+    return FileResult(stored.storage_key, stored.mime_type, stored.size_bytes)
+
+
+def _access(call) -> FileResult:
+    try:
+        return _result(call())
+    except RecordingAccessError as error:
+        public = _ERRORS.get(error.reason)
+        if public is None:
+            raise
+        raise ApiError(public[0], public[1], 404) from error
+
+
+def recording_get(recording_id: int, user: dict) -> FileResult:
+    return _access(lambda: runtime.recording_access_service().legacy_recording(recording_id, _actor(user)))
+
+
 def review_recording_get(recording_id: int, user: dict) -> FileResult:
-    with connect() as database:
-        row = database.execute(
-            """SELECT review_request_recordings.storage_key,review_request_recordings.mime_type,
-                      review_request_recordings.size_bytes,review_requests.status,review_requests.student_id
-               FROM review_request_recordings
-               JOIN review_request_items ON review_request_items.id=review_request_recordings.item_id
-               JOIN review_requests ON review_requests.id=review_request_items.request_id
-               WHERE review_request_recordings.id=? AND review_request_recordings.expires_at>?""",
-            (recording_id, int(time.time())),
-        ).fetchone()
-    if not row or not _review_file_allowed(row, user):
-        raise ApiError("recording_not_found", "Запись не найдена", 404)
-    return FileResult(key=row["storage_key"], mime_type=row["mime_type"], size_bytes=row["size_bytes"])
+    return _access(lambda: runtime.recording_access_service().review_recording(recording_id, _actor(user)))
 
 
 def review_asset_get(asset_id: int, user: dict) -> FileResult:
-    with connect() as database:
-        row = database.execute(
-            """SELECT review_request_assets.storage_key,review_request_assets.mime_type,
-                      review_request_assets.size_bytes,review_requests.status,review_requests.student_id
-               FROM review_request_assets
-               JOIN review_requests ON review_requests.id=review_request_assets.request_id
-               WHERE review_request_assets.id=?""",
-            (asset_id,),
-        ).fetchone()
-    if not row or not _review_file_allowed(row, user):
-        raise ApiError("asset_not_found", "Изображение не найдено", 404)
-    return FileResult(key=row["storage_key"], mime_type=row["mime_type"], size_bytes=row["size_bytes"])
+    return _access(lambda: runtime.recording_access_service().review_asset(asset_id, _actor(user)))

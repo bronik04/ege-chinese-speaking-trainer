@@ -284,6 +284,26 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         imports = file_imports(PACKAGE / "infrastructure" / "database" / "personal_recording_repository.py")
         self.assertFalse(any(module.startswith("trainer.api") for module in imports), imports)
 
+    def test_recording_access_boundary_dependency_direction(self):
+        controller = PACKAGE / "api" / "controllers" / "recordings.py"
+        source = controller.read_text(encoding="utf-8")
+        for token in (
+            ".execute(",
+            "connect",
+            "import time",
+            "owner_email_from_env",
+            "trainer.infrastructure",
+            "trainer.domain",
+        ):
+            self.assertNotIn(token, source)
+        service_imports = file_imports(PACKAGE / "services" / "recording_access.py")
+        port_imports = file_imports(PACKAGE / "services" / "recording_access_repository.py")
+        adapter_imports = file_imports(PACKAGE / "infrastructure" / "database" / "recording_access_repository.py")
+        for imports in (service_imports, port_imports):
+            self.assertFalse(any(item.startswith(("trainer.api", "trainer.infrastructure")) for item in imports))
+            self.assertNotIn("sqlite3", imports)
+        self.assertFalse(any(item.startswith("trainer.api") for item in adapter_imports))
+
 
 if __name__ == "__main__":
     unittest.main()

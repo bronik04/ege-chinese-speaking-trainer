@@ -20,12 +20,15 @@ from trainer.api.errors import ApiError
 from trainer.api.results import FileResult, RequestContext
 from trainer.api.schemas import PersonalRecordingUpload
 from trainer.api.security import request_has_same_origin
+from trainer.config import owner_email
 from trainer.domain.accounts import password_hash, password_matches
 from trainer.domain.recording_retention import expires_at
 from trainer.infrastructure.database.personal_recording_repository import SQLitePersonalRecordingRepository
 from trainer.infrastructure.database.queries import review_requests as review_request_queries
+from trainer.infrastructure.database.recording_access_repository import SQLiteRecordingAccessRepository
 from trainer.infrastructure.storage import LocalAudioStorage
 from trainer.services.personal_recordings import PersonalRecordingService
+from trainer.services.recording_access import RecordingAccessService
 from trainer.services.storage_cleanup import UPLOAD_INTENT_GRACE_SECONDS, process_cleanup_jobs
 
 
@@ -420,8 +423,17 @@ class ApiFlowTest(unittest.TestCase):
 
         with runtime.connect() as database:
             database.execute("UPDATE review_request_recordings SET expires_at=100 WHERE id=?", (recording_id,))
+        access_service = RecordingAccessService(
+            SQLiteRecordingAccessRepository(runtime.connect),
+            owner_email=owner_email(),
+            clock=lambda: 100,
+        )
         with (
-            patch.object(recordings.time, "time", return_value=100),
+            patch.object(
+                runtime,
+                "recording_access_service",
+                return_value=access_service,
+            ),
             patch.object(review_request_queries.time, "time", return_value=100),
         ):
             self.assertEqual(self.request_bytes(f"/api/review-recordings/{recording_id}", student_cookie)[0], 404)
@@ -1488,6 +1500,28 @@ class ApiFlowTest(unittest.TestCase):
         )
         self.assertNotIn("transcript_status", source)
         self.assertNotIn("enqueue_transcription", source)
+
+    def test_recording_file_routes_require_authentication(self):
+        for path in (
+            "/api/recordings/999",
+            "/api/review-recordings/999",
+            "/api/review-assets/999",
+        ):
+            with self.subTest(path=path):
+                self.assertEqual(self.request("GET", path)[0], 401)
+
+    def test_legacy_recording_remains_private_to_assignment_participants(self):
+        recording_id, student_cookie = self.create_recording()
+        other_student_cookie = self.register_student("legacy-recording-other")
+
+        self.assertEqual(
+            self.request_bytes(f"/api/recordings/{recording_id}", student_cookie)[0],
+            200,
+        )
+        self.assertEqual(
+            self.request_bytes(f"/api/recordings/{recording_id}", other_student_cookie)[0],
+            404,
+        )
 
     def test_recording_supports_range_requests(self):
         recording_id, cookie = self.create_recording()

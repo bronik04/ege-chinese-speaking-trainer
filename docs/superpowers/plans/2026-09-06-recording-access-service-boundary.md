@@ -496,7 +496,7 @@ class SQLiteRecordingAccessRepository:
 
 Run tests.integration.test_recording_access_repository and tests.unit.test_recording_access_service. Expected: PASS.
 
-- [ ] **Step 5: Run make check and commit**
+- [x] **Step 5: Run make check and commit**
 
 Stage both files, run make check, require exit zero, then:
 
@@ -519,7 +519,7 @@ git commit -m "refactor: add sqlite recording access repository"
 - Consumes RecordingAccessService and SQLiteRecordingAccessRepository from Tasks 1–2.
 - Produces runtime.recording_access_service() and preserves the three controller function signatures.
 
-- [ ] **Step 1: Add controller tests before cutover**
+- [x] **Step 1: Add controller tests before cutover**
 
 Create tests/unit/test_recordings_controller.py. Patch runtime.recording_access_service with a Mock. For each public function assert actor conversion, exact service call and FileResult:
 
@@ -549,7 +549,7 @@ cases = (
 
 Every resulting ApiError must have status 404 and the exact code/message above. Set side_effect to RecordingAccessError("unexpected") and assert the identical exception object escapes.
 
-- [ ] **Step 2: Add runtime composition test**
+- [x] **Step 2: Add runtime composition test**
 
 Extend tests/unit/test_application_services.py:
 
@@ -572,7 +572,7 @@ class RecordingAccessRuntimeTest(unittest.TestCase):
         storage_factory.assert_not_called()
 ~~~
 
-- [ ] **Step 3: Strengthen API characterization before cutover**
+- [x] **Step 3: Strengthen API characterization before cutover**
 
 Use existing ApiFlowTest helpers. Keep all current Range tests. Add this authentication characterization before changing production code:
 
@@ -602,7 +602,7 @@ Legacy teacher/uploading permutations are covered at service level; legacy stude
 
 Derive every expected code, body and byte range literally. Run these cases against the current controller first and require PASS; this is the compatibility baseline.
 
-- [ ] **Step 4: Add architecture test and observe controller RED**
+- [x] **Step 4: Add architecture test and observe controller RED**
 
 Extend ArchitectureBoundaryTest:
 
@@ -626,7 +626,7 @@ def test_recording_access_boundary_dependency_direction(self):
 
 Run the controller and architecture tests. Expected RED: controller still contains SQL/time/config and does not delegate.
 
-- [ ] **Step 5: Replace controller implementation**
+- [x] **Step 5: Replace controller implementation**
 
 Keep the three public names. Implement a private actor conversion, StoredFile conversion and known-error mapping:
 
@@ -680,7 +680,7 @@ def review_asset_get(asset_id: int, user: dict) -> FileResult:
     return _access(lambda: runtime.recording_access_service().review_asset(asset_id, _actor(user)))
 ~~~
 
-- [ ] **Step 6: Add runtime factory**
+- [x] **Step 6: Add runtime factory**
 
 Import SQLiteRecordingAccessRepository and RecordingAccessService in runtime.py, then add:
 
@@ -694,7 +694,7 @@ def recording_access_service() -> RecordingAccessService:
 
 Do not cache the service and do not construct storage or mail dependencies.
 
-- [ ] **Step 7: Adapt the expiry test without patching controller time**
+- [x] **Step 7: Adapt the expiry test without patching controller time**
 
 The existing API test patches recordings.time.time. After cutover that symbol is intentionally absent. Replace that patch with an exact real-service fixture:
 
@@ -715,7 +715,7 @@ with (
 
 Import owner_email, SQLiteRecordingAccessRepository and RecordingAccessService at the top of the integration test. Keep the existing history/detail assertions so query-level expiry behavior remains characterized too.
 
-- [ ] **Step 8: Document the boundary**
+- [x] **Step 8: Document the boundary**
 
 Add to docs/architecture.md:
 
@@ -732,7 +732,7 @@ Range-обработка и физическое чтение local/S3/R2 ост
 не меняются.
 ~~~
 
-- [ ] **Step 9: Run focused GREEN suites**
+- [x] **Step 9: Run focused GREEN suites**
 
 Run:
 
@@ -749,7 +749,7 @@ PYTHONPATH=src /Users/bronik04/Documents/Projects/chinese-speaking-trainer/.venv
 
 Expected: PASS, including existing Range and review workflow tests.
 
-- [ ] **Step 10: Static inspection**
+- [x] **Step 10: Static inspection**
 
 Run:
 
