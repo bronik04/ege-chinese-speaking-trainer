@@ -6,9 +6,11 @@ import tempfile
 import unittest
 from contextlib import closing
 from pathlib import Path
+from unittest.mock import patch
 
 from trainer.infrastructure.database.migrations import upgrade_sqlite_database
 from trainer.infrastructure.database.personal_recording_repository import SQLitePersonalRecordingRepository
+from trainer.infrastructure.database.storage_cleanup_repository import SQLiteStorageCleanupQueue
 from trainer.services.personal_recording_repository import (
     PersonalRecordingConflictError,
     PersonalRecordingData,
@@ -55,6 +57,14 @@ class SQLitePersonalRecordingRepositoryTest(unittest.TestCase):
             ).fetchone()
         self.assertEqual(json.loads(row["audio_keys_json"]), ["personal-recordings/1/answer.webm"])
         self.assertEqual((row["created_at"], row["available_at"]), (1000, 1060))
+
+    def test_upload_intent_rolls_back_when_transaction_queue_fails(self):
+        with patch.object(SQLiteStorageCleanupQueue, "enqueue", side_effect=OSError("queue down")):
+            with self.assertRaisesRegex(OSError, "queue down"):
+                self.create_intent()
+
+        with closing(self.connect()) as database:
+            self.assertEqual(database.execute("SELECT COUNT(*) FROM storage_cleanup_jobs").fetchone()[0], 0)
 
     def test_finalize_inserts_metadata_and_deletes_intent_atomically(self):
         intent_id = self.create_intent()
@@ -105,6 +115,28 @@ class SQLitePersonalRecordingRepositoryTest(unittest.TestCase):
 
         with closing(self.connect()) as database:
             self.assertEqual(database.execute("SELECT COUNT(*) FROM personal_recordings").fetchone()[0], 0)
+
+    def test_finalize_uses_transaction_queue_to_cancel_intent(self):
+        intent_id = self.create_intent()
+
+        with patch.object(SQLiteStorageCleanupQueue, "cancel", return_value=False):
+            with self.assertRaises(PersonalRecordingIntentError):
+                self.repository.finalize_recording(
+                    self.student_id,
+                    self.data,
+                    "personal-recordings/1/answer.webm",
+                    "audio/webm",
+                    42,
+                    12.5,
+                    intent_id,
+                    1000,
+                )
+
+        with closing(self.connect()) as database:
+            self.assertEqual(database.execute("SELECT COUNT(*) FROM personal_recordings").fetchone()[0], 0)
+            self.assertIsNotNone(
+                database.execute("SELECT id FROM storage_cleanup_jobs WHERE id=?", (intent_id,)).fetchone()
+            )
 
     def test_conflict_keeps_the_new_cleanup_intent(self):
         first_intent = self.create_intent("personal-recordings/1/first.webm")

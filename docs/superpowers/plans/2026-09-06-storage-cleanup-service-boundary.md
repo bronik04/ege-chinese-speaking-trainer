@@ -440,13 +440,13 @@ git commit -m "refactor: add sqlite storage cleanup repository"
 - Preserves `PersonalRecordingRepository.create_upload_intent` and `finalize_recording`.
 - Produces `trainer.services.personal_recordings.UPLOAD_INTENT_GRACE_SECONDS = 60 * 60`.
 
-- [ ] **Step 1: Strengthen producer transaction tests**
+- [x] **Step 1: Strengthen producer transaction tests**
 
 In `tests/integration/test_account_repository.py`, retain the existing all-key assertion and add a failure after `enqueue_account_cleanup` followed by rollback; verify both the user and pre-existing file metadata remain and `storage_cleanup_jobs` stays empty.
 
 In `tests/integration/test_personal_recording_repository.py`, keep the existing committed intent, atomic finalize, missing-intent rollback and conflict-retains-intent cases. Patch `SQLiteStorageCleanupQueue.enqueue` to raise and assert `create_upload_intent` leaves no job. Patch `cancel` to return false and assert metadata insertion rolls back with `PersonalRecordingIntentError`.
 
-- [ ] **Step 2: Run producer tests as characterization**
+- [x] **Step 2: Run producer tests as characterization**
 
 Run:
 
@@ -458,7 +458,7 @@ PYTHONPATH=src .venv/bin/python -m unittest \
 
 Expected: the new patched-class assertions fail because both repositories still call the legacy function or direct SQL.
 
-- [ ] **Step 3: Migrate account cleanup key collection**
+- [x] **Step 3: Migrate account cleanup key collection**
 
 Replace the import from `trainer.services.storage_cleanup` with:
 
@@ -482,7 +482,7 @@ SQLiteStorageCleanupQueue(self.database).enqueue(
 
 Define the small `_keys` helper locally in the adapter. Do not commit inside the session.
 
-- [ ] **Step 4: Migrate personal upload intents**
+- [x] **Step 4: Migrate personal upload intents**
 
 Use `SQLiteStorageCleanupQueue(database).enqueue(CleanupKeys(audio=(storage_key,)), now=now, available_at=available_at)` in `create_upload_intent`. In `finalize_recording`, replace the direct DELETE with `queue.cancel(cleanup_job_id)` and raise the existing `PersonalRecordingIntentError` when it returns false.
 
@@ -494,7 +494,7 @@ UPLOAD_INTENT_GRACE_SECONDS = 60 * 60
 
 in `src/trainer/services/personal_recordings.py`. Update personal service tests to import the constant from its new owner. Retain the old constant in `storage_cleanup.py` only as a temporary compatibility export until runtime migrates in Task 5 and Task 6 deletes the procedural block.
 
-- [ ] **Step 5: Run producer tests**
+- [x] **Step 5: Run producer tests**
 
 Run:
 
@@ -507,7 +507,7 @@ PYTHONPATH=src .venv/bin/python -m unittest \
 
 Expected: PASS with unchanged rows, errors and intent timing.
 
-- [ ] **Step 6: Commit producer migration**
+- [x] **Step 6: Commit producer migration**
 
 ~~~bash
 git add src/trainer/infrastructure/database/account_repository.py \

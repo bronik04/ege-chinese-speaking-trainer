@@ -6,6 +6,7 @@ from contextlib import closing
 
 from trainer.domain.recording_retention import expires_at
 from trainer.infrastructure.database.core import INTEGRITY_ERRORS, begin_immediate
+from trainer.infrastructure.database.storage_cleanup_repository import SQLiteStorageCleanupQueue
 from trainer.services.personal_recording_repository import (
     PersonalRecordingAccess,
     PersonalRecordingConflictError,
@@ -13,7 +14,7 @@ from trainer.services.personal_recording_repository import (
     PersonalRecordingIntentError,
     PersonalRecordingRecord,
 )
-from trainer.services.storage_cleanup import enqueue_cleanup_job
+from trainer.services.storage_cleanup_repository import CleanupKeys
 
 
 def _record(row: sqlite3.Row) -> PersonalRecordingRecord:
@@ -36,11 +37,8 @@ class SQLitePersonalRecordingRepository:
     def create_upload_intent(self, storage_key: str, now: int, available_at: int) -> int:
         with closing(self._connect()) as database:
             try:
-                cleanup_job_id = enqueue_cleanup_job(
-                    database,
-                    audio_keys=[storage_key],
-                    material_keys=[],
-                    assignment_keys=[],
+                cleanup_job_id = SQLiteStorageCleanupQueue(database).enqueue(
+                    CleanupKeys(audio=(storage_key,)),
                     now=now,
                     available_at=available_at,
                 )
@@ -84,11 +82,7 @@ class SQLitePersonalRecordingRepository:
                         expires_at(now),
                     ),
                 )
-                deleted = database.execute(
-                    "DELETE FROM storage_cleanup_jobs WHERE id=?",
-                    (cleanup_job_id,),
-                )
-                if deleted.rowcount != 1:
+                if not SQLiteStorageCleanupQueue(database).cancel(cleanup_job_id):
                     raise PersonalRecordingIntentError("upload cleanup intent is missing")
                 row = database.execute(
                     """SELECT id,run_id,variant_id,task_number,question_number,label,created_at,expires_at

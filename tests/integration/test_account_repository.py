@@ -6,10 +6,12 @@ import tempfile
 import unittest
 from contextlib import closing
 from pathlib import Path
+from unittest.mock import patch
 
 from trainer.domain.accounts import password_hash, token_digest
 from trainer.infrastructure.database.account_repository import SQLiteAccountRepository
 from trainer.infrastructure.database.migrations import upgrade_sqlite_database
+from trainer.infrastructure.database.storage_cleanup_repository import SQLiteStorageCleanupQueue
 from trainer.services.account_repository import (
     AccountAuditEvent,
     AccountConflictError,
@@ -399,6 +401,19 @@ class SQLiteAccountRepositoryTest(unittest.TestCase):
                 transaction.enqueue_account_cleanup(user_id, 2000)
                 transaction.delete_user(user_id)
                 raise RuntimeError("rollback")
+
+        with closing(self.connect()) as database:
+            self.assertIsNotNone(database.execute("SELECT id FROM users WHERE id=?", (user_id,)).fetchone())
+            self.assertEqual(database.execute("SELECT COUNT(*) FROM storage_cleanup_jobs").fetchone()[0], 0)
+
+    def test_account_cleanup_uses_the_transaction_local_queue(self):
+        user_id = self.create_user()
+
+        with patch.object(SQLiteStorageCleanupQueue, "enqueue", side_effect=OSError("queue down")):
+            with self.assertRaisesRegex(OSError, "queue down"):
+                with self.repository.transaction() as transaction:
+                    transaction.enqueue_account_cleanup(user_id, 2000)
+                    transaction.delete_user(user_id)
 
         with closing(self.connect()) as database:
             self.assertIsNotNone(database.execute("SELECT id FROM users WHERE id=?", (user_id,)).fetchone())

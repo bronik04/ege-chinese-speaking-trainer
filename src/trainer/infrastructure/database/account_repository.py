@@ -17,6 +17,7 @@ from trainer.infrastructure.database.accounts import (
     record_audit,
 )
 from trainer.infrastructure.database.core import INTEGRITY_ERRORS
+from trainer.infrastructure.database.storage_cleanup_repository import SQLiteStorageCleanupQueue
 from trainer.services.account_repository import (
     AccountAuditEvent,
     AccountAuditRecord,
@@ -27,7 +28,11 @@ from trainer.services.account_repository import (
     AccountRepositorySession,
     AuthAttemptKind,
 )
-from trainer.services.storage_cleanup import account_review_storage_keys, enqueue_cleanup_job
+from trainer.services.storage_cleanup_repository import CleanupKeys
+
+
+def _keys(values) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(value for value in values if isinstance(value, str) and value))
 
 
 def _profile(row: sqlite3.Row) -> AccountProfile:
@@ -183,12 +188,32 @@ class SQLiteAccountRepositorySession:
                WHERE assignments.teacher_id=?""",
             (user_id,),
         ).fetchall()
-        review_audio_keys, review_asset_keys = account_review_storage_keys(self.database, user_id)
-        enqueue_cleanup_job(
-            self.database,
-            audio_keys=[row["file_name"] for row in legacy_recordings] + review_audio_keys,
-            material_keys=[row["storage_key"] for row in material_assets],
-            assignment_keys=[row["storage_key"] for row in assignment_assets] + review_asset_keys,
+        review_recordings = self.database.execute(
+            """SELECT review_request_recordings.storage_key
+               FROM review_request_recordings
+               JOIN review_request_items ON review_request_items.id=review_request_recordings.item_id
+               JOIN review_requests ON review_requests.id=review_request_items.request_id
+               WHERE review_requests.student_id=?""",
+            (user_id,),
+        ).fetchall()
+        review_assets = self.database.execute(
+            """SELECT review_request_assets.storage_key
+               FROM review_request_assets
+               JOIN review_requests ON review_requests.id=review_request_assets.request_id
+               WHERE review_requests.student_id=?""",
+            (user_id,),
+        ).fetchall()
+        personal_recordings = self.database.execute(
+            "SELECT storage_key FROM personal_recordings WHERE student_id=?",
+            (user_id,),
+        ).fetchall()
+        SQLiteStorageCleanupQueue(self.database).enqueue(
+            CleanupKeys(
+                audio=_keys(row["file_name"] for row in legacy_recordings)
+                + _keys(row["storage_key"] for row in [*review_recordings, *personal_recordings]),
+                material=_keys(row["storage_key"] for row in material_assets),
+                assignment=_keys(row["storage_key"] for row in [*assignment_assets, *review_assets]),
+            ),
             now=now,
         )
 

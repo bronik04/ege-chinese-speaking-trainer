@@ -23,6 +23,8 @@ _EXTENSIONS = {
     "audio/wav": "wav",
 }
 
+UPLOAD_INTENT_GRACE_SECONDS = 60 * 60
+
 
 class PersonalRecordingError(Exception):
     def __init__(self, reason: str, message: str):
