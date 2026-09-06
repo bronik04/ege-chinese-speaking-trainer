@@ -307,7 +307,7 @@ The private structural Protocol deliberately lets both review record types share
 
 Run the new service test and tests.unit.test_architecture_boundaries. Expected: PASS.
 
-- [ ] **Step 6: Run make check and commit**
+- [x] **Step 6: Run make check and commit**
 
 Stage the task files before make check so repository hygiene sees newly tracked files. Run make check with the absolute Python override, inspect exit code zero, then:
 
@@ -325,7 +325,7 @@ git commit -m "refactor: define recording access service"
 - Consumes all records and repository signatures from Task 1.
 - Produces SQLiteRecordingAccessRepository(connect).
 
-- [ ] **Step 1: Write failing real-SQLite tests**
+- [x] **Step 1: Write failing real-SQLite tests**
 
 Create a TemporaryDirectory, call upgrade_sqlite_database(path), open sqlite3 connections with row_factory sqlite3.Row and foreign_keys ON, and insert literal users plus:
 
@@ -398,11 +398,11 @@ self.assertEqual(len(TrackingConnection.instances), 3)
 self.assertTrue(all(connection.closed for connection in TrackingConnection.instances))
 ~~~
 
-- [ ] **Step 2: Observe RED**
+- [x] **Step 2: Observe RED**
 
 Run tests.integration.test_recording_access_repository. Expected: import failure for the absent adapter.
 
-- [ ] **Step 3: Implement the adapter**
+- [x] **Step 3: Implement the adapter**
 
 Create src/trainer/infrastructure/database/recording_access_repository.py:
 
@@ -492,7 +492,7 @@ class SQLiteRecordingAccessRepository:
         )
 ~~~
 
-- [ ] **Step 4: Run adapter and service suites**
+- [x] **Step 4: Run adapter and service suites**
 
 Run tests.integration.test_recording_access_repository and tests.unit.test_recording_access_service. Expected: PASS.
 
