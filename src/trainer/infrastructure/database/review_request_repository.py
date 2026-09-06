@@ -3,7 +3,6 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import closing, contextmanager
-from pathlib import Path
 
 from trainer.domain.materials import material_payload
 from trainer.infrastructure.database.accounts import record_audit
@@ -22,7 +21,6 @@ from trainer.services.review_request_repository import (
     ReviewActor,
     UploadTarget,
 )
-from trainer.services.storage_cleanup import process_cleanup_jobs
 from trainer.services.storage_cleanup_repository import CleanupKeys
 
 
@@ -248,18 +246,8 @@ class _SQLiteReviewRequestSession:
 
 
 class SQLiteReviewRequestRepository:
-    def __init__(
-        self,
-        connect_factory: Callable[[], sqlite3.Connection],
-        *,
-        audio_root: Path | None = None,
-        material_root: Path | None = None,
-        review_asset_root: Path | None = None,
-    ):
+    def __init__(self, connect_factory: Callable[[], sqlite3.Connection]):
         self._connect = connect_factory
-        self.audio_root = audio_root
-        self.material_root = material_root
-        self.review_asset_root = review_asset_root
 
     @contextmanager
     def transaction(self, *, immediate: bool = False):
@@ -312,16 +300,4 @@ class SQLiteReviewRequestRepository:
                 SQLiteStorageCleanupQueue(database).enqueue(
                     CleanupKeys(audio=tuple(audio_keys), assignment=tuple(assignment_keys)),
                     now=now,
-                )
-
-    def process_cleanup(self) -> None:
-        if self.audio_root is None or self.material_root is None or self.review_asset_root is None:
-            return
-        with closing(self._connect()) as database:
-            with database:
-                process_cleanup_jobs(
-                    database,
-                    audio_root=self.audio_root,
-                    material_root=self.material_root,
-                    assignment_root=self.review_asset_root,
                 )

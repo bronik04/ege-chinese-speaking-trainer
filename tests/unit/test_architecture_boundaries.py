@@ -239,6 +239,32 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         self.assertNotIn("sqlite3", service_imports)
         self.assertFalse(any(module.startswith("trainer.api") for module in adapter_imports | sender_imports))
 
+    def test_storage_cleanup_boundary_dependency_direction(self):
+        service = PACKAGE / "services" / "storage_cleanup.py"
+        port = PACKAGE / "services" / "storage_cleanup_repository.py"
+        service_imports = file_imports(service)
+        port_imports = file_imports(port)
+        self.assertFalse(
+            any(name.startswith(("trainer.api", "trainer.infrastructure")) for name in service_imports),
+            service_imports,
+        )
+        self.assertFalse(
+            any(name.startswith(("trainer.api", "trainer.infrastructure")) for name in port_imports),
+            port_imports,
+        )
+        self.assertNotIn("sqlite3", service_imports | port_imports)
+        source = service.read_text(encoding="utf-8")
+        for retired in (
+            "def expire_recordings(",
+            "def enqueue_cleanup_job(",
+            "def process_cleanup_jobs(",
+            "def account_review_storage_keys(",
+        ):
+            self.assertNotIn(retired, source)
+
+        review_adapter = (PACKAGE / "infrastructure/database/review_request_repository.py").read_text(encoding="utf-8")
+        self.assertNotIn("def process_cleanup(", review_adapter)
+
     def test_api_dependencies_uses_account_service_boundary(self):
         path = PACKAGE / "api" / "dependencies.py"
         source = path.read_text(encoding="utf-8")

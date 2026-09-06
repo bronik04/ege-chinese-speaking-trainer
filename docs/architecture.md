@@ -79,8 +79,9 @@ review_requests controller
 
 Controller разбирает HTTP-значения, проверяет owner-only detail и преобразует `ReviewRequestError` в прежний
 `ApiError`. Service содержит правила selection, snapshots, аудиозаписей, переходов статуса и оценивания.
-SQLite adapter владеет SQL, audit, cleanup jobs и обычными/immediate transactions. Snapshot helper получает
-только `ReviewAssetRegistry`, а не database connection.
+SQLite adapter владеет SQL, audit, cleanup intents и обычными/immediate transactions. Физическую обработку
+очистки запускает callback прикладного сервиса после commit. Snapshot helper получает только
+`ReviewAssetRegistry`, а не database connection.
 
 Каждая вертикальная миграция ограничена своим bounded context и не вводит общий DI framework. Остальные
 контроллеры могут сохранять переходную структуру и переносятся только отдельными проверяемыми изменениями.
@@ -118,6 +119,27 @@ Controller только преобразует Pydantic schema, `PersonalRecordi
 SQLite adapter отдельной транзакцией фиксирует cleanup intent с защитным интервалом. После успешной загрузки он
 атомарно создаёт метаданные и удаляет intent; при сбое хранилища или финализации intent остаётся для повторной
 очистки. SQL, SQLite-транзакции, ffprobe и выбор local/S3 storage не попадают в controller или service.
+
+### Вертикальная граница очистки хранилищ
+
+Очистка просроченных записей и приватных файлов проходит через одну прикладную границу:
+
+```text
+runtime / cleanup CLI / application callbacks
+  → StorageCleanupService
+    → StorageCleanupRepository / storage ports
+      → SQLiteStorageCleanupRepository / configured storage
+```
+
+`StorageCleanupService` владеет временем, часовыми lease/retry интервалами и попытками удаления из всех трёх
+категорий хранилищ. SQLite adapter короткими транзакциями удаляет просроченные метаданные, выдаёт задачи в
+аренду и фиксирует результат; сетевой или файловый I/O выполняется без SQLite write lock. Результат устаревшего
+worker игнорируется, если задачу уже получил новый worker.
+
+Account, review и personal-recording adapters создают или отменяют cleanup intents через
+`SQLiteStorageCleanupQueue` внутри своей текущей транзакции. Поэтому изменение метаданных и постановка очистки
+атомарны, а физическое удаление начинается только после commit. Выбор local/S3/R2 реализации остаётся в runtime
+и выполняется лениво только для реально используемой категории файлов.
 
 ### Вертикальная граница прогресса
 

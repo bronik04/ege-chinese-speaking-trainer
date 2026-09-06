@@ -754,7 +754,7 @@ git commit -m "refactor: compose storage cleanup service"
 - Removes review repository storage-root constructor parameters and `process_cleanup`.
 - Leaves only the service API, neutral port and SQLite adapter described in the spec.
 
-- [ ] **Step 1: Add the architecture regression before deletion**
+- [x] **Step 1: Add the architecture regression before deletion**
 
 Extend `tests/unit/test_architecture_boundaries.py`:
 
@@ -780,7 +780,7 @@ def test_storage_cleanup_boundary_dependency_direction(self):
     self.assertNotIn("def process_cleanup(", review_adapter)
 ~~~
 
-- [ ] **Step 2: Run the architecture test to observe RED**
+- [x] **Step 2: Run the architecture test to observe RED**
 
 Run:
 
@@ -791,13 +791,13 @@ PYTHONPATH=src .venv/bin/python -m unittest \
 
 Expected: FAIL because the procedural functions and infrastructure imports still exist.
 
-- [ ] **Step 3: Delete migrated compatibility code**
+- [x] **Step 3: Delete migrated compatibility code**
 
 Remove the legacy imports, constants and four free functions from `services/storage_cleanup.py`; keep only `CleanupSummary`, protocols and `StorageCleanupService`. Remove the now-unused path fields, root constructor arguments and `process_cleanup` method from `SQLiteReviewRequestRepository`.
 
 Delete `StorageCleanupJobServiceTest` from `tests/unit/test_application_services.py` because its cases now live in the dedicated service and adapter suites. Delete `LocalStorageTest.test_selects_private_review_keys_before_account_cascade` from `tests/integration/test_storage.py` because the stronger account repository test owns that behavior.
 
-- [ ] **Step 4: Update architecture documentation**
+- [x] **Step 4: Update architecture documentation**
 
 Add a `Вертикальная граница очистки хранилищ` section to `docs/architecture.md` with:
 
@@ -810,7 +810,7 @@ runtime / cleanup CLI / application callbacks
 
 State that producer repositories use `SQLiteStorageCleanupQueue` on their current transactions, workers claim jobs with a one-hour lease, storage I/O happens outside SQLite write transactions, and stale outcomes are ignored. Update the review section so SQLite owns cleanup intents but `ReviewRequestService` invokes the cleanup callback. Do not change `DEVELOPMENT.md`; its command and exit-code description remain correct.
 
-- [ ] **Step 5: Verify no old call sites remain**
+- [x] **Step 5: Verify no old call sites remain**
 
 Run:
 
@@ -821,7 +821,7 @@ rg -n "account_review_storage_keys|enqueue_cleanup_job|expire_recordings|process
 
 Expected: no matches for the four retired names; `expire_recordings` may remain only as the repository protocol/adapter method, never as a free function or caller import. If using the broad search, confirm those remaining method declarations/calls are `repository.expire_recordings` only.
 
-- [ ] **Step 6: Run focused boundary and cleanup suites**
+- [x] **Step 6: Run focused boundary and cleanup suites**
 
 Run:
 
@@ -839,7 +839,7 @@ PYTHONPATH=src .venv/bin/python -m unittest \
 
 Expected: PASS.
 
-- [ ] **Step 7: Run the mandatory complete verification**
+- [x] **Step 7: Run the mandatory complete verification**
 
 Run:
 
@@ -849,7 +849,7 @@ make check
 
 Expected: formatting/static checks and all JavaScript, Python unit and integration tests pass at the repository's required coverage threshold.
 
-- [ ] **Step 8: Commit the completed boundary**
+- [x] **Step 8: Commit the completed boundary**
 
 ~~~bash
 git add src/trainer/services/storage_cleanup.py \
@@ -861,7 +861,7 @@ git add src/trainer/services/storage_cleanup.py \
 git commit -m "refactor: isolate storage cleanup service boundary"
 ~~~
 
-- [ ] **Step 9: Confirm the final tree and commit range**
+- [x] **Step 9: Confirm the final tree and commit range**
 
 Run:
 
