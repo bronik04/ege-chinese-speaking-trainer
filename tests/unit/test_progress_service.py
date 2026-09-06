@@ -1,68 +1,118 @@
+import copy
 import unittest
-from unittest.mock import Mock
 
-from trainer.domain.progress import ProgressValidationError, validate_progress
 from trainer.services.progress import ProgressError, ProgressService
-from trainer.services.progress_repository import ProgressRecord
+from trainer.services.progress_repository import ProgressDataError, ProgressRecord
+
+
+def valid_v2():
+    return {
+        "version": 2,
+        "updatedAt": "2026-09-06T10:15:30Z",
+        "settings": {"lastVariant": "open-2026", "fastMode": False},
+        "runs": [],
+        "activeRun": None,
+    }
+
+
+class FakeProgressRepository:
+    def __init__(self, record=None):
+        self.record = record
+        self.saved = []
+        self.get_error = None
+        self.save_error = None
+
+    def get(self, user_id):
+        if self.get_error is not None:
+            raise self.get_error
+        return self.record
+
+    def save(self, user_id, document, updated_at):
+        if self.save_error is not None:
+            raise self.save_error
+        self.saved.append((user_id, document, updated_at))
 
 
 class ProgressServiceTest(unittest.TestCase):
-    def test_domain_accepts_existing_shapes_without_mutation(self):
-        for version in (1, True, 1.0):
-            for document in ({"version": version}, {"version": version, "runs": [None] * 200, "extra": "中文"}):
-                with self.subTest(document=document):
-                    original = document.copy()
-                    validate_progress(document)
-                    self.assertEqual(document, original)
+    def test_get_migrates_v1_without_saving_or_mutating_repository_data(self):
+        source = {"version": 1, "extra": "drop"}
+        original = copy.deepcopy(source)
+        repository = FakeProgressRepository(ProgressRecord(source, 1000))
 
-    def test_domain_rejects_invalid_documents(self):
-        cases = (
-            (None, "invalid_document"),
-            ([], "invalid_document"),
-            ({}, "invalid_document"),
-            ({"version": "1"}, "invalid_document"),
-            ({"version": 2}, "invalid_document"),
-            ({"version": 1, "runs": None}, "history_too_large"),
-            ({"version": 1, "runs": {}}, "history_too_large"),
-            ({"version": 1, "runs": [None] * 201}, "history_too_large"),
+        result = ProgressService(repository).get(7)
+
+        self.assertEqual(result.updated_at, 1000)
+        self.assertEqual(
+            result.document,
+            {
+                "version": 2,
+                "updatedAt": "1970-01-01T00:00:00.000Z",
+                "settings": {"lastVariant": None, "fastMode": False},
+                "runs": [],
+                "activeRun": None,
+            },
         )
-        for document, reason in cases:
-            with self.subTest(document=document):
-                with self.assertRaises(ProgressValidationError) as raised:
-                    validate_progress(document)
-                self.assertEqual(raised.exception.reason, reason)
+        self.assertEqual(source, original)
+        self.assertEqual(repository.saved, [])
 
-    def test_service_validates_before_clock_or_repository(self):
-        repository, clock = Mock(), Mock()
-        service = ProgressService(repository, clock=clock)
-        for document, reason in (({}, "invalid_document"), ({"version": 1, "runs": None}, "history_too_large")):
-            with self.assertRaises(ProgressError) as raised:
+    def test_get_returns_none_without_attempting_a_write(self):
+        repository = FakeProgressRepository()
+        self.assertIsNone(ProgressService(repository).get(7))
+        self.assertEqual(repository.saved, [])
+
+    def test_put_persists_only_a_fresh_canonical_v2_document(self):
+        source = {"version": 1}
+        repository = FakeProgressRepository()
+        service = ProgressService(repository, clock=lambda: 1000.9)
+
+        self.assertEqual(service.put(7, source), 1000)
+
+        self.assertEqual(source, {"version": 1})
+        self.assertEqual(repository.saved[0][0::2], (7, 1000))
+        saved = repository.saved[0][1]
+        self.assertEqual(saved["version"], 2)
+        self.assertEqual(saved["runs"], [])
+        self.assertIsNot(saved, source)
+
+    def test_put_canonicalizes_valid_v2_timestamps(self):
+        source = valid_v2()
+        repository = FakeProgressRepository()
+        ProgressService(repository, clock=lambda: 1000).put(7, source)
+        self.assertEqual(repository.saved[0][1]["updatedAt"], "2026-09-06T10:15:30.000Z")
+
+    def test_invalid_put_stops_before_clock_and_repository(self):
+        repository = FakeProgressRepository()
+        clock_calls = []
+        service = ProgressService(repository, clock=lambda: clock_calls.append(True))
+        for document, reason in (
+            ({}, "invalid_document"),
+            ({"version": 1, "runs": None}, "invalid_document"),
+            ({"version": 1, "runs": [None] * 201}, "history_too_large"),
+        ):
+            with self.subTest(document=document), self.assertRaises(ProgressError) as raised:
                 service.put(7, document)
             self.assertEqual(raised.exception.reason, reason)
-        repository.save.assert_not_called()
-        clock.assert_not_called()
+        self.assertEqual(clock_calls, [])
+        self.assertEqual(repository.saved, [])
 
-    def test_put_preserves_document_and_returns_integer_server_time(self):
-        repository = Mock()
-        document = {"version": 1, "updatedAt": "client", "runs": [], "extra": "中文"}
-        service = ProgressService(repository, clock=lambda: 1000.9)
-        self.assertEqual(service.put(7, document), 1000)
-        repository.save.assert_called_once_with(7, document, 1000)
+    def test_get_maps_stored_json_and_contract_failures_to_one_service_error(self):
+        for failure in (ProgressDataError("bad json"), ProgressRecord({"version": 9}, 1000)):
+            repository = FakeProgressRepository(failure if isinstance(failure, ProgressRecord) else None)
+            if isinstance(failure, Exception):
+                repository.get_error = failure
+            with self.subTest(failure=failure), self.assertRaises(ProgressError) as raised:
+                ProgressService(repository).get(7)
+            self.assertEqual(raised.exception.reason, "stored_document_invalid")
+            self.assertEqual(repository.saved, [])
 
-    def test_get_returns_repository_record_or_none(self):
-        repository = Mock()
-        service = ProgressService(repository)
-        for record in (None, ProgressRecord({"version": 1}, 1000), ProgressRecord([], 1001)):
-            repository.get.return_value = record
-            self.assertIs(service.get(7), record)
-            repository.get.assert_called_with(7)
+    def test_repository_failures_are_not_reported_as_contract_errors_or_success(self):
+        repository = FakeProgressRepository()
+        repository.get_error = OSError("read down")
+        with self.assertRaisesRegex(OSError, "read down"):
+            ProgressService(repository).get(7)
 
-    def test_repository_failures_are_not_reported_as_success(self):
-        repository = Mock()
-        repository.save.side_effect = OSError("storage down")
-        repository.get.side_effect = OSError("storage down")
-        service = ProgressService(repository)
-        with self.assertRaisesRegex(OSError, "storage down"):
-            service.put(7, {"version": 1})
-        with self.assertRaisesRegex(OSError, "storage down"):
-            service.get(7)
+        repository.get_error = None
+        repository.save_error = OSError("write down")
+        with self.assertRaisesRegex(OSError, "write down"):
+            ProgressService(repository).put(7, {"version": 1})
+        self.assertEqual(repository.saved, [])

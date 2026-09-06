@@ -1,9 +1,8 @@
 import time
 from collections.abc import Callable
-from typing import Any
 
-from trainer.domain.progress import ProgressValidationError, validate_progress
-from trainer.services.progress_repository import ProgressRecord, ProgressRepository
+from trainer.domain.progress import ProgressValidationError, normalize_progress, progress_to_dict
+from trainer.services.progress_repository import ProgressDataError, ProgressRecord, ProgressRepository
 
 
 class ProgressError(Exception):
@@ -18,13 +17,23 @@ class ProgressService:
         self._clock = clock
 
     def get(self, user_id: int) -> ProgressRecord | None:
-        return self._repository.get(user_id)
-
-    def put(self, user_id: int, document: dict[str, Any]) -> int:
         try:
-            validate_progress(document)
+            record = self._repository.get(user_id)
+        except ProgressDataError as error:
+            raise ProgressError("stored_document_invalid") from error
+        if record is None:
+            return None
+        try:
+            document = progress_to_dict(normalize_progress(record.document))
+        except ProgressValidationError as error:
+            raise ProgressError("stored_document_invalid") from error
+        return ProgressRecord(document, record.updated_at)
+
+    def put(self, user_id: int, document: dict[str, object]) -> int:
+        try:
+            canonical = progress_to_dict(normalize_progress(document))
         except ProgressValidationError as error:
             raise ProgressError(error.reason) from error
         updated_at = int(self._clock())
-        self._repository.save(user_id, document, updated_at)
+        self._repository.save(user_id, canonical, updated_at)
         return updated_at
