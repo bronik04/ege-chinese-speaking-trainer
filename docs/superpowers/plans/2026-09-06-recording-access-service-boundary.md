@@ -763,7 +763,7 @@ rg -n 'recording_access_service|SQLiteRecordingAccessRepository|RecordingAccessS
 
 Expected: first rg has no matches; second shows runtime, controller and tests.
 
-- [ ] **Step 11: Run full verification and commit**
+- [x] **Step 11: Run full verification and commit**
 
 Stage all task files before the check. Run make check with the absolute Python override. Require exit zero, then:
 
@@ -771,7 +771,7 @@ Stage all task files before the check. Run make check with the absolute Python o
 git commit -m "refactor: isolate recording access service boundary"
 ~~~
 
-- [ ] **Step 12: Independent review and handoff**
+- [x] **Step 12: Independent review and handoff**
 
 Use superpowers:requesting-code-review for the complete branch diff from its main fork point. Fix every valid Critical or Important finding through a failing regression test, rerun make check after corrections, and commit fixes. Do not merge or push without explicit user authorization. Finish with superpowers:finishing-a-development-branch.
 
@@ -781,4 +781,5 @@ Use superpowers:requesting-code-review for the complete branch diff from its mai
 - [x] Type consistency: service, port, adapter, controller and tests use the same actor, stored-file and record fields.
 - [x] Scope: no migration, storage, upload/delete/cleanup, frontend or legacy-data removal.
 - [x] No implementation placeholders; each production interface and verification command is explicit.
-- [ ] Execution has not started. Create an isolated worktree from main and run a clean baseline first.
+- [x] Execution completed in `codex/recording-access-service-boundary`; independent review found no Critical or
+  Important issues.
