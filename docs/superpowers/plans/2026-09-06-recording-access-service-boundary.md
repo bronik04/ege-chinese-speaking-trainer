@@ -54,7 +54,7 @@
 - Produces RecordingAccessService(repository, *, owner_email, clock=time.time).
 - Produces service methods legacy_recording(id, actor), review_recording(id, actor), review_asset(id, actor), each returning StoredFile or raising RecordingAccessError(reason).
 
-- [ ] **Step 1: Write failing service tests**
+- [x] **Step 1: Write failing service tests**
 
 Create tests/unit/test_recording_access_service.py with literal records and a Mock repository:
 
@@ -164,7 +164,7 @@ class RecordingAccessServiceTest(unittest.TestCase):
             self.service.legacy_recording(3, STUDENT)
 ~~~
 
-- [ ] **Step 2: Observe RED**
+- [x] **Step 2: Observe RED**
 
 Run:
 
@@ -175,7 +175,7 @@ PYTHONPATH=src /Users/bronik04/Documents/Projects/chinese-speaking-trainer/.venv
 
 Expected: import failure because the port and service modules do not exist.
 
-- [ ] **Step 3: Implement the neutral port**
+- [x] **Step 3: Implement the neutral port**
 
 Create src/trainer/services/recording_access_repository.py:
 
@@ -228,7 +228,7 @@ class RecordingAccessRepository(Protocol):
     def review_asset(self, asset_id: int) -> ReviewAssetRecord | None: ...
 ~~~
 
-- [ ] **Step 4: Implement the service**
+- [x] **Step 4: Implement the service**
 
 Create src/trainer/services/recording_access.py:
 
@@ -303,7 +303,7 @@ class RecordingAccessService:
 
 The private structural Protocol deliberately lets both review record types share the identical owner policy without coupling either dataclass to a base class.
 
-- [ ] **Step 5: Run service tests and architecture suite**
+- [x] **Step 5: Run service tests and architecture suite**
 
 Run the new service test and tests.unit.test_architecture_boundaries. Expected: PASS.
 
