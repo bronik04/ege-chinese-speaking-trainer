@@ -1,7 +1,7 @@
 import { createRunnerController } from "./runner-controller.js";
 import {
-  PROGRESS_ACCOUNT_PREFIX, PROGRESS_GUEST_KEY, defaultProgress,
-  escapeHtml, formatHistoryDate, loadLocalProgress,
+  defaultProgress, escapeHtml, formatHistoryDate, loadLocalProgress,
+  progressStorageKeys,
 } from "../shared/progress.js";
 import { shortTime } from "./task-view.js";
 import { plural, pluralize } from "../shared/plural.js";
@@ -21,8 +21,8 @@ const screens = {
 let variantIndex = [];
 let variant = null;
 const variantCache = new Map();
-let progressStorageKey = PROGRESS_GUEST_KEY;
-let progress = loadLocalProgress(progressStorageKey);
+let progressScope = progressStorageKeys();
+let progress = loadLocalProgress(progressScope, { onError: message => toast(message) });
 // Прогон, который лежал в хранилище на момент загрузки страницы. Прерванным
 // считается только он: тренировка, начатая пользователем пока идёт авторизация,
 // и активный прогон, подтянутый с сервера, сюда не попадают.
@@ -47,25 +47,34 @@ function toast(message) {
 }
 
 function switchProgressScope(user, { adoptGuest = false } = {}) {
-  const nextKey = user ? `${PROGRESS_ACCOUNT_PREFIX}${user.id}` : PROGRESS_GUEST_KEY;
-  if (nextKey === progressStorageKey) return;
-  const hasScopedProgress = localStorage.getItem(nextKey) !== null;
-  if (user && adoptGuest && !hasScopedProgress && progressStorageKey === PROGRESS_GUEST_KEY) {
-    const guestProgress = loadLocalProgress(PROGRESS_GUEST_KEY);
+  const nextScope = progressStorageKeys(user?.id);
+  if (nextScope.current === progressScope.current) return;
+  const hasScopedProgress = localStorage.getItem(nextScope.current) !== null
+    || localStorage.getItem(nextScope.legacy) !== null;
+  if (user && adoptGuest && !hasScopedProgress && progressScope.current === progressStorageKeys().current) {
+    const guestProgress = loadLocalProgress(progressScope, { onError: message => toast(message) });
     const shouldTransfer = guestProgress.runs.length > 0 || Boolean(guestProgress.activeRun);
     progress = shouldTransfer ? guestProgress : defaultProgress();
-    if (shouldTransfer) localStorage.removeItem(PROGRESS_GUEST_KEY);
+    if (shouldTransfer) {
+      try {
+        localStorage.setItem(nextScope.current, JSON.stringify(progress));
+        localStorage.removeItem(progressScope.current);
+        localStorage.removeItem(progressScope.legacy);
+      } catch (_) {
+        toast("Не удалось перенести прогресс в аккаунт");
+        progress = loadLocalProgress(nextScope, { onError: message => toast(message) });
+      }
+    }
   } else {
-    progress = loadLocalProgress(nextKey);
+    progress = loadLocalProgress(nextScope, { onError: message => toast(message) });
   }
-  progressStorageKey = nextKey;
-  localStorage.setItem(progressStorageKey, JSON.stringify(progress));
+  progressScope = nextScope;
 }
 
 function saveProgressLocal(sync = true) {
   progress.updatedAt = new Date().toISOString();
   progress.runs = progress.runs.slice(0, 100);
-  localStorage.setItem(progressStorageKey, JSON.stringify(progress));
+  localStorage.setItem(progressScope.current, JSON.stringify(progress));
   renderProgress();
   if (sync && account?.user) account.scheduleProgressSync();
 }
@@ -277,7 +286,7 @@ const {
 account = createAccountController({
   toast, switchProgressScope, renderProgress,
   getProgress: () => progress,
-  getProgressStorageKey: () => progressStorageKey,
+  getProgressStorageKey: () => progressScope.current,
   setProgress: (value) => { progress = value; },
   saveProgressLocal,
   loadVariant,

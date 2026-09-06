@@ -9,6 +9,12 @@ export function createAccountAuthController(ctx) {
   let mode = "login";
   let syncTimer = null;
 
+  function showProgressSyncError(error) {
+    $("progressSyncStatus").textContent = error?.code === "progress_data_incompatible"
+      ? "Серверный прогресс несовместим · локальная копия сохранена"
+      : "Нет связи · сохранено в браузере";
+  }
+
   async function initAuth() {
     try {
       const payload = await api("/api/auth/me");
@@ -23,7 +29,7 @@ export function createAccountAuthController(ctx) {
       if (error.status !== 401) $("progressSyncStatus").textContent = "Сервер недоступен · локальное сохранение";
       return;
     }
-    try { await syncProgress(); } catch (_) { $("progressSyncStatus").textContent = "Нет связи · сохранено в браузере"; }
+    try { await syncProgress(); } catch (error) { showProgressSyncError(error); }
     try { await ctx.refreshAccountData(); } catch (_) {}
   }
 
@@ -111,7 +117,7 @@ export function createAccountAuthController(ctx) {
       ctx.switchProgressScope(user, { adoptGuest: mode === "register" });
       await ctx.refreshMaterials();
       renderAuth();
-      try { await syncProgress(); } catch (_) { $("progressSyncStatus").textContent = "Нет связи · сохранено в браузере"; }
+      try { await syncProgress(); } catch (error) { showProgressSyncError(error); }
       try { await ctx.refreshAccountData(); } catch (_) {}
       closeModal($("authModal"));
       toast(mode === "login" ? "Вход выполнен" : "Аккаунт создан");
@@ -137,9 +143,7 @@ export function createAccountAuthController(ctx) {
   function scheduleProgressSync() {
     clearTimeout(syncTimer);
     $("progressSyncStatus").textContent = "Сохраняем на сервере…";
-    syncTimer = setTimeout(() => pushProgress().catch(() => {
-      $("progressSyncStatus").textContent = "Нет связи · сохранено в браузере";
-    }), 350);
+    syncTimer = setTimeout(() => pushProgress().catch(showProgressSyncError), 350);
   }
 
   async function pushProgress() {
