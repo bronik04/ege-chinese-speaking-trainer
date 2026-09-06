@@ -101,6 +101,7 @@ class ReviewRequestSession(ReviewAssetRegistry, Protocol):
         *,
         audio_keys: Sequence[str] = (),
         assignment_keys: Sequence[str] = (),
+        now: int,
     ) -> None: ...
 
     def request_status(self, request_id: int, student_id: int) -> str | None: ...
@@ -144,6 +145,5 @@ class ReviewRequestRepository(Protocol):
         *,
         audio_keys: Sequence[str] = (),
         assignment_keys: Sequence[str] = (),
+        now: int,
     ) -> None: ...
-
-    def process_cleanup(self) -> None: ...

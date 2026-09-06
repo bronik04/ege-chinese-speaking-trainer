@@ -13,6 +13,7 @@ from trainer.infrastructure.database.queries.review_requests import (
     student_review_requests,
     teacher_review_requests,
 )
+from trainer.infrastructure.database.storage_cleanup_repository import SQLiteStorageCleanupQueue
 from trainer.services.review_request_repository import (
     MaterialAsset,
     RecordingRow,
@@ -21,7 +22,8 @@ from trainer.services.review_request_repository import (
     ReviewActor,
     UploadTarget,
 )
-from trainer.services.storage_cleanup import enqueue_cleanup_job, process_cleanup_jobs
+from trainer.services.storage_cleanup import process_cleanup_jobs
+from trainer.services.storage_cleanup_repository import CleanupKeys
 
 
 class _SQLiteReviewRequestSession:
@@ -156,12 +158,11 @@ class _SQLiteReviewRequestSession:
         *,
         audio_keys: Sequence[str] = (),
         assignment_keys: Sequence[str] = (),
+        now: int,
     ) -> None:
-        enqueue_cleanup_job(
-            self.database,
-            audio_keys=audio_keys,
-            material_keys=[],
-            assignment_keys=assignment_keys,
+        SQLiteStorageCleanupQueue(self.database).enqueue(
+            CleanupKeys(audio=tuple(audio_keys), assignment=tuple(assignment_keys)),
+            now=now,
         )
 
     def request_status(self, request_id: int, student_id: int) -> str | None:
@@ -304,14 +305,13 @@ class SQLiteReviewRequestRepository:
         *,
         audio_keys: Sequence[str] = (),
         assignment_keys: Sequence[str] = (),
+        now: int,
     ) -> None:
         with closing(self._connect()) as database:
             with database:
-                enqueue_cleanup_job(
-                    database,
-                    audio_keys=audio_keys,
-                    material_keys=[],
-                    assignment_keys=assignment_keys,
+                SQLiteStorageCleanupQueue(database).enqueue(
+                    CleanupKeys(audio=tuple(audio_keys), assignment=tuple(assignment_keys)),
+                    now=now,
                 )
 
     def process_cleanup(self) -> None:

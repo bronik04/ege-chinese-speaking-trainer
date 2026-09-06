@@ -44,6 +44,7 @@ class ReviewRequestService:
         max_audio_body: int,
         duration_validator: Callable[[Path, int], float],
         clock: Callable[[], float] = time.time,
+        cleanup_runner: Callable[[], object] = lambda: None,
     ):
         self.repository = repository
         self.project_root = project_root
@@ -54,6 +55,7 @@ class ReviewRequestService:
         self.max_audio_body = max_audio_body
         self.duration_validator = duration_validator
         self.clock = clock
+        self.cleanup_runner = cleanup_runner
 
     def student_requests(self, student_id: int) -> list[dict]:
         requests = copy.deepcopy(self.repository.student_requests(student_id))
@@ -150,8 +152,12 @@ class ReviewRequestService:
         if not audio_keys and not assignment_keys:
             return
         with suppress(Exception):
-            self.repository.enqueue_orphan_cleanup(audio_keys=audio_keys, assignment_keys=assignment_keys)
-            self.repository.process_cleanup()
+            self.repository.enqueue_orphan_cleanup(
+                audio_keys=audio_keys,
+                assignment_keys=assignment_keys,
+                now=int(self.clock()),
+            )
+            self.cleanup_runner()
 
     def upload_recording(
         self,
@@ -215,7 +221,10 @@ class ReviewRequestService:
                         expires_at=expires_at(created_at),
                     )
                     if replaced:
-                        session.enqueue_cleanup(audio_keys=[row.storage_key for row in replaced])
+                        session.enqueue_cleanup(
+                            audio_keys=[row.storage_key for row in replaced],
+                            now=created_at,
+                        )
                     session.audit(
                         "review_recording_uploaded",
                         actor=actor,
@@ -276,13 +285,18 @@ class ReviewRequestService:
         actor: ReviewActor,
         metadata: RequestMetadata,
     ) -> dict:
+        now = int(self.clock())
         with self.repository.transaction(immediate=True) as session:
             self._ensure_uploading_status(session.request_status(request_id, actor.id))
             audio_keys, assignment_keys = session.request_storage_keys(request_id)
             if not session.delete_request(request_id, actor.id):
                 raise ReviewRequestError("not_found")
             if audio_keys or assignment_keys:
-                session.enqueue_cleanup(audio_keys=audio_keys, assignment_keys=assignment_keys)
+                session.enqueue_cleanup(
+                    audio_keys=audio_keys,
+                    assignment_keys=assignment_keys,
+                    now=now,
+                )
             session.audit(
                 "review_request_discarded",
                 actor=actor,
@@ -290,7 +304,7 @@ class ReviewRequestService:
                 details={"requestId": request_id},
             )
         with suppress(Exception):
-            self.repository.process_cleanup()
+            self.cleanup_runner()
         return {"ok": True}
 
     @staticmethod

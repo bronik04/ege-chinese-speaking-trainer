@@ -48,9 +48,11 @@ class FakeReviewRequestRepository:
         self.audits: list[dict] = []
         self.orphan_assignment_keys: list[str] = []
         self.orphan_audio_keys: list[str] = []
+        self.orphan_cleanup_times: list[int] = []
         self.recordings: list[dict] = []
         self.cleanup_audio_keys: list[str] = []
         self.cleanup_assignment_keys: list[str] = []
+        self.cleanup_times: list[int] = []
         self.saved_scores: list[dict] = []
         self.reviewed: dict[int, dict] = {}
 
@@ -98,12 +100,10 @@ class FakeReviewRequestRepository:
     def audit(self, action: str, *, actor: ReviewActor, metadata: RequestMetadata, details: dict) -> None:
         self.audits.append({"action": action, "actor": actor, "metadata": metadata, "details": copy.deepcopy(details)})
 
-    def enqueue_orphan_cleanup(self, *, audio_keys=(), assignment_keys=()) -> None:
+    def enqueue_orphan_cleanup(self, *, audio_keys=(), assignment_keys=(), now: int) -> None:
         self.orphan_audio_keys.extend(audio_keys)
         self.orphan_assignment_keys.extend(assignment_keys)
-
-    def process_cleanup(self) -> None:
-        return None
+        self.orphan_cleanup_times.append(now)
 
     def upload_target(self, request_id: int, student_id: int, task: int) -> UploadTarget | None:
         return self.upload_targets.get((request_id, student_id, task))
@@ -131,9 +131,10 @@ class FakeReviewRequestRepository:
         self.recordings.append({"id": recording_id, **recording})
         return recording_id
 
-    def enqueue_cleanup(self, *, audio_keys=(), assignment_keys=()) -> None:
+    def enqueue_cleanup(self, *, audio_keys=(), assignment_keys=(), now: int) -> None:
         self.cleanup_audio_keys.extend(audio_keys)
         self.cleanup_assignment_keys.extend(assignment_keys)
+        self.cleanup_times.append(now)
 
     def request_status(self, request_id: int, student_id: int) -> str | None:
         return self.workflow_statuses.get((request_id, student_id))
@@ -186,6 +187,7 @@ class ReviewRequestServiceTest(unittest.TestCase):
         duration_validator=None,
         max_audio_body: int = 15_000_000,
         clock=lambda: 1000,
+        cleanup_runner=lambda: None,
     ) -> ReviewRequestService:
         return ReviewRequestService(
             repository,
@@ -197,6 +199,7 @@ class ReviewRequestServiceTest(unittest.TestCase):
             max_audio_body=max_audio_body,
             duration_validator=duration_validator or (lambda _path, _task: 1.0),
             clock=clock,
+            cleanup_runner=cleanup_runner,
         )
 
     def test_student_list_hides_totals_until_reviewed(self):
@@ -360,6 +363,7 @@ class ReviewRequestServiceTest(unittest.TestCase):
         self.assertEqual(repository.recordings[0]["item_id"], 4)
         self.assertEqual(repository.recordings[0]["duration_seconds"], 1.0)
         self.assertEqual(repository.cleanup_audio_keys, ["review-requests/9/old.webm"])
+        self.assertEqual(repository.cleanup_times, [1000])
         stored_key = repository.recordings[0]["storage_key"]
         self.assertEqual((self.root / "audio" / stored_key).read_bytes(), b"new-audio")
         self.assertEqual(repository.audits[-1]["action"], "review_recording_uploaded")
@@ -415,8 +419,9 @@ class ReviewRequestServiceTest(unittest.TestCase):
         )
         (self.root / "audio").write_bytes(b"blocks-storage-directory")
 
+        cleanup_calls: list[str] = []
         with self.assertRaises(OSError):
-            self.make_service(repository).upload_recording(
+            self.make_service(repository, cleanup_runner=lambda: cleanup_calls.append("processed")).upload_recording(
                 request_id=9,
                 task=2,
                 question=None,
@@ -429,6 +434,8 @@ class ReviewRequestServiceTest(unittest.TestCase):
 
         self.assertEqual(len(repository.orphan_audio_keys), 1)
         self.assertRegex(repository.orphan_audio_keys[0], r"^review-requests/9/.+\.webm$")
+        self.assertEqual(repository.orphan_cleanup_times, [1000])
+        self.assertEqual(cleanup_calls, ["processed"])
         self.assertEqual(list((self.root / "tmp").glob("*")), [])
 
     def test_complete_reports_exact_sorted_missing_positions(self):
@@ -475,7 +482,10 @@ class ReviewRequestServiceTest(unittest.TestCase):
             storage_keys={9: (["review-requests/9/audio.webm"], ["review-requests/9/image.webp"])},
         )
 
-        result = self.make_service(repository).discard(
+        result = self.make_service(
+            repository,
+            cleanup_runner=lambda: (_ for _ in ()).throw(OSError("storage down")),
+        ).discard(
             9,
             actor=ReviewActor(id=17, email="student@example.test"),
             metadata=RequestMetadata(client_ip="127.0.0.1", user_agent="test"),
@@ -485,6 +495,7 @@ class ReviewRequestServiceTest(unittest.TestCase):
         self.assertNotIn((9, 17), repository.workflow_statuses)
         self.assertEqual(repository.cleanup_audio_keys, ["review-requests/9/audio.webm"])
         self.assertEqual(repository.cleanup_assignment_keys, ["review-requests/9/image.webp"])
+        self.assertEqual(repository.cleanup_times, [1000])
         self.assertEqual(repository.audits[-1]["action"], "review_request_discarded")
 
     def test_score_persists_normalized_scores_and_review_summary(self):

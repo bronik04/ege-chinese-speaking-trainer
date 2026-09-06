@@ -534,7 +534,7 @@ git commit -m "refactor: migrate account and personal cleanup intents"
 - Adds `cleanup_runner: Callable[[], object]` to `ReviewRequestService`, with a no-op default until runtime supplies it in Task 5.
 - Stops `ReviewRequestService` from calling `repository.process_cleanup()`.
 
-- [ ] **Step 1: Update fake-repository tests first**
+- [x] **Step 1: Update fake-repository tests first**
 
 Change `FakeReviewRequestRepository` so cleanup calls record `(keys, now)` and remove its `process_cleanup`. Add a `cleanup_calls` list supplied by `make_service` through `cleanup_runner=lambda: cleanup_calls.append("processed")`.
 
@@ -547,7 +547,7 @@ self.assertEqual(repository.cleanup_times, [1000])
 
 Assert orphan and discard flows enqueue before invoking the callback. Make the callback raise `OSError("storage down")` and verify create/upload compensation and discard retain their existing result because cleanup remains best-effort.
 
-- [ ] **Step 2: Run review service tests to observe RED**
+- [x] **Step 2: Run review service tests to observe RED**
 
 Run:
 
@@ -557,7 +557,7 @@ PYTHONPATH=src .venv/bin/python -m unittest tests.unit.test_review_request_servi
 
 Expected: failures because timestamps and `cleanup_runner` are not yet part of the interfaces.
 
-- [ ] **Step 3: Change the review port and service**
+- [x] **Step 3: Change the review port and service**
 
 In `ReviewRequestSession.enqueue_cleanup` and `ReviewRequestRepository.enqueue_orphan_cleanup`, add the required keyword `now: int`. Remove `ReviewRequestRepository.process_cleanup`.
 
@@ -582,11 +582,11 @@ with suppress(Exception):
 
 After discard commit, call only `self.cleanup_runner()` inside the existing `suppress(Exception)`.
 
-- [ ] **Step 4: Migrate SQLite review enqueue operations**
+- [x] **Step 4: Migrate SQLite review enqueue operations**
 
 Replace the legacy `enqueue_cleanup_job` import with `CleanupKeys` and `SQLiteStorageCleanupQueue`. Both session and orphan methods call `enqueue(..., now=now)`. Keep the existing review repository constructor, its `process_cleanup_jobs` import and the now-unused `process_cleanup` method temporarily so runtime remains compatible until Task 5; Task 6 removes all three.
 
-- [ ] **Step 5: Run review unit and integration tests**
+- [x] **Step 5: Run review unit and integration tests**
 
 Run:
 
@@ -598,7 +598,7 @@ PYTHONPATH=src .venv/bin/python -m unittest \
 
 Expected: PASS; compensation and transaction behavior remain unchanged.
 
-- [ ] **Step 6: Commit review producer migration**
+- [x] **Step 6: Commit review producer migration**
 
 ~~~bash
 git add src/trainer/services/review_request_repository.py \
