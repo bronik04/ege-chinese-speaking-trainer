@@ -42,6 +42,25 @@ PROGRESS_MIGRATION_CASE = next(
 )
 
 
+def review_run(run_id, *, variant_id="demo-2026", tasks=(2,)):
+    run_tasks = list(tasks)
+    return {
+        "id": run_id,
+        "variantId": variant_id,
+        "variantLabel": "Вариант для разбора",
+        "mode": "exam" if run_tasks == [1, 2, 3] else "practice",
+        "tasks": run_tasks,
+        "completedTasks": run_tasks,
+        "currentTask": run_tasks[-1],
+        "phase": "answer",
+        "fastMode": False,
+        "startedAt": "2026-09-07T10:00:00Z",
+        "status": "completed",
+        "completedAt": "2026-09-07T10:30:00Z",
+        "recordingsCount": 1,
+    }
+
+
 class SecurityHelpersTest(unittest.TestCase):
     def test_password_hash_round_trip(self):
         encoded = password_hash("correct horse battery staple")
@@ -380,6 +399,85 @@ class ApiFlowTest(unittest.TestCase):
         self.assertEqual(status, 201)
         return self.cookie_from(headers)
 
+    def test_review_request_run_contract_separates_shape_and_relationship_errors(self):
+        student_cookie = self.register_student("review-run-contract")
+        status, error, _ = self.request(
+            "POST",
+            "/api/review-requests",
+            {
+                "kind": "task",
+                "variantId": "demo-2026",
+                "tasks": [2],
+                "run": {"id": "broken"},
+            },
+            student_cookie,
+        )
+        self.assertEqual((status, error["code"]), (422, "request_validation_failed"))
+
+        interrupted = review_run("interrupted")
+        interrupted.update(status="interrupted", completedTasks=[])
+        status, error, _ = self.request(
+            "POST",
+            "/api/review-requests",
+            {
+                "kind": "task",
+                "variantId": "demo-2026",
+                "tasks": [2],
+                "run": interrupted,
+            },
+            student_cookie,
+        )
+        self.assertEqual((status, error["code"]), (400, "invalid_request"))
+        self.assertEqual(error["message"], "Для разбора можно отправить только завершённую попытку")
+
+        mismatch = review_run("mismatch")
+        status, error, _ = self.request(
+            "POST",
+            "/api/review-requests",
+            {
+                "kind": "task",
+                "variantId": "other-2026",
+                "tasks": [2],
+                "run": mismatch,
+            },
+            student_cookie,
+        )
+        self.assertEqual((status, error["code"]), (400, "invalid_request"))
+        self.assertEqual(error["message"], "Вариант попытки не совпадает с выбранным вариантом")
+
+    def test_review_request_persists_canonical_run_and_legacy_rows_remain_listable(self):
+        student_cookie = self.register_student("review-run-storage")
+        source = review_run("canonical-storage")
+        source.update(
+            startedAt="2026-09-07T13:00:00+03:00",
+            completedAt="2026-09-07T13:30:00+03:00",
+        )
+        status, created, _ = self.request(
+            "POST",
+            "/api/review-requests",
+            {"kind": "task", "variantId": "demo-2026", "tasks": [2], "run": source},
+            student_cookie,
+        )
+        self.assertEqual(status, 201, created)
+        request_id = created["reviewRequest"]["id"]
+        with runtime.connect() as database:
+            stored = json.loads(
+                database.execute("SELECT run_json FROM review_requests WHERE id=?", (request_id,)).fetchone()[0]
+            )
+            self.assertEqual(stored["startedAt"], "2026-09-07T10:00:00.000Z")
+            self.assertEqual(stored["completedAt"], "2026-09-07T10:30:00.000Z")
+            database.execute("UPDATE review_requests SET run_json=? WHERE id=?", ('{"legacy":true}', request_id))
+
+        status, listed, _ = self.request("GET", "/api/student/review-requests", cookie=student_cookie)
+
+        self.assertEqual(status, 200, listed)
+        self.assertIn(request_id, {item["id"] for item in listed["requests"]})
+        with runtime.connect() as database:
+            self.assertEqual(
+                database.execute("SELECT run_json FROM review_requests WHERE id=?", (request_id,)).fetchone()[0],
+                '{"legacy":true}',
+            )
+
     def test_student_queues_single_task_for_owner_review(self):
         owner_cookie = self.verified_owner_cookie()
         student_cookie = self.register_student("review-single")
@@ -392,7 +490,7 @@ class ApiFlowTest(unittest.TestCase):
                 "kind": "task",
                 "variantId": "demo-2026",
                 "tasks": [2],
-                "run": {"id": "review-task-2", "status": "completed", "completedTasks": [2]},
+                "run": review_run("review-task-2"),
             },
             student_cookie,
         )
@@ -713,7 +811,7 @@ class ApiFlowTest(unittest.TestCase):
                 "kind": "attempt",
                 "variantId": "demo-2026",
                 "tasks": [1, 2],
-                "run": {"id": "review-attempt-1-2", "status": "completed", "completedTasks": [1, 2]},
+                "run": review_run("review-attempt-1-2", tasks=(1, 2, 3)),
             },
             student_cookie,
         )
@@ -770,7 +868,7 @@ class ApiFlowTest(unittest.TestCase):
                 "kind": "task",
                 "variantId": "demo-2026",
                 "tasks": [2],
-                "run": {"id": "review-discard", "status": "completed", "completedTasks": [2]},
+                "run": review_run("review-discard"),
             },
             student_cookie,
         )
@@ -817,7 +915,7 @@ class ApiFlowTest(unittest.TestCase):
                 "kind": "task",
                 "variantId": "demo-2026",
                 "tasks": [2],
-                "run": {"id": "review-no-discard", "status": "completed", "completedTasks": [2]},
+                "run": review_run("review-no-discard"),
             },
             student_cookie,
         )
@@ -841,7 +939,7 @@ class ApiFlowTest(unittest.TestCase):
                 "kind": "task",
                 "variantId": "demo-2026",
                 "tasks": [2],
-                "run": {"id": "discard-complete-race", "status": "completed", "completedTasks": [2]},
+                "run": review_run("discard-complete-race"),
             },
             student_cookie,
         )
@@ -963,7 +1061,7 @@ class ApiFlowTest(unittest.TestCase):
                 "kind": "task",
                 "variantId": "demo-2026",
                 "tasks": [2],
-                "run": {"id": "discard-upload-race", "status": "completed", "completedTasks": [2]},
+                "run": review_run("discard-upload-race"),
             },
             student_cookie,
         )
@@ -1090,7 +1188,7 @@ class ApiFlowTest(unittest.TestCase):
                 "kind": "task",
                 "variantId": "demo-2026",
                 "tasks": [2],
-                "run": {"id": "review-race", "status": "completed", "completedTasks": [2]},
+                "run": review_run("review-race"),
             },
             student_cookie,
         )
@@ -1298,7 +1396,7 @@ class ApiFlowTest(unittest.TestCase):
                 "kind": "task",
                 "variantId": slug,
                 "tasks": [2],
-                "run": {"id": "delete-review", "status": "completed", "completedTasks": [2]},
+                "run": review_run("delete-review", variant_id=slug),
             },
             student_cookie,
         )

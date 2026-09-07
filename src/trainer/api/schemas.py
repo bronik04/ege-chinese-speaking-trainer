@@ -4,7 +4,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, StrictStr, model_validator
 
-from trainer.domain.progress import ProgressValidationError, normalize_progress
+from trainer.domain.progress import ProgressValidationError, normalize_progress, parse_completed_run
 
 
 class ApiSchema(BaseModel):
@@ -121,7 +121,15 @@ class ReviewRequestCreate(ApiSchema):
     kind: Literal["task", "attempt"]
     variantId: str = Field(pattern=r"^[a-z0-9-]{3,50}$")
     tasks: list[Literal[1, 2, 3]] = Field(min_length=1, max_length=3)
-    run: dict[str, Any]
+    run: CompletedRun
+
+    @model_validator(mode="after")
+    def valid_run_contract(self):
+        try:
+            parse_completed_run(self.run.model_dump(mode="json", by_alias=True))
+        except ProgressValidationError as error:
+            raise ValueError(error.reason) from error
+        return self
 
 
 class ReviewScoresRequest(ApiSchema):

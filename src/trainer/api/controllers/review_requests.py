@@ -14,12 +14,6 @@ from trainer.services.review_requests import ReviewRequestError
 def _service_error(error: ReviewRequestError) -> ApiError:
     if error.reason == "invalid_request":
         return ApiError(default_error_code(HTTPStatus.BAD_REQUEST), error.message, HTTPStatus.BAD_REQUEST)
-    if error.reason == "run_too_large":
-        return ApiError(
-            default_error_code(HTTPStatus.BAD_REQUEST),
-            "Данные попытки слишком велики",
-            HTTPStatus.BAD_REQUEST,
-        )
     if error.reason == "invalid_material":
         return ApiError(
             "invalid_review_material",
@@ -89,7 +83,7 @@ def review_request_create(payload: ReviewRequestCreate, user: dict, context: Req
             kind=payload.kind,
             tasks=payload.tasks,
             variant_id=payload.variantId.strip(),
-            run=payload.run,
+            run=payload.run.model_dump(mode="json", by_alias=True),
             actor=ReviewActor(id=user["id"], email=user["email"]),
             metadata=RequestMetadata(client_ip=context.client_ip, user_agent=context.user_agent),
         )

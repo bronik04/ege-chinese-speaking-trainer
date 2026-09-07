@@ -202,11 +202,28 @@ test("direct review request preserves its material snapshot after the author del
   await post(student, "/api/auth/register", {
     email: `direct-review-student-${stamp}@example.test`, password: "password123", displayName: "Snapshot Student",
   });
+  const runId = `direct-review-${Date.now()}`;
+  const startedAt = new Date().toISOString();
+  const completedAt = new Date(Date.now() + 1000).toISOString();
   const review = await post(student, "/api/review-requests", {
     kind: "task",
     variantId: slug,
     tasks: [2],
-    run: { id: `direct-review-${Date.now()}`, status: "completed", completedTasks: [2] },
+    run: {
+      id: runId,
+      variantId: slug,
+      variantLabel: "Direct review snapshot",
+      mode: "practice",
+      tasks: [2],
+      completedTasks: [2],
+      currentTask: 2,
+      phase: "answer",
+      fastMode: false,
+      startedAt,
+      status: "completed",
+      completedAt,
+      recordingsCount: 1,
+    },
   });
   const recording = await student.request.post(`/api/review-requests/${review.reviewRequest.id}/recordings?task=2&label=Answer`, {
     headers: { ...originHeaders, "Content-Type": "audio/webm" }, data: createSampleAudio(),
