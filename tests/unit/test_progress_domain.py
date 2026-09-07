@@ -4,7 +4,13 @@ import unittest
 from dataclasses import FrozenInstanceError
 from pathlib import Path
 
-from trainer.domain.progress import ProgressValidationError, normalize_progress, progress_to_dict
+from trainer.domain.progress import (
+    ProgressValidationError,
+    completed_run_to_dict,
+    normalize_progress,
+    parse_completed_run,
+    progress_to_dict,
+)
 
 FIXTURES = json.loads(
     (Path(__file__).parents[1] / "fixtures" / "progress_v1_migration_cases.json").read_text(encoding="utf-8")
@@ -66,6 +72,35 @@ class ProgressDomainTest(unittest.TestCase):
                 else:
                     self.assertEqual(progress_to_dict(normalize_progress(source)), case["expected"])
                 self.assertEqual(source, case["input"])
+
+    def test_completed_run_public_boundary_is_canonical_and_immutable(self):
+        source = completed_run("public-run")
+        source.update(
+            mode="exam",
+            tasks=[3, 1, 2],
+            completedTasks=[2, 3, 1],
+            currentTask=3,
+            startedAt="2026-09-06T13:00:00+03:00",
+            completedAt="2026-09-06T13:05:00+03:00",
+        )
+        original = copy.deepcopy(source)
+
+        result = completed_run_to_dict(parse_completed_run(source))
+
+        self.assertEqual(result["tasks"], [1, 2, 3])
+        self.assertEqual(result["completedTasks"], [1, 2, 3])
+        self.assertEqual(result["startedAt"], "2026-09-06T10:00:00.000Z")
+        self.assertEqual(result["completedAt"], "2026-09-06T10:05:00.000Z")
+        self.assertEqual(source, original)
+
+    def test_completed_run_public_boundary_rejects_invalid_structure(self):
+        source = completed_run()
+        source["unknown"] = True
+
+        with self.assertRaises(ProgressValidationError) as raised:
+            parse_completed_run(source)
+
+        self.assertEqual(raised.exception.reason, "invalid_document")
 
     def test_python_requires_an_exact_integer_version(self):
         for document in (None, [], {}, {"version": 1.0}, {"version": "1"}, {"version": True}):

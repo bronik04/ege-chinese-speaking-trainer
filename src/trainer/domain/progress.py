@@ -167,7 +167,7 @@ def _parse_active_run(value: object) -> ProgressRun:
     return run
 
 
-def _parse_completed_run(value: object) -> CompletedProgressRun:
+def parse_completed_run(value: object) -> CompletedProgressRun:
     run, started = _parse_run_fields(value, COMPLETED_FIELDS)
     document = cast(dict[str, object], value)
     status = cast(RunStatus, _choice(document["status"], ("completed", "interrupted")))
@@ -198,7 +198,7 @@ def _parse_v2(value: object) -> ProgressDocument:
     raw_runs = document["runs"]
     if type(raw_runs) is not list or len(raw_runs) > 100:
         raise _invalid()
-    runs = tuple(_parse_completed_run(item) for item in raw_runs)
+    runs = tuple(parse_completed_run(item) for item in raw_runs)
     if len({run.id for run in runs}) != len(runs):
         raise _invalid()
     raw_active_run = document["activeRun"]
@@ -242,7 +242,7 @@ def _migrate_v1(document: dict[str, object]) -> ProgressDocument:
     seen: set[str] = set()
     for value in raw_runs:
         try:
-            migrated = _completed_run_to_dict(_parse_completed_run(_known_fields(value, COMPLETED_FIELDS)))
+            migrated = completed_run_to_dict(parse_completed_run(_known_fields(value, COMPLETED_FIELDS)))
         except ProgressValidationError:
             continue
         run_id = cast(str, migrated["id"])
@@ -296,7 +296,7 @@ def _run_to_dict(run: ProgressRun) -> dict[str, object]:
     }
 
 
-def _completed_run_to_dict(run: CompletedProgressRun) -> dict[str, object]:
+def completed_run_to_dict(run: CompletedProgressRun) -> dict[str, object]:
     return {
         **_run_to_dict(run),
         "status": run.status,
@@ -313,7 +313,7 @@ def progress_to_dict(document: ProgressDocument) -> dict[str, object]:
             "lastVariant": document.settings.last_variant,
             "fastMode": document.settings.fast_mode,
         },
-        "runs": [_completed_run_to_dict(run) for run in document.runs],
+        "runs": [completed_run_to_dict(run) for run in document.runs],
         "activeRun": _run_to_dict(document.active_run) if document.active_run is not None else None,
     }
 
