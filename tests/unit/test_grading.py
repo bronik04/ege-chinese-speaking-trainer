@@ -1,7 +1,30 @@
+import copy
 import unittest
 
 from trainer.domain.grading import validate_scores
-from trainer.domain.review_requests import required_recording_positions, validate_review_selection
+from trainer.domain.review_requests import (
+    required_recording_positions,
+    validate_review_request,
+    validate_review_selection,
+)
+
+
+def completed_run():
+    return {
+        "id": "review-run",
+        "variantId": "open-2026",
+        "variantLabel": "Открытый вариант 2026",
+        "mode": "exam",
+        "tasks": [3, 1, 2],
+        "completedTasks": [2, 3, 1],
+        "currentTask": 3,
+        "phase": "answer",
+        "fastMode": False,
+        "startedAt": "2026-09-07T10:00:00Z",
+        "status": "completed",
+        "completedAt": "2026-09-07T10:30:00Z",
+        "recordingsCount": 7,
+    }
 
 
 class GradingTest(unittest.TestCase):
@@ -59,6 +82,52 @@ class ReviewRequestSelectionTest(unittest.TestCase):
         self.assertEqual(
             required_recording_positions([1, 3]),
             {(1, 1), (1, 2), (1, 3), (1, 4), (1, 5), (3, None)},
+        )
+
+
+class ReviewRequestValidationTest(unittest.TestCase):
+    def assert_rejected(self, *, message, run=None, variant_id="open-2026", tasks=None):
+        source = completed_run() if run is None else run
+        original = copy.deepcopy(source)
+        with self.assertRaisesRegex(ValueError, f"^{message}$"):
+            validate_review_request("attempt", tasks or [1, 2], variant_id, source)
+        self.assertEqual(source, original)
+
+    def test_accepts_a_subset_of_completed_tasks_and_returns_canonical_run(self):
+        source = completed_run()
+
+        result = validate_review_request("attempt", [2, 1], "open-2026", source)
+
+        self.assertEqual(result.selection.tasks, (1, 2))
+        self.assertEqual(result.run.tasks, (1, 2, 3))
+        self.assertEqual(result.run.completed_tasks, (1, 2, 3))
+        self.assertEqual(source["tasks"], [3, 1, 2])
+
+    def test_rejects_invalid_run_structure(self):
+        self.assert_rejected(message="Некорректные данные попытки", run={"id": "broken"})
+
+    def test_rejects_an_interrupted_run_before_task_relationships(self):
+        run = completed_run()
+        run.update(status="interrupted", completedTasks=[1, 2])
+        self.assert_rejected(
+            message="Для разбора можно отправить только завершённую попытку",
+            run=run,
+            tasks=[3],
+        )
+
+    def test_rejects_a_different_variant(self):
+        self.assert_rejected(
+            message="Вариант попытки не совпадает с выбранным вариантом",
+            variant_id="demo-2026",
+        )
+
+    def test_rejects_a_selected_task_outside_the_completed_run(self):
+        run = completed_run()
+        run.update(mode="practice", tasks=[2], completedTasks=[2], currentTask=2)
+        self.assert_rejected(
+            message="Выбранные задания отсутствуют среди завершённых",
+            run=run,
+            tasks=[1],
         )
 
 
