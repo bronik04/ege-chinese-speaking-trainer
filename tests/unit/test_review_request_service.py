@@ -17,6 +17,24 @@ from trainer.services.review_request_repository import (
 from trainer.services.review_requests import ReviewRequestError, ReviewRequestService
 
 
+def completed_run(*, run_id="review-run", variant_id="author-material", task=2):
+    return {
+        "id": run_id,
+        "variantId": variant_id,
+        "variantLabel": "Авторский материал",
+        "mode": "practice",
+        "tasks": [task],
+        "completedTasks": [task],
+        "currentTask": task,
+        "phase": "answer",
+        "fastMode": False,
+        "startedAt": "2026-09-07T13:00:00+03:00",
+        "status": "completed",
+        "completedAt": "2026-09-07T13:05:00+03:00",
+        "recordingsCount": 1,
+    }
+
+
 class FakeReviewRequestRepository:
     def __init__(
         self,
@@ -275,18 +293,38 @@ class ReviewRequestServiceTest(unittest.TestCase):
             }
         )
 
+        source = completed_run()
+        original = copy.deepcopy(source)
         result = self.make_service(repository).create(
             kind="task",
             tasks=[2],
             variant_id="author-material",
-            run={"elapsed": 15},
+            run=source,
             actor=ReviewActor(id=17, email="student@example.test"),
             metadata=RequestMetadata(client_ip="127.0.0.1", user_agent="test"),
         )
 
         self.assertEqual(result, {"reviewRequest": {"id": 1, "status": "uploading"}})
         self.assertEqual(repository.requests[0]["status"], "uploading")
-        self.assertEqual(json.loads(repository.requests[0]["run_json"]), {"elapsed": 15})
+        self.assertEqual(
+            json.loads(repository.requests[0]["run_json"]),
+            {
+                "id": "review-run",
+                "variantId": "author-material",
+                "variantLabel": "Авторский материал",
+                "mode": "practice",
+                "tasks": [2],
+                "completedTasks": [2],
+                "currentTask": 2,
+                "phase": "answer",
+                "fastMode": False,
+                "startedAt": "2026-09-07T10:00:00.000Z",
+                "status": "completed",
+                "completedAt": "2026-09-07T10:05:00.000Z",
+                "recordingsCount": 1,
+            },
+        )
+        self.assertEqual(source, original)
         self.assertEqual(json.loads(repository.items[0]["snapshot_json"]), {"title": "Task 2"})
         self.assertEqual(
             repository.audits,
@@ -300,20 +338,50 @@ class ReviewRequestServiceTest(unittest.TestCase):
             ],
         )
 
-    def test_create_rejects_oversized_run_without_persisting_state(self):
+    def test_create_rejects_invalid_run_before_transaction_or_material_lookup(self):
         repository = FakeReviewRequestRepository()
+        transaction_calls = 0
+
+        @contextmanager
+        def unexpected_transaction(*, immediate=False):
+            nonlocal transaction_calls
+            transaction_calls += 1
+            yield repository
+
+        repository.transaction = unexpected_transaction
 
         with self.assertRaises(ReviewRequestError) as caught:
             self.make_service(repository).create(
                 kind="task",
                 tasks=[2],
                 variant_id="author-material",
-                run={"value": "x" * 100_001},
+                run={"id": "broken"},
                 actor=ReviewActor(id=17, email="student@example.test"),
                 metadata=RequestMetadata(client_ip="127.0.0.1", user_agent="test"),
             )
 
-        self.assertEqual(caught.exception.reason, "run_too_large")
+        self.assertEqual(
+            (caught.exception.reason, caught.exception.message),
+            ("invalid_request", "Некорректные данные попытки"),
+        )
+        self.assertEqual(transaction_calls, 0)
+        self.assertEqual((repository.requests, repository.items, repository.audits), ([], [], []))
+
+    def test_create_rejects_variant_mismatch_without_persisting_state(self):
+        repository = FakeReviewRequestRepository()
+
+        with self.assertRaises(ReviewRequestError) as caught:
+            self.make_service(repository).create(
+                kind="task",
+                tasks=[2],
+                variant_id="other-material",
+                run=completed_run(),
+                actor=ReviewActor(id=17, email="student@example.test"),
+                metadata=RequestMetadata(client_ip="127.0.0.1", user_agent="test"),
+            )
+
+        self.assertEqual(caught.exception.reason, "invalid_request")
+        self.assertEqual(caught.exception.message, "Вариант попытки не совпадает с выбранным вариантом")
         self.assertEqual(repository.requests, [])
 
     def test_create_rejects_material_without_selected_task(self):
@@ -326,7 +394,7 @@ class ReviewRequestServiceTest(unittest.TestCase):
                 kind="task",
                 tasks=[2],
                 variant_id="author-material",
-                run={},
+                run=completed_run(),
                 actor=ReviewActor(id=17, email="student@example.test"),
                 metadata=RequestMetadata(client_ip="127.0.0.1", user_agent="test"),
             )

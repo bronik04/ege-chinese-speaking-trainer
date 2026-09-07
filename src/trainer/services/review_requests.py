@@ -11,8 +11,9 @@ from contextlib import suppress
 from pathlib import Path
 
 from trainer.domain.grading import CRITERIA, validate_scores
+from trainer.domain.progress import completed_run_to_dict
 from trainer.domain.recording_retention import expires_at
-from trainer.domain.review_requests import required_recording_positions, validate_review_selection
+from trainer.domain.review_requests import required_recording_positions, validate_review_request
 from trainer.services.materials import official_detail
 from trainer.services.recordings import write_recording
 from trainer.services.review_assets import copy_review_assets_from_roots
@@ -101,12 +102,15 @@ class ReviewRequestService:
         metadata: RequestMetadata,
     ) -> dict:
         try:
-            selection = validate_review_selection(kind, tasks)
+            validated = validate_review_request(kind, tasks, variant_id, run)
         except ValueError as error:
             raise ReviewRequestError("invalid_request", str(error)) from error
-        encoded_run = json.dumps(run, ensure_ascii=False, separators=(",", ":"))
-        if len(encoded_run.encode("utf-8")) > 100_000:
-            raise ReviewRequestError("run_too_large")
+        encoded_run = json.dumps(
+            completed_run_to_dict(validated.run),
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        selection = validated.selection
 
         created_asset_keys: list[str] = []
         try:
