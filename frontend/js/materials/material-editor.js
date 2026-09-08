@@ -1,6 +1,7 @@
 import { api } from "../shared/api.js";
 import { escapeHtml } from "../shared/progress.js";
 import "../shared/site-shell.js";
+import { editableMaterialContent } from "./material-content.js";
 
 const $ = id => document.getElementById(id);
 let currentId = null;
@@ -42,11 +43,11 @@ function collectContent() {
     ...content["3"], title: $("task3Title").value.trim(),
     imageLabels: [...document.querySelectorAll("[data-task3-label]")].map(input => input.value.trim()),
   };
-  if ($("materialKind").value === "task") {
-    const number = $("materialTaskNumber").value;
-    return { [number]: content[number] };
-  }
-  return content;
+  return editableMaterialContent(
+    $("materialKind").value,
+    Number($("materialTaskNumber").value),
+    content,
+  );
 }
 
 function requestPayload() {
