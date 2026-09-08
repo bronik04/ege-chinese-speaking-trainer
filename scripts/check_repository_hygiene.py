@@ -25,6 +25,10 @@ def check_repository(root: Path, tracked_paths: list[str]) -> list[str]:
             continue
         try:
             content = path.read_bytes()
+        except FileNotFoundError:
+            # `git ls-files --cached` still reports a tracked file while its
+            # deletion is present only in the working tree.
+            continue
         except OSError as error:
             failures.append(f"Cannot inspect tracked file {relative}: {error}")
             continue
