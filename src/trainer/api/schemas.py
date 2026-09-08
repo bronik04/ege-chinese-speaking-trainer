@@ -165,6 +165,13 @@ class MaterialDraftTask3(StrictMaterialSchema):
 
 
 class MaterialDraftContent(StrictMaterialSchema):
+    model_config = ConfigDict(
+        extra="forbid",
+        strict=True,
+        validate_by_alias=True,
+        validate_by_name=False,
+    )
+
     task1: MaterialDraftTask1 | None = Field(default=None, alias="1")
     task2: MaterialDraftTask2 | None = Field(default=None, alias="2")
     task3: MaterialDraftTask3 | None = Field(default=None, alias="3")

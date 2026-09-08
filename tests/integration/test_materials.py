@@ -228,6 +228,7 @@ class MaterialApiTest(unittest.TestCase):
             {"2": {"images": ["", ""]}},
             {"2": {"images": ["", 2, ""]}},
             {"2": {"images": ["", "", ""], "lead": "лишнее"}},
+            {"task2": {"images": ["", "", ""]}},
             {
                 "3": {
                     "title": "",
