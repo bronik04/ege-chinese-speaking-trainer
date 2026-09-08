@@ -25,11 +25,7 @@ export function createRunnerController(ctx) {
   let completedRecordings = [];
 
   const taskData = (task) => ctx.getVariant().tasks[String(task)];
-  const durationFor = (task, kind) => {
-    if (!$("fastMode").checked) return taskData(task)[kind + "Seconds"];
-    if (task === 1) return kind === "prep" ? 8 : 5;
-    return kind === "prep" ? 8 : 10;
-  };
+  const durationFor = (task, kind) => taskData(task)[`${kind}Seconds`];
 
   async function ensureMicrophone(showSuccess = false) {
     if (stream?.active) return true;
@@ -118,7 +114,7 @@ export function createRunnerController(ctx) {
       completedTasks: [],
       currentTask: taskQueue[0],
       phase: "idle",
-      fastMode: Boolean($("fastMode").checked),
+      fastMode: false,
       startedAt: new Date().toISOString()
     };
     ctx.onRunStarted?.(ctx.getProgress().activeRun.id);

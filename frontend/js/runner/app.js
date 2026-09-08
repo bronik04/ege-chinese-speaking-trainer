@@ -167,7 +167,6 @@ async function initVariants() {
         ? progress.settings.lastVariant
         : variantIndex[0].id;
     $("variantSelect").value = preferredVariant;
-    $("fastMode").checked = Boolean(progress.settings.fastMode);
     await loadVariant(preferredVariant);
   } catch (error) {
     $("variantSource").textContent = "Не удалось загрузить задания";
@@ -322,10 +321,6 @@ $("variantSelect").addEventListener("change", event => {
   progress.settings.lastVariant = event.target.value;
   saveProgressLocal();
   loadVariant(event.target.value);
-});
-$("fastMode").addEventListener("change", event => {
-  progress.settings.fastMode = event.target.checked;
-  saveProgressLocal();
 });
 $("checkMicBtn").addEventListener("click", () => ensureMicrophone(true));
 $("mainActionBtn").addEventListener("click", startPreparation);

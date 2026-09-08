@@ -131,14 +131,12 @@ test("personal archive", async ({ browser }) => {
   try {
     await installRecorder(guestPage);
     await guestPage.goto("/");
-    await guestPage.locator("#fastMode").check({ force: true });
     await finishTask(guestPage, 2);
     expect(guestUploads).toBe(0);
 
     await installRecorder(studentPage);
     await studentPage.goto("/");
     await registerStudent(studentPage, stamp);
-    await studentPage.locator("#fastMode").check({ force: true });
     await finishTask(studentPage, 2);
     await expect.poll(() => studentUploads).toBe(1);
     await studentPage.locator("#authButton").click();
@@ -167,7 +165,6 @@ test("personal archive retries an older failed run when a new run finishes", asy
     await installRecorder(page);
     await page.goto("/");
     await registerStudent(page, stamp);
-    await page.locator("#fastMode").check({ force: true });
     await finishTask(page, 2);
     await expect(page.locator("#retryArchiveBtn")).toBeVisible();
     await page.locator("#restartBtn").click();
@@ -192,7 +189,6 @@ test("student submits a single task only after an explicit review request", asyn
     await installRecorder(page);
     await page.goto("/");
     await registerStudent(page, stamp);
-    await page.locator("#fastMode").check({ force: true });
     await finishTask(page, 2);
     expect((await (await teacher.request.get("/api/teacher/review-requests")).json()).requests).toEqual([]);
     await page.getByLabel("Одно задание").check();
@@ -214,7 +210,6 @@ test("student submits a complete attempt with every completed task", async ({ br
     await installRecorder(page);
     await page.goto("/");
     await registerStudent(page, stamp);
-    await page.locator("#fastMode").check({ force: true });
     await finishCompleteAttempt(page);
     await page.getByLabel("Всю попытку").check();
     await page.getByRole("button", { name: "Отправить всю попытку" }).click();
@@ -238,7 +233,6 @@ test("student cannot create an uploading request from an incompletely recorded t
     await installRecorder(page, { skipStops: [5] });
     await page.goto("/");
     await registerStudent(page, stamp);
-    await page.locator("#fastMode").check({ force: true });
     await finishTaskOne(page);
 
     await expect(page.locator("#reviewTaskSelect option")).toHaveCount(0);
@@ -263,7 +257,6 @@ test("whole attempt excludes tasks with an incomplete required recording set", a
     await installRecorder(page, { skipStops: [5] });
     await page.goto("/");
     await registerStudent(page, stamp);
-    await page.locator("#fastMode").check({ force: true });
     await finishCompleteAttempt(page);
 
     await expect(page.locator("#reviewTaskSelect option")).toHaveText(["Задание 2", "Задание 3"]);
@@ -288,7 +281,6 @@ test("owner scores queued review without groups, assignments, or comments", asyn
     await installRecorder(studentPage);
     await studentPage.goto("/");
     await registerStudent(studentPage, stamp);
-    await studentPage.locator("#fastMode").check({ force: true });
     await finishTask(studentPage, 2);
     await studentPage.getByRole("button", { name: "Отправить одно задание" }).click();
     await expect(studentPage.locator("#reviewRequestMessage")).toContainText("отправлена");
@@ -350,7 +342,6 @@ test("owner history includes the student's earlier reviews outside the queue fil
     await installRecorder(studentPage);
     await studentPage.goto("/");
     await registerStudent(studentPage, stamp);
-    await studentPage.locator("#fastMode").check({ force: true });
     await finishTask(studentPage, 2);
     await studentPage.getByRole("button", { name: "Отправить одно задание" }).click();
     await expect(studentPage.locator("#reviewRequestMessage")).toContainText("отправлена");
@@ -395,7 +386,6 @@ test("student retries a failed upload without creating a duplicate review reques
     await installRecorder(page);
     await page.goto("/");
     await registerStudent(page, stamp);
-    await page.locator("#fastMode").check({ force: true });
     await finishTask(page, 2);
     await page.getByRole("button", { name: "Отправить одно задание" }).click();
     await expect(page.getByRole("button", { name: "Повторить отправку" })).toBeVisible();
@@ -431,7 +421,6 @@ test("student starts a new run after a failed upload without reusing its review 
     await installRecorder(page);
     await page.goto("/");
     await registerStudent(page, stamp);
-    await page.locator("#fastMode").check({ force: true });
     await finishTask(page, 2);
     await page.getByRole("button", { name: "Отправить одно задание" }).click();
     await expect(page.getByRole("button", { name: "Повторить отправку" })).toBeVisible();
@@ -476,7 +465,6 @@ test("concurrent runs keep delayed uploads and completion on their own review re
     await installRecorder(page);
     await page.goto("/");
     await registerStudent(page, stamp);
-    await page.locator("#fastMode").check({ force: true });
     await finishTask(page, 2);
     await page.getByRole("button", { name: "Отправить одно задание" }).click();
     await firstUploadStarted;

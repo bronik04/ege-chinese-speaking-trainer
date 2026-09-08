@@ -31,3 +31,20 @@ test("guest V1 history migrates to V2 and a new run continues from it", async ({
   expect(continued.runs[0].id).toBe("legacy-run");
   expect(continued.activeRun.mode).toBe("practice");
 });
+
+test("legacy fast-mode preference no longer shortens a new run", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("egeChineseProgressV1", JSON.stringify({
+      version: 1,
+      settings: { lastVariant: "open-2026", fastMode: true },
+    }));
+  });
+
+  await page.goto("/?variant=open-2026");
+  await expect(page.getByRole("checkbox", { name: /быстро/i })).toHaveCount(0);
+  await page.locator('[data-start="1"]').click();
+  await expect(page.locator("#timerValue")).toHaveText("01:30");
+
+  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("egeChineseProgressV2")));
+  expect(stored.activeRun.fastMode).toBe(false);
+});

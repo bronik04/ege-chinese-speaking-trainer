@@ -160,7 +160,7 @@ test("mobile navigation and utility controls fit the viewport and a finger", asy
     fixture.innerHTML = '<button class="secondary-btn" data-mobile-target>Дополнительное действие</button><a class="download-link" data-mobile-download href="#">Скачать</a>';
     document.body.append(fixture);
   });
-  await mobileTargets([".speed-switch", "#checkMicBtn", ".material-catalog-link", "[data-mobile-target]", "[data-mobile-download]"]);
+  await mobileTargets(["#checkMicBtn", ".material-catalog-link", "[data-mobile-target]", "[data-mobile-download]"]);
   await page.locator('[data-start="1"]').click();
   await page.locator("#mainActionBtn").click();
   await expect(page.locator("#skipBtn")).toBeVisible();
@@ -175,10 +175,10 @@ test("mobile navigation and utility controls fit the viewport and a finger", asy
 
 test("keyboard focus stays visible on selected and ordinary controls", async ({ page }) => {
   await page.goto("/");
-  const fastMode = page.locator("#fastMode");
-  await fastMode.focus();
-  await expect(fastMode.locator("xpath=following-sibling::span")).toHaveCSS("outline-style", "solid");
-  await expect(fastMode.locator("xpath=following-sibling::span")).toHaveCSS("outline-color", "rgb(139, 26, 26)");
+  const microphoneCheck = page.locator("#checkMicBtn");
+  await microphoneCheck.focus();
+  await expect(microphoneCheck).toHaveCSS("outline-style", "solid");
+  await expect(microphoneCheck).toHaveCSS("outline-color", "rgb(139, 26, 26)");
 
   await page.goto("/reference.html");
   const activeTab = page.locator(".reference-tab.active");
