@@ -144,6 +144,15 @@ test("registered user publishes a standalone task and opens it from catalog", as
   await expect(page.locator("#newMaterialBtn")).toHaveCSS("background-image", "none");
   await expect(page.locator(".task-editor").first()).toHaveCSS("border-radius", "12px");
 
+  await page.locator(`[data-edit-material="${slug}"]`).click();
+  await expect(page.locator("#materialTitle")).toHaveValue("Авторское описание фотографии");
+  await page.locator("#saveMaterialBtn").click();
+  await expect(page.locator("#editorMessage")).toHaveText("Черновик сохранён");
+  await expect(page.locator("#materialStatus")).toHaveText("Черновик");
+  await page.locator("#publishMaterialBtn").click();
+  await expect(page.locator("#editorMessage")).toHaveText("Материал опубликован и доступен в каталоге");
+  await expect(page.locator("#materialStatus")).toHaveText("Опубликован");
+
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
   const sidebarBox = await page.locator(".materials-sidebar").boundingBox();
