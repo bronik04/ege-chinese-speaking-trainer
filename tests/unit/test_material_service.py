@@ -48,6 +48,20 @@ def material_record(
     )
 
 
+def full_draft() -> dict:
+    return {
+        "1": {
+            "situation": "",
+            "banner": "",
+            "questions": ["", "", "", "", ""],
+            "image": "",
+            "imageAlt": "",
+        },
+        "2": {"images": ["", "", ""]},
+        "3": {"title": "", "images": ["", ""], "imageLabels": ["", ""]},
+    }
+
+
 class FakeStorage:
     def __init__(self):
         self.deleted = []
@@ -184,7 +198,7 @@ class MaterialServiceTest(unittest.TestCase):
             "Авторский материал",
             2026,
             "Автор",
-            {"2": {}},
+            {"2": {"images": ["", "", ""]}},
         )
 
     def service(
@@ -269,14 +283,34 @@ class MaterialServiceTest(unittest.TestCase):
         self.assertEqual(self.repository.audits[0].action, "material_created")
         self.assertEqual(self.repository.audits[0].details, {"materialId": 101})
 
-    def test_create_rejects_oversized_content_before_opening_transaction(self):
-        data = replace(self.valid_data, content={"text": "x" * 150_001})
+    def test_create_persists_a_canonical_copy_without_mutating_input(self):
+        content = {"2": {"images": ["one", "two", "three"]}}
+        data = replace(self.valid_data, content=content)
+
+        self.service().create(data, self.actor, self.metadata)
+
+        stored = self.repository.created["data"].content
+        self.assertEqual(stored, {"2": {"images": ["one", "two", "three"]}})
+        self.assertIsNot(stored, content)
+        self.assertIsNot(stored["2"]["images"], content["2"]["images"])
+        self.assertEqual(content, {"2": {"images": ["one", "two", "three"]}})
+
+    def test_create_rejects_invalid_content_before_opening_transaction(self):
+        data = replace(self.valid_data, content={"2": {"images": ["", ""]}})
 
         with self.assertRaises(MaterialError) as caught:
             self.service().create(data, self.actor, self.metadata)
 
         self.assertEqual(caught.exception.reason, "invalid_metadata")
-        self.assertEqual(caught.exception.message, "Содержание материала слишком велико")
+        self.assertEqual(self.repository.transaction_count, 0)
+
+    def test_create_rejects_full_material_with_task_number_before_transaction(self):
+        data = replace(self.valid_data, kind="full", task_number=2, content=full_draft())
+
+        with self.assertRaises(MaterialError) as caught:
+            self.service().create(data, self.actor, self.metadata)
+
+        self.assertEqual(caught.exception.reason, "invalid_metadata")
         self.assertEqual(self.repository.transaction_count, 0)
 
     def test_update_resets_status_and_reports_missing_owner_material(self):

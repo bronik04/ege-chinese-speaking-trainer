@@ -9,10 +9,12 @@ from pathlib import Path
 from typing import Callable
 
 from trainer.domain.materials import (
+    MaterialContentValidationError,
     build_content,
     editor_allowed,
     material_asset_ids,
     material_payload,
+    normalize_material_draft_content,
     validate_slug,
 )
 from trainer.services.material_repository import (
@@ -73,13 +75,10 @@ def _normalize(data: MaterialRequestData) -> MaterialRequestData:
         year = int(data.year)
     except (TypeError, ValueError) as error:
         raise ValueError("Проверьте год и номер задания") from error
-    if kind == "full":
-        task_number = None
-    elif kind != "task" or task_number not in {1, 2, 3}:
-        raise ValueError("Выберите тип материала и номер задания")
-    content = data.content
-    if not isinstance(content, dict) or len(json.dumps(content, ensure_ascii=False)) > 150_000:
-        raise ValueError("Содержание материала слишком велико")
+    try:
+        content = normalize_material_draft_content(kind, task_number, data.content)
+    except MaterialContentValidationError as error:
+        raise ValueError(str(error)) from error
     title = data.title.strip()
     source = data.source.strip()
     if not 2 <= len(title) <= 120 or not 2 <= len(source) <= 200 or not 2020 <= year <= 2100:
