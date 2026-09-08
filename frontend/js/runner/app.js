@@ -7,7 +7,6 @@ import { shortTime } from "./task-view.js";
 import { plural, pluralize } from "../shared/plural.js";
 import { createAccountController } from "../account/account-controller.js";
 import { fullyRecordedTasks } from "../account/account-review-requests-controller.js";
-import { enhanceMaterialList } from "../shared/material-list.js";
 import "../shared/site-shell.js";
 
 const $ = (id) => document.getElementById(id);
@@ -159,14 +158,12 @@ async function initVariants() {
     variantIndex = payload.materials;
     $("variantCount").textContent = variantIndex.length;
     $("variantCountLabel").textContent = plural(variantIndex.length, "вариант", "варианта", "вариантов");
-    $("variantSelect").innerHTML = variantIndex.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.label)}${item.kind === "task" ? ` · задание ${item.taskNumber}` : ""}</option>`).join("");
     const requestedVariant = new URLSearchParams(window.location.search).get("variant");
     const preferredVariant = variantIndex.some(item => item.id === requestedVariant)
       ? requestedVariant
       : variantIndex.some(item => item.id === progress.settings.lastVariant)
         ? progress.settings.lastVariant
         : variantIndex[0].id;
-    $("variantSelect").value = preferredVariant;
     await loadVariant(preferredVariant);
   } catch (error) {
     $("variantSource").textContent = "Не удалось загрузить задания";
@@ -187,6 +184,10 @@ async function loadVariant(id, snapshot = null) {
       variantCache.set(id, (await response.json()).material);
     }
     variant = variantCache.get(id);
+    if (progress.settings.lastVariant !== id) {
+      progress.settings.lastVariant = id;
+      saveProgressLocal();
+    }
     const url = new URL(window.location.href);
     url.searchParams.set("variant", id);
     window.history.replaceState({}, "", url);
@@ -199,7 +200,9 @@ async function loadVariant(id, snapshot = null) {
 }
 
 function updateVariantUI() {
+  $("selectedMaterialTitle").textContent = variant.label;
   $("variantSource").textContent = variant.source;
+  $("selectedMaterialDuration").textContent = pluralize(variant.totalMinutes, "минута", "минуты", "минут");
   $("totalMinutes").textContent = variant.totalMinutes;
   $("totalMinutesLabel").textContent = plural(variant.totalMinutes, "минута", "минуты", "минут");
   if (taskData(1)) $("task1Timing").textContent = `${shortTime(taskData(1).prepSeconds)} + 5 × ${shortTime(taskData(1).answerSeconds)}`;
@@ -288,14 +291,9 @@ account = createAccountController({
   getProgressStorageKey: () => progressScope.current,
   setProgress: (value) => { progress = value; },
   saveProgressLocal,
-  loadVariant,
   getVariant: () => variant,
   startRun,
-  getVariantIndex: () => variantIndex,
-  refreshMaterials: async () => {
-    await initVariants();
-    $("materialAccessNotice").classList.toggle("hidden", Boolean(account?.user));
-  },
+  refreshMaterials: initVariants,
   getCompletedRecordings: () => runner.getCompletedRecordings(),
   getCompletedTasks: () => runner.getCompletedTasks(),
   getCompletedRun: () => runner.getCompletedRun(),
@@ -317,11 +315,6 @@ const {
 } = account;
 
 document.querySelectorAll("[data-start]").forEach(button => button.addEventListener("click", () => startRun(button.dataset.start)));
-$("variantSelect").addEventListener("change", event => {
-  progress.settings.lastVariant = event.target.value;
-  saveProgressLocal();
-  loadVariant(event.target.value);
-});
 $("checkMicBtn").addEventListener("click", () => ensureMicrophone(true));
 $("mainActionBtn").addEventListener("click", startPreparation);
 $("skipBtn").addEventListener("click", skipPhase);
@@ -379,11 +372,9 @@ renderProgress();
 setAuthMode("login");
 
 async function initialize() {
-  enhanceMaterialList($("variantSelect"), $("materialList"));
   await initVariants();
   await handleAccountLinks();
   await initAuth();
-  $("materialAccessNotice").classList.toggle("hidden", Boolean(account?.user));
   recoverInterruptedRun();
   renderProgress();
   const url = new URL(window.location.href);

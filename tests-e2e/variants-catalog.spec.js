@@ -73,10 +73,11 @@ test("guest catalog exposes only the open 2026 variant", async ({ page }) => {
   await expect(openVariant).toHaveCSS("background-color", "rgb(232, 211, 138)");
   await openVariant.click();
   await expect(page).toHaveURL(/variant=open-2026/);
-  await expect(page.locator("#variantSelect")).toHaveValue("open-2026");
-  await expect(page.locator("#materialList [role='radio']")).toHaveCount(1);
-  await expect(page.locator("#materialList [role='radio'][aria-checked='true']")).toContainText("Официальный вариант 2026");
-  await expect(page.locator("#materialAccessNotice")).toHaveText("После регистрации доступны остальные варианты и личный архив записей Зарегистрироваться →");
+  const selectedMaterial = page.getByRole("region", { name: "Официальный вариант 2026" });
+  await expect(selectedMaterial).toContainText("ФИПИ · официальный материал 2026");
+  await expect(selectedMaterial).toContainText("14 минут");
+  await expect(selectedMaterial.getByRole("link", { name: "Сменить материал" })).toHaveAttribute("href", "variants.html");
+  await expect(page.getByRole("radiogroup", { name: "Выбор материала" })).toHaveCount(0);
 });
 
 test("registered user publishes a standalone task and opens it from catalog", async ({ browser }) => {
@@ -116,8 +117,7 @@ test("registered user publishes a standalone task and opens it from catalog", as
 
   const page = await context.newPage();
   await page.goto("/");
-  await expect(page.locator("#variantSelect option").first()).toHaveValue("open-2026");
-  await expect(page.locator("#materialAccessNotice")).toBeHidden();
+  await expect(page.getByRole("region", { name: "Официальный вариант 2026" })).toBeVisible();
   await page.locator("#soundToggle").click();
   await expect(page.locator("#soundToggle")).toHaveAttribute("aria-pressed", "false");
   await page.locator("#authButton").click();
@@ -132,8 +132,11 @@ test("registered user publishes a standalone task and opens it from catalog", as
   await expect(page.locator(".variant-kind")).toHaveText("Отдельное задание 2");
   await page.locator(".variant-open").click();
   await expect(page).toHaveURL(new RegExp(`variant=${slug}`));
-  await expect(page.locator("#variantSelect")).toHaveValue(slug);
-  await expect(page.locator(`#materialList [role='radio'][data-value='${slug}']`)).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByRole("region", { name: "Авторское описание фотографии" })).toBeVisible();
+
+  await page.goto("/");
+  await expect(page).toHaveURL(new RegExp(`variant=${slug}`));
+  await expect(page.getByRole("region", { name: "Авторское описание фотографии" })).toBeVisible();
 
   await page.goto("/variant-editor.html");
   await expect(page.locator("[data-account-link]")).toContainText(email);
