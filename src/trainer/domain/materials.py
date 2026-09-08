@@ -38,6 +38,67 @@ EXAM_SPEC = {
 }
 
 
+class MaterialContentValidationError(ValueError):
+    pass
+
+
+_DRAFT_FIELDS = {
+    1: ("situation", "banner", "questions", "image", "imageAlt"),
+    2: ("images",),
+    3: ("title", "images", "imageLabels"),
+}
+
+
+def _draft_text(value: object, label: str, maximum: int) -> str:
+    if type(value) is not str or len(value) > maximum:
+        raise MaterialContentValidationError(f"Некорректное поле «{label}»")
+    return value
+
+
+def _draft_list(value: object, label: str, length: int, maximum: int) -> list[str]:
+    if type(value) is not list or len(value) != length:
+        raise MaterialContentValidationError(f"Некорректное поле «{label}»")
+    return [_draft_text(item, label, maximum) for item in value]
+
+
+def _draft_task(number: int, raw: object) -> dict:
+    if type(raw) is not dict or set(raw) != set(_DRAFT_FIELDS[number]):
+        raise MaterialContentValidationError(f"Некорректное содержание задания {number}")
+    if number == 1:
+        return {
+            "situation": _draft_text(raw["situation"], "Ситуация", 1500),
+            "banner": _draft_text(raw["banner"], "Объявление", 300),
+            "questions": _draft_list(raw["questions"], "Вопросы", 5, 300),
+            "image": _draft_text(raw["image"], "Изображение", 500),
+            "imageAlt": _draft_text(raw["imageAlt"], "Описание изображения", 300),
+        }
+    if number == 2:
+        return {"images": _draft_list(raw["images"], "Изображения", 3, 500)}
+    return {
+        "title": _draft_text(raw["title"], "Название проекта", 150),
+        "images": _draft_list(raw["images"], "Изображения", 2, 500),
+        "imageLabels": _draft_list(raw["imageLabels"], "Подписи", 2, 100),
+    }
+
+
+def normalize_material_draft_content(
+    kind: str,
+    task_number: int | None,
+    raw: object,
+) -> dict[str, dict]:
+    if type(raw) is not dict:
+        raise MaterialContentValidationError("Некорректное содержание материала")
+    if kind == "full":
+        if task_number is not None or set(raw) != {"1", "2", "3"}:
+            raise MaterialContentValidationError("Содержание не соответствует типу материала")
+        numbers = (1, 2, 3)
+    elif kind == "task" and task_number in {1, 2, 3} and set(raw) == {str(task_number)}:
+        numbers = (task_number,)
+    else:
+        raise MaterialContentValidationError("Содержание не соответствует выбранному заданию")
+    return {str(number): _draft_task(number, raw[str(number)]) for number in numbers}
+
+
 def editor_allowed(user: dict | None, editor_emails: str) -> bool:
     if not user or not user.get("emailVerified"):
         return False
