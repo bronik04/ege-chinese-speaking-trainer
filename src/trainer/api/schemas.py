@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, StrictStr, model_validator
 
+from trainer.domain.materials import MaterialContentValidationError, normalize_material_draft_content
 from trainer.domain.progress import ProgressValidationError, normalize_progress, parse_completed_run
 
 
@@ -136,6 +137,39 @@ class ReviewScoresRequest(ApiSchema):
     scores: dict[str, dict[str, int]]
 
 
+class StrictMaterialSchema(ApiSchema):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True, strict=True)
+
+
+DraftImage = Annotated[StrictStr, Field(max_length=500)]
+DraftQuestion = Annotated[StrictStr, Field(max_length=300)]
+DraftLabel = Annotated[StrictStr, Field(max_length=100)]
+
+
+class MaterialDraftTask1(StrictMaterialSchema):
+    situation: StrictStr = Field(max_length=1500)
+    banner: StrictStr = Field(max_length=300)
+    questions: list[DraftQuestion] = Field(min_length=5, max_length=5)
+    image: DraftImage
+    imageAlt: StrictStr = Field(max_length=300)
+
+
+class MaterialDraftTask2(StrictMaterialSchema):
+    images: list[DraftImage] = Field(min_length=3, max_length=3)
+
+
+class MaterialDraftTask3(StrictMaterialSchema):
+    title: StrictStr = Field(max_length=150)
+    images: list[DraftImage] = Field(min_length=2, max_length=2)
+    imageLabels: list[DraftLabel] = Field(min_length=2, max_length=2)
+
+
+class MaterialDraftContent(StrictMaterialSchema):
+    task1: MaterialDraftTask1 | None = Field(default=None, alias="1")
+    task2: MaterialDraftTask2 | None = Field(default=None, alias="2")
+    task3: MaterialDraftTask3 | None = Field(default=None, alias="3")
+
+
 class MaterialRequest(ApiSchema):
     slug: str = Field(pattern=r"^[a-z0-9-]{3,50}$")
     kind: Literal["full", "task"]
@@ -143,4 +177,13 @@ class MaterialRequest(ApiSchema):
     title: str = Field(min_length=2, max_length=120)
     year: int = Field(ge=2020, le=2100)
     source: str = Field(min_length=2, max_length=200)
-    content: dict[str, Any] = Field(default_factory=dict)
+    content: MaterialDraftContent
+
+    @model_validator(mode="after")
+    def valid_content_contract(self):
+        content = self.content.model_dump(mode="json", by_alias=True, exclude_none=True)
+        try:
+            normalize_material_draft_content(self.kind, self.taskNumber, content)
+        except MaterialContentValidationError as error:
+            raise ValueError(str(error)) from error
+        return self

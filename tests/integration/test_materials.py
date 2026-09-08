@@ -20,13 +20,34 @@ from trainer.infrastructure.images import encode_material_image
 from trainer.services.materials import MaterialService
 
 
+def full_draft() -> dict:
+    return {
+        "1": {
+            "situation": "",
+            "banner": "",
+            "questions": ["", "", "", "", ""],
+            "image": "",
+            "imageAlt": "",
+        },
+        "2": {"images": ["", "", ""]},
+        "3": {"title": "", "images": ["", ""], "imageLabels": ["", ""]},
+    }
+
+
 class MaterialApiTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.original_editor_mode = os.environ.get("TRAINER_EDITOR_MODE")
         cls.original_editor_emails = os.environ.get("TRAINER_EDITOR_EMAILS")
         os.environ["TRAINER_EDITOR_MODE"] = "allowlist"
-        os.environ["TRAINER_EDITOR_EMAILS"] = "author@example.test,cleanup@example.test"
+        os.environ["TRAINER_EDITOR_EMAILS"] = ",".join(
+            (
+                "author@example.test",
+                "cleanup@example.test",
+                "strict-content@example.test",
+                "canonical-content@example.test",
+            )
+        )
         cls.temp_dir = tempfile.TemporaryDirectory()
         root = Path(cls.temp_dir.name)
         database_path = root / "trainer.sqlite3"
@@ -73,6 +94,10 @@ class MaterialApiTest(unittest.TestCase):
         token = parse_qs(urlparse(message["body"].strip().splitlines()[-1]).query)["verify"][0]
         response = self.client.post("/api/auth/email/confirm", headers=self.origin, json={"token": token})
         self.assertEqual(response.status_code, 200, response.text)
+
+    def register_verified_editor(self, email="author@example.test"):
+        self.register(email)
+        self.verify_email(email)
 
     @staticmethod
     def image_bytes():
@@ -186,6 +211,112 @@ class MaterialApiTest(unittest.TestCase):
             [(content[str(n)]["prepSeconds"], content[str(n)]["answerSeconds"]) for n in (1, 2, 3)],
             [(90, 20), (120, 120), (180, 180)],
         )
+
+    def test_material_request_rejects_invalid_content_shapes(self):
+        email = "strict-content@example.test"
+        self.register_verified_editor(email)
+        base = {
+            "slug": "strict-content",
+            "kind": "task",
+            "taskNumber": 2,
+            "title": "Строгий черновик",
+            "year": 2026,
+            "source": "Автор",
+            "content": {"2": {"images": ["", "", ""]}},
+        }
+        invalid_contents = (
+            {"2": {"images": ["", ""]}},
+            {"2": {"images": ["", 2, ""]}},
+            {"2": {"images": ["", "", ""], "lead": "лишнее"}},
+            {
+                "3": {
+                    "title": "",
+                    "images": ["", ""],
+                    "imageLabels": ["", ""],
+                }
+            },
+        )
+        for index, content in enumerate(invalid_contents):
+            payload = {
+                **base,
+                "slug": f"strict-content-{index}",
+                "content": content,
+            }
+            response = self.client.post("/api/materials", headers=self.origin, json=payload)
+            with self.subTest(index=index):
+                self.assertEqual(response.status_code, 422, response.text)
+                self.assertEqual(response.json()["code"], "request_validation_failed")
+
+        full_with_number = {
+            **base,
+            "slug": "strict-full-number",
+            "kind": "full",
+            "taskNumber": 2,
+            "content": full_draft(),
+        }
+        response = self.client.post("/api/materials", headers=self.origin, json=full_with_number)
+        self.assertEqual(response.status_code, 422, response.text)
+
+    def test_material_draft_is_canonical_and_legacy_content_remains_readable(self):
+        email = "canonical-content@example.test"
+        self.register_verified_editor(email)
+        draft = {
+            "slug": "canonical-content",
+            "kind": "task",
+            "taskNumber": 2,
+            "title": "Канонический черновик",
+            "year": 2026,
+            "source": "Автор",
+            "content": {"2": {"images": ["", "", ""]}},
+        }
+        response = self.client.post("/api/materials", headers=self.origin, json=draft)
+        self.assertEqual(response.status_code, 201, response.text)
+
+        with runtime.connect() as database:
+            stored = database.execute(
+                "SELECT content_json FROM materials WHERE slug=?",
+                (draft["slug"],),
+            ).fetchone()["content_json"]
+            self.assertEqual(json.loads(stored), draft["content"])
+            owner_id = database.execute(
+                "SELECT id FROM users WHERE email=?",
+                (email,),
+            ).fetchone()["id"]
+            legacy = json.dumps({"legacy": True}, separators=(",", ":"))
+            database.execute(
+                """INSERT INTO materials
+                   (slug,owner_id,kind,task_number,title,year,source,status,content_json,created_at,updated_at)
+                   VALUES (?,?,?,?,?,?,?,'draft',?,?,?)""",
+                (
+                    "legacy-content",
+                    owner_id,
+                    "task",
+                    2,
+                    "Legacy",
+                    2026,
+                    "Legacy",
+                    legacy,
+                    1,
+                    1,
+                ),
+            )
+
+        incomplete = self.client.post(
+            "/api/materials/canonical-content/publish",
+            headers=self.origin,
+            json={},
+        )
+        self.assertEqual(incomplete.status_code, 400, incomplete.text)
+        self.assertEqual(incomplete.json()["code"], "material_incomplete")
+
+        detail = self.client.get("/api/materials/legacy-content")
+        self.assertEqual(detail.status_code, 200, detail.text)
+        self.assertEqual(detail.json()["material"]["tasks"], {"legacy": True})
+        with runtime.connect() as database:
+            unchanged = database.execute("SELECT content_json FROM materials WHERE slug='legacy-content'").fetchone()[
+                "content_json"
+            ]
+        self.assertEqual(unchanged, legacy)
 
     def test_asset_upload_deletes_stored_object_when_metadata_insert_fails(self):
         email = "cleanup@example.test"

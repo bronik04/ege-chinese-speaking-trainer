@@ -31,7 +31,7 @@ def _request_data(payload) -> MaterialRequestData:
         title=payload.title,
         year=payload.year,
         source=payload.source,
-        content=payload.content,
+        content=payload.content.model_dump(mode="json", by_alias=True, exclude_none=True),
     )
 
 

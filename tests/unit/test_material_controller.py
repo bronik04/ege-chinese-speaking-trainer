@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import unittest
 from http import HTTPStatus
-from types import SimpleNamespace
 from unittest.mock import patch
 
 from trainer.api.controllers import materials
 from trainer.api.errors import ApiError
 from trainer.api.results import RequestContext
+from trainer.api.schemas import MaterialRequest
 from trainer.services.materials import MaterialError
 
 
@@ -30,14 +30,16 @@ class MaterialControllerErrorContractTest(unittest.TestCase):
             "emailVerified": True,
         }
         self.context = RequestContext("127.0.0.1", "tests")
-        self.payload = SimpleNamespace(
-            slug="author-task",
-            kind="task",
-            taskNumber=2,
-            title="Авторский материал",
-            year=2026,
-            source="Автор",
-            content={"2": {}},
+        self.payload = MaterialRequest.model_validate(
+            {
+                "slug": "author-task",
+                "kind": "task",
+                "taskNumber": 2,
+                "title": "Авторский материал",
+                "year": 2026,
+                "source": "Автор",
+                "content": {"2": {"images": ["", "", ""]}},
+            }
         )
 
     def test_semantic_errors_keep_the_public_api_contract(self):
