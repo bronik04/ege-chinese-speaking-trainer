@@ -29,7 +29,7 @@
 - Modify: `src/trainer/infrastructure/database/queries/review_requests.py`
 - Modify: `tests/integration/test_api_flows.py`
 
-- [ ] **Step 1: Add failing integration assertions for canonical and legacy rows**
+- [x] **Step 1: Add failing integration assertions for canonical and legacy rows**
 
 Extend `test_review_request_persists_canonical_run_and_legacy_rows_remain_listable` so it first lists the canonical row and expects its run identifier, then corrupts the stored snapshot and expects `null` without losing the row:
 
@@ -50,7 +50,7 @@ self.assertIsNone(legacy_item["runId"])
 
 Also assert in `test_student_queues_single_task_for_owner_review` that the student item contains `runId == "review-task-2"` while the corresponding teacher item does not contain `runId`.
 
-- [ ] **Step 2: Run the focused test and confirm the red result**
+- [x] **Step 2: Run the focused test and confirm the red result**
 
 Run:
 
@@ -60,7 +60,7 @@ Run:
 
 Expected: failure because `runId` is absent.
 
-- [ ] **Step 3: Implement tolerant snapshot extraction only for the student list**
+- [x] **Step 3: Implement tolerant snapshot extraction only for the student list**
 
 Add a private helper:
 
@@ -76,7 +76,7 @@ def _run_id(run_json: str) -> str | None:
 
 Change only `student_review_requests` to select `run_json`, build the existing payload, and then set `payload["runId"] = _run_id(row["run_json"])`. Do not add `run_json` to either teacher query.
 
-- [ ] **Step 4: Run focused review-request tests**
+- [x] **Step 4: Run focused review-request tests**
 
 Run:
 
@@ -88,7 +88,7 @@ Run:
 
 Expected: both pass; queued score-hiding assertions remain green.
 
-- [ ] **Step 5: Commit the API contract change**
+- [x] **Step 5: Commit the API contract change**
 
 ```bash
 git add src/trainer/infrastructure/database/queries/review_requests.py tests/integration/test_api_flows.py

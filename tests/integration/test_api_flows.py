@@ -466,16 +466,30 @@ class ApiFlowTest(unittest.TestCase):
             )
             self.assertEqual(stored["startedAt"], "2026-09-07T10:00:00.000Z")
             self.assertEqual(stored["completedAt"], "2026-09-07T10:30:00.000Z")
+
+        status, canonical_list, _ = self.request("GET", "/api/student/review-requests", cookie=student_cookie)
+        self.assertEqual(status, 200, canonical_list)
+        canonical_item = next(item for item in canonical_list["requests"] if item["id"] == request_id)
+        self.assertEqual(canonical_item["runId"], "canonical-storage")
+
+        with runtime.connect() as database:
             database.execute("UPDATE review_requests SET run_json=? WHERE id=?", ('{"legacy":true}', request_id))
 
         status, listed, _ = self.request("GET", "/api/student/review-requests", cookie=student_cookie)
 
         self.assertEqual(status, 200, listed)
-        self.assertIn(request_id, {item["id"] for item in listed["requests"]})
+        legacy_item = next(item for item in listed["requests"] if item["id"] == request_id)
+        self.assertIsNone(legacy_item["runId"])
+        with runtime.connect() as database:
+            database.execute("UPDATE review_requests SET run_json=? WHERE id=?", ("{", request_id))
+        status, malformed_list, _ = self.request("GET", "/api/student/review-requests", cookie=student_cookie)
+        self.assertEqual(status, 200, malformed_list)
+        malformed_item = next(item for item in malformed_list["requests"] if item["id"] == request_id)
+        self.assertIsNone(malformed_item["runId"])
         with runtime.connect() as database:
             self.assertEqual(
                 database.execute("SELECT run_json FROM review_requests WHERE id=?", (request_id,)).fetchone()[0],
-                '{"legacy":true}',
+                "{",
             )
 
     def test_student_queues_single_task_for_owner_review(self):
@@ -530,9 +544,11 @@ class ApiFlowTest(unittest.TestCase):
         self.assertEqual(status, 200)
         queued = next(item for item in owner_queue["requests"] if item["id"] == request_id)
         self.assertEqual(queued["status"], "queued")
+        self.assertNotIn("runId", queued)
         status, history, _ = self.request("GET", "/api/student/review-requests", cookie=student_cookie)
         self.assertEqual(status, 200)
         queued_student_item = next(item for item in history["requests"] if item["id"] == request_id)
+        self.assertEqual(queued_student_item["runId"], "review-task-2")
         self.assertNotIn("total", queued_student_item)
         self.assertNotIn("maximum", queued_student_item)
 

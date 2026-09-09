@@ -5,6 +5,15 @@ import sqlite3
 import time
 
 
+def _run_id(run_json: str) -> str | None:
+    try:
+        run = json.loads(run_json)
+    except (TypeError, ValueError):
+        return None
+    value = run.get("id") if isinstance(run, dict) else None
+    return value if isinstance(value, str) and 1 <= len(value) <= 120 else None
+
+
 def _request_items(database: sqlite3.Connection, request_id: int, *, include_material: bool, now: int) -> list[dict]:
     rows = database.execute(
         """SELECT id,task_number,task_snapshot_json,scores_json,total_score,max_score
@@ -79,12 +88,17 @@ def _request_payload(
 
 def student_review_requests(database: sqlite3.Connection, student_id: int) -> list[dict]:
     rows = database.execute(
-        """SELECT id,student_id,kind,status,variant_id,submitted_at,reviewed_at
+        """SELECT id,student_id,kind,status,variant_id,run_json,submitted_at,reviewed_at
            FROM review_requests WHERE student_id=? ORDER BY submitted_at DESC,id DESC""",
         (student_id,),
     ).fetchall()
     now = int(time.time())
-    return [_request_payload(database, row, teacher_view=False, include_material=False, now=now) for row in rows]
+    result = []
+    for row in rows:
+        payload = _request_payload(database, row, teacher_view=False, include_material=False, now=now)
+        payload["runId"] = _run_id(row["run_json"])
+        result.append(payload)
+    return result
 
 
 def teacher_review_requests(
