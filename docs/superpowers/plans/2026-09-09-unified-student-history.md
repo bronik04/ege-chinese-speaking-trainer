@@ -292,7 +292,7 @@ git commit -m "feat: render unified history cards"
 - Modify: `frontend/pages/variant-editor.html`
 - Create: `tests-e2e/history.spec.js`
 
-- [ ] **Step 1: Write a failing guest browser test**
+- [x] **Step 1: Write a failing guest browser test**
 
 Seed `egeChineseProgressV2` with one completed local run, intercept protected history endpoints, and navigate to `/history.html`. Assert:
 
@@ -307,7 +307,7 @@ expect(protectedRequests).toEqual([]);
 
 Also assert that each public page has an `История` navigation link and that the history page marks it with `aria-current="page"`.
 
-- [ ] **Step 2: Run the guest test and confirm the red result**
+- [x] **Step 2: Run the guest test and confirm the red result**
 
 Run:
 
@@ -317,7 +317,7 @@ npx playwright test tests-e2e/history.spec.js --grep "guest"
 
 Expected: `/history.html` returns 404.
 
-- [ ] **Step 3: Add the page shell and static route**
+- [x] **Step 3: Add the page shell and static route**
 
 Add `"history.html"` to the `pages` set in `src/trainer/main.py`.
 
@@ -337,7 +337,7 @@ Build `history.html` with existing fonts/base styles, `history.css`, the common 
 
 Every public header receives `<a class="header-link" href="history.html">История</a>` in the same position between `Варианты` and `Справочник`.
 
-- [ ] **Step 4: Implement the guest-only first slice of `history-page.js`**
+- [x] **Step 4: Implement the guest-only first slice of `history-page.js`**
 
 On initialization:
 
@@ -350,7 +350,7 @@ On initialization:
 
 Import `../shared/site-shell.js` for the common account label/year behavior.
 
-- [ ] **Step 5: Style the page and accessible controls**
+- [x] **Step 5: Style the page and accessible controls**
 
 Use a single-column timeline; cards must not overflow at 360px. Ensure:
 
@@ -363,7 +363,7 @@ Use a single-column timeline; cards must not overflow at 360px. Ensure:
 
 Use the existing paper, hairline, crimson, gold, radius, and shadow variables. Do not copy modal-specific styles.
 
-- [ ] **Step 6: Run guest tests and static-route integration tests**
+- [x] **Step 6: Run guest tests and static-route integration tests**
 
 Run:
 
@@ -374,7 +374,7 @@ npx playwright test tests-e2e/history.spec.js --grep "guest"
 
 Expected: guest history and registered static-page behavior pass.
 
-- [ ] **Step 7: Commit the guest page**
+- [x] **Step 7: Commit the guest page**
 
 ```bash
 git add src/trainer/main.py frontend/pages frontend/styles/pages/history.css frontend/js/history/history-page.js tests-e2e/history.spec.js

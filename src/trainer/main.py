@@ -199,6 +199,7 @@ async def static_files(path: str):
     pages = {
         "index.html",
         "variants.html",
+        "history.html",
         "variant-editor.html",
         "reference.html",
     }
