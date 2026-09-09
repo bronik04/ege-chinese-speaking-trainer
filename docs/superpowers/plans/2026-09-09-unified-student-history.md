@@ -207,7 +207,7 @@ git commit -m "feat: aggregate student history by run"
 - Create: `frontend/js/history/history-view.js`
 - Create: `tests-js/unit/history-view.test.js`
 
-- [ ] **Step 1: Write failing view tests**
+- [x] **Step 1: Write failing view tests**
 
 Test these exports:
 
@@ -229,7 +229,7 @@ Assertions must cover:
 - escaping hostile variant names and recording labels;
 - no literal `<script>` or attribute injection.
 
-- [ ] **Step 2: Run the new view test and confirm the red result**
+- [x] **Step 2: Run the new view test and confirm the red result**
 
 Run:
 
@@ -239,7 +239,7 @@ node --test tests-js/unit/history-view.test.js
 
 Expected: module-not-found failure.
 
-- [ ] **Step 3: Implement view helpers with existing shared utilities**
+- [x] **Step 3: Implement view helpers with existing shared utilities**
 
 Import `escapeHtml` and `formatHistoryDate` from `shared/progress.js`, and `personalRecordingStreamUrl` from `shared/api.js`. Permit review audio URLs only when they match `^/api/review-recordings/\\d+$`; otherwise omit the audio control.
 
@@ -258,7 +258,7 @@ escaped summary, recordings, and reviews fragments:
 
 Use `data-discard-review-request="<numeric id>"` for the existing deletion action. Empty arrays produce calm explanatory text, not empty containers.
 
-- [ ] **Step 4: Run focused tests and lint**
+- [x] **Step 4: Run focused tests and lint**
 
 Run:
 
@@ -269,7 +269,7 @@ npx eslint frontend/js/history/history-view.js tests-js/unit/history-view.test.j
 
 Expected: both pass.
 
-- [ ] **Step 5: Commit the view layer**
+- [x] **Step 5: Commit the view layer**
 
 ```bash
 git add frontend/js/history/history-view.js tests-js/unit/history-view.test.js
