@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Журнал действий и управление безопасностью аккаунта тренажёра устной части ЕГЭ по китайскому языку.">
+  <meta name="theme-color" content="#5C0E0E">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <title>Безопасность аккаунта · 口试</title>
+  <link rel="preload" href="/assets/fonts/cormorant-garamond-cyrillic-400-600-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/assets/fonts/pt-serif-cyrillic-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/styles/fonts.css">
+  <link rel="stylesheet" href="/styles/base.css">
+  <link rel="stylesheet" href="/styles/pages/security.css">
+</head>
+<body>
+  <div class="page-motif" aria-hidden="true" lang="zh">安</div>
+  <header class="site-header"><a class="brand" href="index.html" aria-label="На главную"><span class="brand-mark" lang="zh">口试</span><span class="brand-divider" aria-hidden="true"></span><span class="brand-name"><b>Устная часть</b><small>китайский язык</small></span></a><nav class="site-nav" aria-label="Разделы сайта"><a class="header-link" href="index.html">Тренажёр</a><a class="header-link" href="variants.html">Варианты</a><a class="header-link" href="history.html">История</a><a class="header-link" href="reference.html">Справочник</a></nav><div class="header-actions"><a class="account-btn global-account" data-account-link href="index.html?account=1"><span class="account-dot"></span><span data-account-label>Войти</span></a></div></header>
+
+  <main class="app-shell security-shell">
+    <header class="security-hero">
+      <p class="eyebrow">Личный кабинет</p>
+      <h1>Безопасность аккаунта</h1>
+      <p id="securityStatus" aria-live="polite">Проверяем данные аккаунта…</p>
+    </header>
+
+    <section class="security-state hidden" id="securityGuest">
+      <h2>Сначала войдите в аккаунт</h2>
+      <p>Журнал действий и управление аккаунтом доступны после входа.</p>
+      <a class="primary-btn" href="index.html?account=1">Войти</a>
+    </section>
+
+    <div class="hidden" id="securityAccount">
+      <section class="security-card security-identity">
+        <p class="mini-heading">Текущий аккаунт</p>
+        <b id="securityAccountName"></b>
+        <p id="securityAccountEmail"></p>
+      </section>
+      <section class="security-card security-audit">
+        <p class="eyebrow">Журнал действий</p>
+        <h2>Последние события</h2>
+        <p id="auditStatus" aria-live="polite">Загружаем журнал…</p>
+        <div class="audit-list" id="auditList"></div>
+        <button class="secondary-btn hidden" id="retryAuditBtn" type="button">Повторить загрузку</button>
+      </section>
+      <section class="security-card security-danger">
+        <p class="eyebrow">Опасная зона</p>
+        <h2>Удаление аккаунта</h2>
+        <p>Будут удалены прогресс, заявки на разбор, сохранённые аудиозаписи и загруженные материалы. Отменить это действие нельзя.</p>
+        <button class="danger-link" id="showDeleteAccountBtn" type="button" aria-expanded="false" aria-controls="deleteAccountForm">Удалить аккаунт</button>
+        <form class="delete-account-form hidden" id="deleteAccountForm">
+          <label>Текущий пароль<input id="deleteAccountPassword" type="password" autocomplete="current-password" minlength="8" maxlength="128" required></label>
+          <button class="danger-btn" type="submit">Удалить аккаунт навсегда</button>
+        </form>
+        <p class="auth-message" id="deleteAccountMessage" aria-live="polite"></p>
+      </section>
+    </div>
+
+    <section class="security-state hidden" id="securityDeleted" tabindex="-1">
+      <p class="eyebrow">Готово</p>
+      <h2>Аккаунт удалён</h2>
+      <p>Связанные данные поставлены в очередь на безопасное удаление.</p>
+      <a class="primary-btn" href="index.html">Вернуться к тренажёру</a>
+    </section>
+  </main>
+
+  <footer class="site-footer"><span>Подготовка к устной части ЕГЭ по китайскому языку</span><span class="footer-author">Николай Бровкин · преподаватель китайского языка</span></footer>
+  <script type="module" src="/js/account/account-security-page.js"></script>
+</body>
+</html>

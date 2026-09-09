@@ -56,8 +56,6 @@ export function createAccountController(ctx) {
     submitPasswordReset: security.submitPasswordReset,
     cancelPasswordReset: security.cancelPasswordReset,
     sendVerificationEmail: security.sendVerificationEmail,
-    loadAuditLog: security.loadAuditLog,
-    deleteAccount: security.deleteAccount,
     handleAccountLinks: security.handleAccountLinks,
   };
 }

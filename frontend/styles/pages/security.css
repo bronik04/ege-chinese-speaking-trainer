@@ -1,0 +1,40 @@
+.security-shell { max-width: 1120px; padding: 52px 0 72px; }
+.security-hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, .55fr); align-items: end; gap: 36px; margin-bottom: 34px; }
+.security-hero h1 { color: var(--ink); font-size: clamp(48px, 6vw, 82px); }
+.security-hero > p:last-child { margin: 0; padding-left: 24px; border-left: 2px solid var(--gold); color: var(--ink-soft); }
+#securityAccount { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, .72fr); gap: 18px; align-items: start; }
+.security-card, .security-state { border: 1px solid var(--hairline); border-radius: var(--radius-lg); background: #fff; box-shadow: var(--card-shadow); }
+.security-card { padding: 24px; }
+.security-card h2, .security-state h2 { margin: 0; color: var(--ink); font: 500 32px/1.1 var(--font-display); }
+.security-card > p:not(.eyebrow, .mini-heading, .auth-message), .security-state > p { color: var(--ink-soft); }
+.security-identity { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 8px 24px; background: var(--paper); }
+.security-identity .mini-heading { grid-column: 1 / -1; }
+.security-identity b { overflow-wrap: anywhere; color: var(--crimson-deep); font: 500 28px/1.1 var(--font-display); }
+.security-identity p { margin: 0; color: var(--ink-soft); }
+.security-audit { min-width: 0; }
+.security-audit #auditStatus { margin: 9px 0 17px; color: var(--ink-soft); font-size: 14px; }
+.security-audit .audit-list { margin-bottom: 16px; }
+.security-audit .audit-item { grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 8px 18px; padding: 13px 0; }
+.security-audit .audit-item b { font-size: 14px; }
+.security-audit .audit-item span { text-align: right; }
+.security-danger { border-color: #e3c7c1; background: #fff5f2; }
+.security-danger .danger-link { min-height: 44px; margin-top: 8px; padding: 10px 14px; border: 1px solid rgba(139, 26, 26, .28); border-radius: var(--radius-pill); background: #fff5f2; color: #9d1717; font-weight: 700; }
+.security-danger .danger-link:hover { background: #f3d7d0; }
+.security-danger .delete-account-form { margin-top: 16px; border-radius: var(--radius-md); background: #fff; }
+.security-danger .delete-account-form label { font: 400 14px/1.2 var(--font-body); text-transform: none; letter-spacing: normal; }
+.security-danger .delete-account-form input { min-height: 48px; border-radius: var(--radius-sm); }
+.security-danger .danger-btn { min-height: 46px; border-radius: var(--radius-pill); }
+.security-state { max-width: 720px; padding: 32px; }
+.security-state .primary-btn { display: inline-flex; margin-top: 12px; text-decoration: none; }
+
+@media (max-width: 760px) {
+  .security-shell { padding: 32px 0 55px; }
+  .security-hero { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  .security-hero > p:last-child { padding: 0; border-left: 0; }
+  #securityAccount { grid-template-columns: minmax(0, 1fr); }
+  .security-identity { grid-column: auto; grid-template-columns: minmax(0, 1fr); }
+  .security-identity .mini-heading { grid-column: auto; }
+  .security-audit .audit-item { grid-template-columns: minmax(0, 1fr); }
+  .security-audit .audit-item span { text-align: left; }
+  .security-card, .security-state { padding: 20px; }
+}

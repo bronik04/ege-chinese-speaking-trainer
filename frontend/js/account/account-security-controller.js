@@ -1,5 +1,4 @@
 import { api } from "../shared/api.js";
-import { auditMarkup } from "./account-security.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -56,48 +55,13 @@ export function createAccountSecurityController(ctx) {
     $("sendVerificationBtn").disabled = true;
     try {
       const payload = await api("/api/auth/email/request", { method: "POST", body: "{}" });
-      $("accountSecurityMessage").textContent = payload.delivery === "outbox"
+      $("emailVerificationMessage").textContent = payload.delivery === "outbox"
         ? "Локальная ссылка сохранена в var/outbox.log"
         : "Письмо отправлено. Проверьте почту.";
     } catch (error) {
-      $("accountSecurityMessage").textContent = error.message;
+      $("emailVerificationMessage").textContent = error.message;
     } finally {
       $("sendVerificationBtn").disabled = false;
-    }
-  }
-
-  async function loadAuditLog() {
-    const list = $("auditList");
-    if (!list.classList.contains("hidden")) {
-      list.classList.add("hidden");
-      $("showAuditBtn").textContent = "Показать журнал действий";
-      return;
-    }
-    try {
-      const payload = await api("/api/account/audit");
-      list.innerHTML = auditMarkup(payload.events);
-      list.classList.remove("hidden");
-      $("showAuditBtn").textContent = "Скрыть журнал действий";
-    } catch (error) {
-      $("accountSecurityMessage").textContent = error.message;
-    }
-  }
-
-  async function deleteAccount(event) {
-    event.preventDefault();
-    if (!confirm("Удалить аккаунт, прогресс и все связанные аудиозаписи без возможности восстановления?")) return;
-    try {
-      await api("/api/account", {
-        method: "DELETE", body: JSON.stringify({ password: $("deleteAccountPassword").value })
-      });
-      localStorage.removeItem(ctx.getProgressStorageKey());
-      auth.setUser(null);
-      ctx.switchProgressScope(null);
-      auth.renderAuth();
-      auth.closeModal($("authModal"));
-      toast("Аккаунт и связанные данные удалены");
-    } catch (error) {
-      $("accountSecurityMessage").textContent = error.message;
     }
   }
 
@@ -129,8 +93,6 @@ export function createAccountSecurityController(ctx) {
     submitPasswordReset,
     cancelPasswordReset,
     sendVerificationEmail,
-    loadAuditLog,
-    deleteAccount,
     handleAccountLinks,
   };
 }

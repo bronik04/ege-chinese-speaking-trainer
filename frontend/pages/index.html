@@ -136,6 +136,7 @@
         <div class="account-security-card hidden" id="emailVerificationPanel">
           <div><b>Email не подтверждён</b><span>Подтвердите адрес, чтобы защитить восстановление доступа.</span></div>
           <button class="secondary-btn" id="sendVerificationBtn" type="button">Отправить письмо</button>
+          <p class="auth-message" id="emailVerificationMessage" aria-live="polite"></p>
         </div>
         <div id="studentAccountTools">
           <div class="account-stat"><b id="accountRuns">0</b><span id="accountRunsLabel">завершённых тренировок</span></div>
@@ -143,20 +144,9 @@
         </div>
         <div class="account-actions">
           <button class="primary-btn wide hidden" id="teacherCabinetBtn" type="button">Открыть кабинет преподавателя</button>
+          <a class="secondary-btn account-security-link" id="accountSecurityLink" href="security.html">Безопасность аккаунта</a>
           <button class="secondary-btn" id="logoutBtn" type="button">Выйти из аккаунта</button>
         </div>
-        <section class="account-security-section">
-          <p class="mini-heading">Безопасность аккаунта</p>
-          <button class="auth-link" id="showAuditBtn" type="button">Показать журнал действий</button>
-          <div class="audit-list hidden" id="auditList"></div>
-          <button class="auth-link danger-link" id="showDeleteAccountBtn" type="button">Удалить аккаунт</button>
-          <form class="delete-account-form hidden" id="deleteAccountForm">
-            <p>Будут удалены прогресс, заявки на разбор, сохранённые аудиозаписи и загруженные материалы. Отменить это действие нельзя.</p>
-            <label>Текущий пароль<input id="deleteAccountPassword" type="password" autocomplete="current-password" minlength="8" maxlength="128" required></label>
-            <button class="danger-btn" type="submit">Удалить аккаунт навсегда</button>
-          </form>
-          <p class="auth-message" id="accountSecurityMessage" aria-live="polite"></p>
-        </section>
       </div>
     </section>
   </div>

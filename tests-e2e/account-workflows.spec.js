@@ -93,6 +93,62 @@ test("student resets a password through the emailed token", async ({ browser }) 
   await login.close();
 });
 
+test("student account links to a separate security page", async ({ page }) => {
+  const email = `security-page-${Date.now()}@example.test`;
+  await register(page.context(), email, "Security Student");
+
+  await page.goto("/");
+  await page.locator("#authButton").click();
+  await expect(page.locator("#emailVerificationPanel")).toBeVisible();
+  await expect(page.locator("#accountSecurityLink")).toHaveAttribute("href", "security.html");
+  await expect(page.locator("#showAuditBtn, #showDeleteAccountBtn, #deleteAccountForm")).toHaveCount(0);
+
+  await page.locator("#accountSecurityLink").click();
+  await expect(page).toHaveURL(/\/security\.html$/);
+  await expect(page.getByRole("heading", { name: "Безопасность аккаунта" })).toBeVisible();
+  await expect(page.locator("#securityAccountEmail")).toHaveText(email);
+  await expect(page.locator("#auditList")).toContainText("Аккаунт создан");
+});
+
+test("unverified student requests verification from the account notice", async ({ page }) => {
+  const email = `verification-notice-${Date.now()}@example.test`;
+  await register(page.context(), email);
+
+  await page.goto("/");
+  await page.locator("#authButton").click();
+  await page.locator("#sendVerificationBtn").click();
+
+  await expect(page.locator("#emailVerificationMessage")).toHaveText("Локальная ссылка сохранена в var/outbox.log");
+});
+
+test("student deletes the account from the security page", async ({ page }) => {
+  const email = `security-delete-${Date.now()}@example.test`;
+  await register(page.context(), email);
+
+  await page.goto("/security.html");
+  await expect(page.locator("#deleteAccountForm")).toBeHidden();
+  await page.locator("#showDeleteAccountBtn").click();
+  await expect(page.locator("#deleteAccountForm")).toBeVisible();
+  await page.locator("#deleteAccountPassword").fill("original123");
+  page.once("dialog", dialog => dialog.accept());
+  await page.locator("#deleteAccountForm").getByRole("button", { name: "Удалить аккаунт навсегда" }).click();
+
+  await expect(page.getByRole("heading", { name: "Аккаунт удалён" })).toBeVisible();
+  await expect(page.locator("#securityAccount")).toBeHidden();
+  await expect(page.locator("#securityDeleted")).toBeFocused();
+  await expect(page.locator("[data-account-label]")).toHaveText("Войти");
+});
+
+test("security page visually separates routine and destructive controls", async ({ page }) => {
+  await register(page.context(), `security-layout-${Date.now()}@example.test`);
+  await page.goto("/security.html");
+
+  await expect(page.locator("#securityAccount")).toHaveCSS("display", "grid");
+  await expect(page.locator("#showDeleteAccountBtn")).toHaveCSS("background-color", "rgb(255, 245, 242)");
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
+});
+
 test("unverified owner cannot open privileged APIs", async ({ browser }) => {
   const teacher = await browser.newContext({ baseURL });
   await registerOwner(teacher, { confirm: false });
@@ -143,11 +199,7 @@ test("student and owner cabinets have no assignment controls", async ({ browser 
   await studentPage.locator("#authButton").click();
   await expect(studentPage.locator("#logoutBtn")).toHaveCSS("background-color", "rgb(244, 236, 219)");
   await expect(studentPage.locator("#logoutBtn")).toHaveCSS("box-shadow", "none");
-  const deleteAccountLink = studentPage.locator("#showDeleteAccountBtn");
-  await expect(deleteAccountLink).toHaveCSS("color", "rgb(157, 23, 23)");
-  await expect(deleteAccountLink).toHaveCSS("background-color", "rgb(255, 245, 242)");
-  await deleteAccountLink.hover();
-  await expect(deleteAccountLink).toHaveCSS("background-color", "rgb(243, 215, 208)");
+  await expect(studentPage.locator("#accountSecurityLink")).toBeVisible();
   await expect(teacherPage.locator("#teacherMaterialEditorLink")).toBeVisible();
   await expect(teacherPage.locator("#teacherMaterialEditorLink")).toHaveAttribute("href", "variant-editor.html");
   await expect(teacherPage.locator("#teacherModal .teacher-dialog")).toHaveCSS("border-radius", "16px");

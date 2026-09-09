@@ -283,7 +283,7 @@ account = createAccountController({
 const {
   initAuth, setAuthMode, openModal, closeModal, submitAuth, logout, requestPasswordReset,
   submitPasswordReset, cancelPasswordReset, sendVerificationEmail,
-  loadAuditLog, deleteAccount, handleAccountLinks,
+  handleAccountLinks,
   saveReviewScores, showStudentReviewHistory, loadTeacherReviewRequests,
 } = account;
 
@@ -304,9 +304,6 @@ $("forgotPasswordBtn").addEventListener("click", requestPasswordReset);
 $("passwordResetForm").addEventListener("submit", submitPasswordReset);
 $("cancelPasswordResetBtn").addEventListener("click", cancelPasswordReset);
 $("sendVerificationBtn").addEventListener("click", sendVerificationEmail);
-$("showAuditBtn").addEventListener("click", loadAuditLog);
-$("showDeleteAccountBtn").addEventListener("click", () => $("deleteAccountForm").classList.toggle("hidden"));
-$("deleteAccountForm").addEventListener("submit", deleteAccount);
 $("teacherReviewRequests").addEventListener("submit", event => {
   const form = event.target.closest("[data-review-request]");
   if (!form) return;

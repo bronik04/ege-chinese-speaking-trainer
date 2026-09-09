@@ -274,11 +274,11 @@ h1 em { color: var(--crimson); font-weight: inherit; }
 .role-badge { display: inline-block; margin-top: 12px; padding: 5px 8px; background: var(--gold-pale); color: var(--crimson-deep); font: 700 9px/1 var(--font-utility); text-transform: uppercase; letter-spacing: .12em; }
 .account-actions { display: grid; gap: 12px; margin-top: 24px; justify-items: start; }
 .account-actions .wide { width: 100%; }
+.account-security-link { display: inline-flex; align-items: center; text-decoration: none; }
 .account-security-card { display: grid; gap: 12px; margin: 18px 0; padding: 14px; border: 1px solid var(--gold); background: var(--gold-pale); }
 .account-security-card div { display: grid; gap: 3px; }
 .account-security-card span, .delete-account-form p { color: var(--ink-soft); font-size: 12px; }
 .account-security-card .secondary-btn { justify-self: start; }
-.account-security-section { display: grid; justify-items: start; gap: 9px; margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--line); }
 .danger-link { color: #9d1717; }
 .delete-account-form { width: 100%; display: grid; gap: 12px; margin-top: 6px; padding: 15px; border: 1px solid #bd5757; background: #fff5f2; }
 .danger-btn { border: 1px solid #8b1a1a; background: #8b1a1a; color: white; padding: 12px 15px; font-weight: 800; }
@@ -548,7 +548,6 @@ body.modal-open { overflow: hidden; }
 #authModal .account-stat b { color: var(--crimson-deep); }
 #authModal .account-progress-card { padding: 17px; }
 #authModal .account-progress-card .text-btn { margin: 0; color: var(--crimson-deep); font: italic 400 14px/1 var(--font-body); text-decoration: underline; }
-#authModal .account-security-section { border-top-color: var(--hairline); }
 
 @media (max-width: 700px) {
   #authModal { padding: 16px; }
