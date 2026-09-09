@@ -104,7 +104,7 @@ git commit -m "feat: link student reviews to training runs"
 - Create: `frontend/js/history/history-model.js`
 - Create: `tests-js/unit/history-model.test.js`
 
-- [ ] **Step 1: Write failing model tests for all grouping rules**
+- [x] **Step 1: Write failing model tests for all grouping rules**
 
 Create fixtures containing:
 
@@ -124,12 +124,12 @@ assert.equal(entries.find(entry => entry.runId === "run-1").recordings.length, 2
 assert.equal(entries.find(entry => entry.runId === "run-1").reviewRequests.length, 2);
 assert.equal(entries.find(entry => entry.runId === "run-1").latestReview.id, 12);
 assert.equal(entries.filter(entry => entry.key.startsWith("review:")).length, 2);
-assert.equal(entries.find(entry => entry.key === "recording:41").recovered, true);
+assert.equal(entries.find(entry => entry.key === "run:orphan-audio").recovered, true);
 ```
 
 Assert that caller-owned arrays and objects are not mutated.
 
-- [ ] **Step 2: Run the new unit test and confirm the red result**
+- [x] **Step 2: Run the new unit test and confirm the red result**
 
 Run:
 
@@ -139,7 +139,7 @@ node --test tests-js/unit/history-model.test.js
 
 Expected: module-not-found failure.
 
-- [ ] **Step 3: Implement `buildHistoryTimeline`**
+- [x] **Step 3: Implement `buildHistoryTimeline`**
 
 Use one `Map` and these stable keys:
 
@@ -180,7 +180,7 @@ Rules:
 
 Normalize seconds from recording/review APIs and ISO strings from progress into comparable milliseconds. Invalid dates contribute `0`.
 
-- [ ] **Step 4: Run model tests and lint**
+- [x] **Step 4: Run model tests and lint**
 
 Run:
 
@@ -191,7 +191,7 @@ npx eslint frontend/js/history/history-model.js tests-js/unit/history-model.test
 
 Expected: both commands pass.
 
-- [ ] **Step 5: Commit the model**
+- [x] **Step 5: Commit the model**
 
 ```bash
 git add frontend/js/history/history-model.js tests-js/unit/history-model.test.js
