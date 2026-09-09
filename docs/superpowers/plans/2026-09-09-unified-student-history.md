@@ -630,11 +630,11 @@ git commit -m "test: cover accessible student history"
 - Modify: `README.md`
 - Modify: `docs/superpowers/plans/2026-09-09-unified-student-history.md`
 
-- [ ] **Step 1: Update the user-facing documentation**
+- [x] **Step 1: Update the user-facing documentation**
 
 Describe `История` as the single page for attempts, personal audio with expiry, and teacher reviews. State that guests see browser-local attempts, signed-in students receive synchronized history, and recordings are still deleted automatically according to the existing retention rule. Remove instructions that point to the old modal, separate archive, or `Мои разборы` block.
 
-- [ ] **Step 2: Audit for stale implementation references**
+- [x] **Step 2: Audit for stale implementation references**
 
 Run:
 
@@ -644,7 +644,7 @@ rg -n "progressModal|openProgressBtn|clearHistoryBtn|studentReviewRequestsPanel|
 
 Expected: no stale production references; any test occurrence is an intentional absence assertion.
 
-- [ ] **Step 3: Run JavaScript and Python focused checks**
+- [x] **Step 3: Run JavaScript and Python focused checks**
 
 Run:
 
@@ -655,7 +655,7 @@ npm test
 
 Expected: all pass.
 
-- [ ] **Step 4: Run mandatory project verification**
+- [x] **Step 4: Run mandatory project verification**
 
 Run:
 
@@ -666,7 +666,7 @@ make test-e2e
 
 Expected: both exit 0 with no skipped history coverage.
 
-- [ ] **Step 5: Review the final diff against the approved spec**
+- [x] **Step 5: Review the final diff against the approved spec**
 
 Run:
 
@@ -679,7 +679,7 @@ git diff main...HEAD -- src/trainer frontend tests tests-js tests-e2e README.md
 
 Confirm every approved behavior is represented, teacher behavior is untouched, no secrets/runtime data are staged, and `.superpowers/` remains untracked.
 
-- [ ] **Step 6: Mark the plan complete and commit documentation**
+- [x] **Step 6: Mark the plan complete and commit documentation**
 
 Check every completed box in this plan, then commit:
 
@@ -688,6 +688,6 @@ git add README.md docs/superpowers/plans/2026-09-09-unified-student-history.md
 git commit -m "docs: describe unified student history"
 ```
 
-- [ ] **Step 7: Prepare the branch for local integration**
+- [x] **Step 7: Prepare the branch for local integration**
 
 Use `superpowers:requesting-code-review` for a self-review, then `superpowers:verification-before-completion`. Once the fresh checks are recorded, use `superpowers:finishing-a-development-branch` and present the local-merge option first, matching the established workflow.

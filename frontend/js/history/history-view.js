@@ -40,7 +40,7 @@ function recordingPosition(recording) {
     : `Задание ${recording.taskNumber}`;
 }
 
-function personalRecordingsMarkup(recordings) {
+function historyRecordingsMarkup(recordings) {
   if (!recordings.length) return '<p class="history-empty-part">Аудиозаписей для этой попытки нет.</p>';
   return recordings.map(recording => {
     const audio = safeNumericId(recording.id)
@@ -76,7 +76,7 @@ export function historyTimelineMarkup(entries) {
   if (!entries.length) {
     return '<p class="history-empty">Здесь появятся завершённые и прерванные тренировки.</p>';
   }
-  return entries.map(entry => `<details class="history-entry" data-history-key="${escapeHtml(entry.key)}"><summary class="history-entry-summary">${historySummaryMarkup(entry)}</summary><div class="history-entry-details"><section class="history-recordings"><h2>Аудиозаписи</h2>${personalRecordingsMarkup(entry.recordings)}</section><section class="history-reviews"><h2>Разбор преподавателя</h2>${reviewRequestsMarkup(entry.reviewRequests)}</section></div></details>`).join("");
+  return entries.map(entry => `<details class="history-entry" data-history-key="${escapeHtml(entry.key)}"><summary class="history-entry-summary">${historySummaryMarkup(entry)}</summary><div class="history-entry-details"><section class="history-recordings"><h2>Аудиозаписи</h2>${historyRecordingsMarkup(entry.recordings)}</section><section class="history-reviews"><h2>Разбор преподавателя</h2>${reviewRequestsMarkup(entry.reviewRequests)}</section></div></details>`).join("");
 }
 
 export function historyPageStateMarkup({ kind, message }) {
