@@ -591,11 +591,11 @@ git commit -m "refactor: remove fragmented student history views"
 - Modify: `frontend/styles/pages/history.css`
 - Modify: `tests/integration/test_asgi.py`
 
-- [ ] **Step 1: Add failing mobile and keyboard assertions**
+- [x] **Step 1: Add failing mobile and keyboard assertions**
 
 At a 360px viewport, assert `document.documentElement.scrollWidth <= document.documentElement.clientWidth`. Focus the first summary with the keyboard, press Enter, and assert the details opens. Check the computed short side of retry and discard buttons is at least 44px.
 
-- [ ] **Step 2: Add navigation and cache-contract assertions**
+- [x] **Step 2: Add navigation and cache-contract assertions**
 
 Extend shared-header coverage to include `История` on all public pages. Extend
 `FastApiSmokeTest.test_health_static_and_private_data_boundary` to request
@@ -603,7 +603,7 @@ Extend shared-header coverage to include `История` on all public pages. E
 For each response, assert status 200, `Cache-Control == "no-cache"`, and
 `X-Content-Type-Options == "nosniff"`.
 
-- [ ] **Step 3: Run focused tests and make minimal fixes**
+- [x] **Step 3: Run focused tests and make minimal fixes**
 
 Run:
 
@@ -614,7 +614,7 @@ npx playwright test tests-e2e/history.spec.js tests-e2e/reference.spec.js
 
 If a test fails, adjust only `history.css` or the page semantics needed by that assertion; do not add JavaScript accordion behavior.
 
-- [ ] **Step 4: Commit quality coverage**
+- [x] **Step 4: Commit quality coverage**
 
 ```bash
 git add frontend/styles/pages/history.css tests-e2e/history.spec.js tests-e2e/reference.spec.js tests/integration/test_asgi.py

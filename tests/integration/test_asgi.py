@@ -44,6 +44,15 @@ class FastApiSmokeTest(unittest.TestCase):
         self.assertEqual(self.client.get("/styles/pages/variant-editor.css").status_code, 200)
         self.assertEqual(self.client.get("/reference.html").status_code, 200)
         self.assertEqual(self.client.get("/styles/pages/reference.css").status_code, 200)
+        for path in (
+            "/history.html",
+            "/js/history/history-page.js",
+            "/styles/pages/history.css",
+        ):
+            response = self.client.get(path)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.headers["Cache-Control"], "no-cache")
+            self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
         self.assertEqual(self.client.get("/about.html").status_code, 404)
         self.assertEqual(self.client.get("/styles/pages/about.css").status_code, 404)
         self.assertEqual(self.client.get("/js/runner/app.js").status_code, 200)

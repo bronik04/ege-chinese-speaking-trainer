@@ -42,10 +42,11 @@ test("reference library filters phrases and switches exam tasks", async ({ page 
 });
 
 test("shared account, wordmark and footer are available across public pages", async ({ page }) => {
-  for (const path of ["/variants.html", "/reference.html", "/variant-editor.html"]) {
+  for (const path of ["/", "/variants.html", "/reference.html", "/variant-editor.html", "/history.html"]) {
     await page.goto(path);
     await expect(page.locator(".brand-mark")).toHaveText("口试");
     await expect(page.locator(".account-btn")).toBeVisible();
+    await expect(page.locator('.site-nav a[href="history.html"]')).toHaveText("История");
     await expect(page.locator(".site-footer")).toBeVisible();
     await expect(page.locator('a[href="about.html"]')).toHaveCount(0);
   }

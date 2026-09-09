@@ -186,3 +186,48 @@ test("a failed recording source leaves attempts and reviews visible until retry 
   await expect(page.locator('.history-audio-item audio[src="/api/personal-recordings/9"]')).toBeVisible();
   await expect(page.locator('[data-retry-source="recordings"]')).toHaveCount(0);
 });
+
+test("history fits a 360px viewport and supports keyboard and touch targets", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 800 });
+  await page.route("**/api/auth/me", route => route.fulfill({ json: { user: studentUser } }));
+  await page.route("**/api/progress", route => {
+    if (route.request().method() === "PUT") return route.fulfill({ json: { ok: true } });
+    return route.fulfill({ json: { progress: null, updatedAt: null } });
+  });
+  await page.route("**/api/personal-recordings", route => route.fulfill({
+    status: 503,
+    json: { message: "Архив временно недоступен" },
+  }));
+  await page.route("**/api/student/review-requests", route => route.fulfill({ json: { requests: [{
+    id: 42,
+    runId: "student-run",
+    variantId: "open-2026",
+    kind: "task",
+    status: "uploading",
+    tasks: [2],
+    submittedAt: null,
+    reviewedAt: null,
+    items: [],
+    assets: [],
+  }] } }));
+  await page.addInitScript(({ key, progress }) => localStorage.setItem(key, JSON.stringify(progress)), {
+    key: `egeChineseProgressV2:user:${studentUser.id}`,
+    progress: studentProgress,
+  });
+
+  await page.goto("/history.html");
+
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBeTruthy();
+  for (let index = 0; index < 12; index += 1) {
+    if (await page.evaluate(() => document.activeElement?.matches(".history-entry-summary"))) break;
+    await page.keyboard.press("Tab");
+  }
+  await expect(page.locator(".history-entry-summary")).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".history-entry")).toHaveAttribute("open", "");
+
+  for (const selector of ['[data-retry-source="recordings"]', "[data-discard-review-request]"]) {
+    const box = await page.locator(selector).boundingBox();
+    expect(Math.min(box?.width || 0, box?.height || 0), `${selector} should be at least 44px on its short side`).toBeGreaterThanOrEqual(44);
+  }
+});
