@@ -139,10 +139,10 @@ test("personal archive", async ({ browser }) => {
     await registerStudent(studentPage, stamp);
     await finishTask(studentPage, 2);
     await expect.poll(() => studentUploads).toBe(1);
-    await studentPage.locator("#authButton").click();
-    await studentPage.locator("#openProgressBtn").click();
-    await expect(studentPage.locator("#personalRecordingsList")).toContainText("Удалится");
-    await expect(studentPage.locator("#personalRecordingsList audio")).toHaveAttribute("src", /^\/api\/personal-recordings\/\d+$/);
+    await studentPage.goto("/history.html");
+    await studentPage.locator(".history-entry summary").click();
+    await expect(studentPage.locator(".history-audio-item")).toContainText("Удалится");
+    await expect(studentPage.locator(".history-audio-item audio")).toHaveAttribute("src", /^\/api\/personal-recordings\/\d+$/);
   } finally {
     await guest.close();
     await student.close();
@@ -213,8 +213,10 @@ test("student submits a complete attempt with every completed task", async ({ br
     await finishCompleteAttempt(page);
     await page.getByLabel("Всю попытку").check();
     await page.getByRole("button", { name: "Отправить всю попытку" }).click();
-    await expect(page.locator("#studentReviewRequestsList .review-request-card")).toHaveCount(1);
-    await expect(page.locator("#studentReviewRequestsList")).toContainText("Задания 1, 2, 3");
+    await page.goto("/history.html");
+    await page.locator(".history-entry summary").click();
+    await expect(page.locator(".history-review-item")).toHaveCount(1);
+    await expect(page.locator(".history-review-item")).toContainText("Задания 1, 2, 3");
   } finally {
     await student.close();
   }
@@ -319,9 +321,8 @@ test("owner scores queued review without groups, assignments, or comments", asyn
     await teacherPage.getByRole("button", { name: "Сохранить оценку" }).click();
     await expect(teacherPage.locator("#teacherReviewRequests")).toContainText("7/7");
 
-    await studentPage.reload();
-    await studentPage.locator("#authButton").click();
-    await expect(studentPage.locator("#studentReviewRequestsList")).toContainText("Разобрано: 7/7");
+    await studentPage.goto("/history.html");
+    await expect(studentPage.locator(".history-entry summary")).toContainText("Разобрано: 7/7");
     await expect(teacherPage.getByRole("button", { name: "Создать группу" })).toHaveCount(0);
     await expect(teacherPage.getByRole("button", { name: "Назначить" })).toHaveCount(0);
     await expect(teacherPage.getByLabel("Комментарий")).toHaveCount(0);

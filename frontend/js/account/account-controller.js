@@ -11,15 +11,7 @@ export function createAccountController(ctx) {
   let personalRecordings;
 
   const refreshAccountData = async () => {
-    if (!auth.user) return;
-    if (auth.user.role === "teacher") {
-      await reviews.loadTeacherReviewRequests();
-    } else {
-      await Promise.all([
-        reviewRequests.loadStudentReviewRequests(),
-        personalRecordings.loadPersonalRecordings(),
-      ]);
-    }
+    if (auth.user?.role === "teacher") await reviews.loadTeacherReviewRequests();
   };
 
   const resetAccountViews = () => {
@@ -53,13 +45,10 @@ export function createAccountController(ctx) {
     pushProgress: auth.pushProgress,
     syncProgress: auth.syncProgress,
     refreshAccountData,
-    loadStudentReviewRequests: reviewRequests.loadStudentReviewRequests,
     submitReviewRequest: reviewRequests.submitReviewRequest,
-    discardUploadingReviewRequest: reviewRequests.discardUploadingReviewRequest,
     clearPendingReviewRequest: reviewRequests.clearPendingReviewRequest,
     archiveCompletedRun: personalRecordings.archiveCompletedRun,
     retryArchive: personalRecordings.retryArchive,
-    loadPersonalRecordings: personalRecordings.loadPersonalRecordings,
     loadTeacherReviewRequests: reviews.loadTeacherReviewRequests,
     showStudentReviewHistory: reviews.showStudentReviewHistory,
     saveReviewScores: reviews.saveReviewScores,

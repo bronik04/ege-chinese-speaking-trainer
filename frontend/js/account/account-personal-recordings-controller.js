@@ -1,20 +1,4 @@
-import { listPersonalRecordings, personalRecordingStreamUrl, uploadPersonalRecording } from "../shared/api.js";
-import { escapeHtml, formatHistoryDate } from "../shared/progress.js";
-
-const $ = (id) => document.getElementById(id);
-
-export function personalRecordingsMarkup(recordings) {
-  if (!recordings.length) return '<p class="history-empty">Сохранённых аудиозаписей пока нет.</p>';
-  return recordings.map(recording => {
-    const id = Number(recording.id);
-    const variant = escapeHtml(recording.variantId || "Вариант");
-    const label = escapeHtml(recording.label || "Аудиозапись");
-    const position = recording.taskNumber === 1 && recording.questionNumber
-      ? `задание ${recording.taskNumber}, вопрос ${recording.questionNumber}`
-      : `задание ${recording.taskNumber}`;
-    return `<article class="personal-recording-item"><div><b>${label}</b><span>${variant} · ${escapeHtml(position)}</span><small>Удалится ${escapeHtml(formatHistoryDate(recording.expiresAt * 1000))}</small></div><audio controls src="${personalRecordingStreamUrl(id)}"></audio></article>`;
-  }).join("");
-}
+import { uploadPersonalRecording } from "../shared/api.js";
 
 export function createAccountPersonalRecordingsController(ctx) {
   const archives = new Map();
@@ -27,21 +11,6 @@ export function createAccountPersonalRecordingsController(ctx) {
   function reset() {
     generation += 1;
     archives.clear();
-    $("personalRecordingsList").innerHTML = "";
-  }
-
-  async function loadPersonalRecordings() {
-    const owner = ctx.getUser();
-    const requestGeneration = generation;
-    if (owner?.role !== "student") {
-      $("personalRecordingsList").innerHTML = "";
-      return [];
-    }
-    const payload = await listPersonalRecordings();
-    if (generation !== requestGeneration || ctx.getUser()?.id !== owner.id) return [];
-    const recordings = payload.recordings || [];
-    $("personalRecordingsList").innerHTML = personalRecordingsMarkup(recordings);
-    return recordings;
   }
 
   async function syncArchive(archive) {
@@ -59,8 +28,6 @@ export function createAccountPersonalRecordingsController(ctx) {
             else throw error;
           }
         }
-        if (!isCurrent(archive)) return false;
-        await loadPersonalRecordings();
         if (!isCurrent(archive)) return false;
         archives.delete(archive.run.id);
         return true;
@@ -97,5 +64,5 @@ export function createAccountPersonalRecordingsController(ctx) {
     );
   }
 
-  return { archiveCompletedRun, retryArchive, loadPersonalRecordings, reset };
+  return { archiveCompletedRun, retryArchive, reset };
 }

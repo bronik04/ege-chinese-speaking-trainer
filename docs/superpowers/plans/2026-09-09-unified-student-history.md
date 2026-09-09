@@ -506,7 +506,7 @@ git commit -m "feat: combine account history sources"
 - Modify: `tests-js/unit/views.test.js`
 - Modify: `tests-e2e/student-teacher.spec.js`
 
-- [ ] **Step 1: Change existing browser assertions to the new user journey**
+- [x] **Step 1: Change existing browser assertions to the new user journey**
 
 Update the personal archive test to follow the `История` link and inspect the corresponding expanded `.history-entry`. Move student review-list assertions from the home panel to `/history.html`. Add regression assertions on `/`:
 
@@ -516,7 +516,7 @@ await expect(page.locator("#progressModal")).toHaveCount(0);
 await expect(page.getByRole("button", { name: /очистить историю/i })).toHaveCount(0);
 ```
 
-- [ ] **Step 2: Run the changed browser tests and confirm the red result**
+- [x] **Step 2: Run the changed browser tests and confirm the red result**
 
 Run:
 
@@ -526,7 +526,7 @@ npx playwright test tests-e2e/student-teacher.spec.js --grep "personal archive|r
 
 Expected: old home-only selectors and navigation fail.
 
-- [ ] **Step 3: Remove old HTML and replace the account action with a link**
+- [x] **Step 3: Remove old HTML and replace the account action with a link**
 
 Delete `studentReviewRequestsPanel` and the full `progressModal`. Replace `openProgressBtn` with:
 
@@ -536,11 +536,11 @@ Delete `studentReviewRequestsPanel` and the full `progressModal`. Replace `openP
 
 Do not add any history deletion control.
 
-- [ ] **Step 4: Remove old runner rendering and event handling**
+- [x] **Step 4: Remove old runner rendering and event handling**
 
 Delete `renderHistory`, `clearHistory`, progress-modal close/open/backdrop/Escape branches, student review-list click delegation, and unused `escapeHtml`/`formatHistoryDate` imports. `renderProgress` continues to update the account summary but no longer builds history markup.
 
-- [ ] **Step 5: Narrow the account controllers to their remaining responsibilities**
+- [x] **Step 5: Narrow the account controllers to their remaining responsibilities**
 
 - `account-controller.js`: for a student, `refreshAccountData` becomes a no-op; teacher refresh remains unchanged.
 - `account-review-requests-controller.js`: remove `studentReviewRequestsMarkup`, DOM reset/list loading, and uploading-discard export; after successful submission keep the result-screen message and toast without refreshing a removed list.
@@ -550,7 +550,7 @@ Delete `renderHistory`, `clearHistory`, progress-modal close/open/backdrop/Escap
 
 Keep archive generation/owner guards and the result-screen retry status unchanged.
 
-- [ ] **Step 6: Replace obsolete unit tests with responsibility tests**
+- [x] **Step 6: Replace obsolete unit tests with responsibility tests**
 
 Remove direct tests of the deleted student/list markup. Update personal archive tests so their fake document provides only nodes still used by the archive path, and verify:
 
@@ -558,11 +558,11 @@ Remove direct tests of the deleted student/list markup. Update personal archive 
 - delayed upload from a former user cannot trigger a success status for the new user;
 - a successful upload removes the pending archive without issuing a list GET.
 
-- [ ] **Step 7: Delete only obsolete modal/list CSS**
+- [x] **Step 7: Delete only obsolete modal/list CSS**
 
 Remove selectors dedicated to `#progressModal`, `.history-sections`, `.history-list`, `.history-item`, `.personal-recordings-history`, `.personal-recording-item`, and `.student-review-requests`. Do not remove shared teacher or account styles with mixed selectors until the selector is rewritten for the remaining elements.
 
-- [ ] **Step 8: Run focused unit and browser regressions**
+- [x] **Step 8: Run focused unit and browser regressions**
 
 Run:
 
@@ -573,7 +573,7 @@ npx playwright test tests-e2e/student-teacher.spec.js tests-e2e/history.spec.js
 
 Expected: archive/submission behavior remains green and old surfaces are absent.
 
-- [ ] **Step 9: Commit the removal**
+- [x] **Step 9: Commit the removal**
 
 ```bash
 git add frontend/pages/index.html frontend/js/runner/app.js frontend/js/account frontend/styles/base.css tests-js/unit/views.test.js tests-e2e/student-teacher.spec.js

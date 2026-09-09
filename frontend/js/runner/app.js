@@ -1,8 +1,5 @@
 import { createRunnerController } from "./runner-controller.js";
-import {
-  defaultProgress, escapeHtml, formatHistoryDate, loadLocalProgress,
-  progressStorageKeys,
-} from "../shared/progress.js";
+import { defaultProgress, formatHistoryDate, loadLocalProgress, progressStorageKeys } from "../shared/progress.js";
 import { shortTime } from "./task-view.js";
 import { plural, pluralize } from "../shared/plural.js";
 import { createAccountController } from "../account/account-controller.js";
@@ -90,20 +87,6 @@ function renderProgress() {
     : latest ? `Последняя: ${formatHistoryDate(latest.completedAt || latest.startedAt)}` : "Сохраняется в этом браузере";
   $("accountRuns").textContent = completed.length;
   $("accountRunsLabel").textContent = plural(completed.length, "завершённая тренировка", "завершённые тренировки", "завершённых тренировок");
-  renderHistory();
-}
-
-function renderHistory() {
-  if (!progress.runs.length) {
-    $("historyList").innerHTML = '<p class="history-empty">Здесь появятся завершённые и прерванные тренировки.</p>';
-    return;
-  }
-  $("historyList").innerHTML = progress.runs.map(run => {
-    const status = run.status === "completed" ? "Завершено" : "Прервано";
-    const taskText = run.mode === "exam" ? "Полный экзамен" : `Задание ${run.tasks?.[0] || ""}`;
-    const variantName = escapeHtml(run.variantLabel || run.variantId || "Вариант");
-    return `<article class="history-item"><div class="history-copy"><b>${variantName}</b><span>${escapeHtml(taskText)} · ${status}</span></div><time>${escapeHtml(formatHistoryDate(run.completedAt || run.startedAt))}</time></article>`;
-  }).join("");
 }
 
 function markTaskCompleted(task) {
@@ -132,15 +115,6 @@ function recoverInterruptedRun() {
   progress.runs.unshift({ ...progress.activeRun, status: "interrupted", completedAt: new Date().toISOString(), recordingsCount: 0 });
   progress.activeRun = null;
   saveProgressLocal();
-}
-
-function clearHistory() {
-  if (!confirm("Удалить историю тренировок из этого браузера? Сохранённые аудиозаписи в личном архиве не удалятся.")) return;
-  progress.runs = [];
-  progress.activeRun = null;
-  saveProgressLocal();
-  closeModal($("progressModal"));
-  toast("Локальная история очищена; личный архив сохранён");
 }
 
 function setStartButtonsEnabled(enabled) {
@@ -311,7 +285,6 @@ const {
   submitPasswordReset, cancelPasswordReset, sendVerificationEmail,
   loadAuditLog, deleteAccount, handleAccountLinks,
   saveReviewScores, showStudentReviewHistory, loadTeacherReviewRequests,
-  discardUploadingReviewRequest,
 } = account;
 
 document.querySelectorAll("[data-start]").forEach(button => button.addEventListener("click", () => startRun(button.dataset.start)));
@@ -323,10 +296,7 @@ $("restartBtn").addEventListener("click", () => showScreen("home"));
 $("retryArchiveBtn").addEventListener("click", () => account.retryArchive());
 $("authButton").addEventListener("click", () => openModal($("authModal")));
 $("authCloseBtn").addEventListener("click", () => closeModal($("authModal")));
-$("progressCloseBtn").addEventListener("click", () => closeModal($("progressModal")));
 $("teacherCloseBtn").addEventListener("click", () => closeModal($("teacherModal")));
-$("openProgressBtn").addEventListener("click", () => { renderHistory(); account.loadPersonalRecordings().catch(() => {}); openModal($("progressModal")); });
-$("clearHistoryBtn").addEventListener("click", clearHistory);
 $("loginTab").addEventListener("click", () => setAuthMode("login"));
 $("registerTab").addEventListener("click", () => setAuthMode("register"));
 $("authForm").addEventListener("submit", submitAuth);
@@ -347,20 +317,15 @@ $("teacherReviewRequests").addEventListener("click", event => {
   const button = event.target.closest("[data-student-review-history]");
   if (button) showStudentReviewHistory(Number(button.dataset.studentReviewHistory));
 });
-$("studentReviewRequestsList").addEventListener("click", event => {
-  const button = event.target.closest("[data-discard-review-request]");
-  if (button) discardUploadingReviewRequest(Number(button.dataset.discardReviewRequest));
-});
 $("reviewRequestFilters").addEventListener("submit", event => { event.preventDefault(); loadTeacherReviewRequests(); });
 $("teacherCabinetBtn").addEventListener("click", async () => { await loadTeacherReviewRequests(); closeModal($("authModal")); openModal($("teacherModal")); });
 $("logoutBtn").addEventListener("click", logout);
-[$("authModal"), $("progressModal"), $("teacherModal")].forEach(modal => modal.addEventListener("click", event => {
+[$("authModal"), $("teacherModal")].forEach(modal => modal.addEventListener("click", event => {
   if (event.target === modal) closeModal(modal);
 }));
 document.addEventListener("keydown", event => {
   if (event.key === "Escape") {
     closeModal($("authModal"));
-    closeModal($("progressModal"));
     closeModal($("teacherModal"));
   }
 });

@@ -1,20 +1,6 @@
 import { escapeHtml, formatHistoryDate } from "../shared/progress.js";
 import { reviewFields } from "../runner/review.js";
 
-export function studentReviewRequestsMarkup(requests) {
-  if (!requests.length) return '<p class="student-groups-empty">Заявок на разбор пока нет.</p>';
-  return requests.map(request => {
-    const status = request.status === "reviewed"
-      ? `Разобрано: ${request.total}/${request.maximum}`
-      : request.status === "uploading" ? "Загрузка не завершена" : "На разборе";
-    const kind = request.kind === "attempt" ? "Вся попытка" : "Одно задание";
-    const discard = request.status === "uploading"
-      ? `<button class="text-btn" type="button" data-discard-review-request="${request.id}">Удалить незавершённую загрузку</button>`
-      : "";
-    return `<article class="review-request-card"><p class="eyebrow">${kind}</p><h3>${escapeHtml(request.variantId)}</h3><span>Задания ${request.tasks.join(", ")} · ${status}</span><small>${formatHistoryDate(request.submittedAt * 1000)}</small>${discard}</article>`;
-  }).join("");
-}
-
 export function teacherReviewRequestsMarkup(requests) {
   if (!requests.length) return '<p class="teacher-empty">Заявок по выбранному фильтру нет.</p>';
   return requests.map(request => {

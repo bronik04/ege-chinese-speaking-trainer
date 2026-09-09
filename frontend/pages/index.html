@@ -28,10 +28,6 @@
       <aside class="start-column"><div class="exam-card"><h2>Экзамен</h2><p>Три задания подряд, 14 минут, одна итоговая страница записей.</p><button class="primary-btn gold-btn" data-start="exam" type="button" disabled>Начать экзамен →</button></div><div class="practice-card"><div class="practice-heading"><b>По заданиям</b></div>
           <div class="task-grid">
             <button class="task-card" data-start="1" type="button" disabled><span class="task-badge">1</span><span class="task-body">Пять вопросов<small id="task1Timing">1:30 + 5 × 0:20</small></span><i aria-hidden="true">→</i></button><button class="task-card" data-start="2" type="button" disabled><span class="task-badge">2</span><span class="task-body">Описание фотографии<small id="task2Timing">2:00 + до 2:00</small></span><i aria-hidden="true">→</i></button><button class="task-card" data-start="3" type="button" disabled><span class="task-badge">3</span><span class="task-body" id="task3CardTitle">Проектная работа<small id="task3Timing">3:00 + до 3:00</small></span><i aria-hidden="true">→</i></button></div><div class="mic-row"><span class="mic-state"><span class="status-dot" id="micDot"></span><b id="micStatus">Микрофон ещё не проверен</b></span><button class="text-btn" id="checkMicBtn" type="button">проверить</button></div></div>
-        <section class="student-review-requests hidden" id="studentReviewRequestsPanel">
-          <div><p class="eyebrow">Личная история</p><h2>Мои разборы</h2></div>
-          <div class="review-request-list" id="studentReviewRequestsList"></div>
-        </section>
       </aside></div>
     </section>
 
@@ -143,7 +139,7 @@
         </div>
         <div id="studentAccountTools">
           <div class="account-stat"><b id="accountRuns">0</b><span id="accountRunsLabel">завершённых тренировок</span></div>
-          <section class="account-progress-card"><div><p class="mini-heading">Ваш прогресс</p><b id="progressSummary">Тренировок пока нет</b><small id="progressSyncStatus">Сохраняется в этом браузере</small></div><button class="text-btn" id="openProgressBtn" type="button">История →</button></section>
+          <section class="account-progress-card"><div><p class="mini-heading">Ваш прогресс</p><b id="progressSummary">Тренировок пока нет</b><small id="progressSyncStatus">Сохраняется в этом браузере</small></div><a class="text-btn account-history-link" href="history.html">История →</a></section>
         </div>
         <div class="account-actions">
           <button class="primary-btn wide hidden" id="teacherCabinetBtn" type="button">Открыть кабинет преподавателя</button>
@@ -191,26 +187,6 @@
           <div class="teacher-submissions" id="teacherReviewRequests"></div>
         </section>
       </div>
-    </section>
-  </div>
-
-  <div class="modal-backdrop hidden" id="progressModal">
-    <section class="auth-dialog progress-dialog" role="dialog" aria-modal="true" aria-labelledby="progressTitle">
-      <button class="modal-close" id="progressCloseBtn" type="button" aria-label="Закрыть">×</button>
-      <header class="dialog-heading">
-        <p class="eyebrow">История</p>
-        <h2 id="progressTitle">Ваши тренировки</h2>
-      </header>
-      <div class="history-sections">
-        <div class="history-list" id="historyList"></div>
-        <section class="personal-recordings-history" aria-labelledby="personalRecordingsTitle">
-          <p class="eyebrow">Личный архив</p>
-          <h3 id="personalRecordingsTitle">Сохранённые аудиозаписи</h3>
-          <div id="personalRecordingsList"></div>
-        </section>
-      </div>
-      <p class="history-archive-note">Очистка истории удаляет только прогресс в этом браузере. Аудиозаписи в личном архиве сохранятся до указанной даты.</p>
-      <button class="secondary-btn history-clear" id="clearHistoryBtn" type="button">Очистить историю</button>
     </section>
   </div>
 

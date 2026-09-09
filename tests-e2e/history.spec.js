@@ -81,6 +81,14 @@ test("every public page links to the dedicated history page", async ({ page }) =
   }
 });
 
+test("home no longer contains fragmented history surfaces", async ({ page }) => {
+  await page.goto("/");
+
+  await expect(page.locator("#studentReviewRequestsPanel")).toHaveCount(0);
+  await expect(page.locator("#progressModal")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /очистить историю/i })).toHaveCount(0);
+});
+
 test("network auth failure keeps guest history visible and reports uncertainty", async ({ page }) => {
   await page.addInitScript(progress => {
     localStorage.setItem("egeChineseProgressV2", JSON.stringify(progress));

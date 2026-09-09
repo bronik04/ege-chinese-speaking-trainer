@@ -73,7 +73,7 @@ export function createAccountAuthController(ctx) {
   let focusBeforeModal = null;
 
   function anyModalOpen() {
-    return [$("authModal"), $("progressModal"), $("teacherModal")].some(modal => !modal.classList.contains("hidden"));
+    return [$("authModal"), $("teacherModal")].some(modal => !modal.classList.contains("hidden"));
   }
 
   function openModal(modal) {

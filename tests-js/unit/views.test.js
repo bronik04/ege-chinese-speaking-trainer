@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  studentReviewRequestsMarkup,
   teacherReviewRequestDetailMarkup,
   teacherReviewRequestsMarkup,
 } from "../../frontend/js/account/account-view.js";
@@ -13,54 +12,10 @@ import { api } from "../../frontend/js/shared/api.js";
 import { catalogMarkup, filterVariants, variantKind } from "../../frontend/js/catalog/variant-catalog.js";
 import { plural, pluralize } from "../../frontend/js/shared/plural.js";
 import { fullyRecordedTasks } from "../../frontend/js/account/account-review-requests-controller.js";
-import {
-  createAccountPersonalRecordingsController,
-  personalRecordingsMarkup,
-} from "../../frontend/js/account/account-personal-recordings-controller.js";
+import { createAccountPersonalRecordingsController } from "../../frontend/js/account/account-personal-recordings-controller.js";
 
 test("escapeHtml protects every HTML-sensitive character", () => {
   assert.equal(escapeHtml(`<script data-x="'">&`), "&lt;script data-x=&quot;&#39;&quot;&gt;&amp;");
-});
-
-test("student review request markup hides queued scores and escapes the variant title", () => {
-  const queued = studentReviewRequestsMarkup([{
-    kind: "task",
-    status: "queued",
-    variantId: "<script>alert(1)</script>",
-    tasks: [2],
-    submittedAt: 1_789_000_000,
-    total: 7,
-    maximum: 7,
-  }]);
-  assert.match(queued, /Одно задание/);
-  assert.match(queued, /На разборе/);
-  assert.doesNotMatch(queued, /7\/7/);
-  assert.doesNotMatch(queued, /<script>/);
-  assert.match(queued, /&lt;script&gt;/);
-
-  const reviewed = studentReviewRequestsMarkup([{
-    kind: "attempt",
-    status: "reviewed",
-    variantId: "demo-2026",
-    tasks: [1, 2, 3],
-    submittedAt: 1_789_000_000,
-    total: 7,
-    maximum: 7,
-  }]);
-  assert.match(reviewed, /Вся попытка/);
-  assert.match(reviewed, /Разобрано: 7\/7/);
-
-  const uploading = studentReviewRequestsMarkup([{
-    id: 42,
-    kind: "task",
-    status: "uploading",
-    variantId: "demo-2026",
-    tasks: [1],
-    submittedAt: null,
-  }]);
-  assert.match(uploading, /Загрузка не завершена/);
-  assert.match(uploading, /data-discard-review-request="42"/);
-  assert.doesNotMatch(uploading, /На разборе/);
 });
 
 test("fully recorded tasks require every task-specific recording position", () => {
@@ -75,37 +30,16 @@ test("fully recorded tasks require every task-specific recording position", () =
   assert.deepEqual(fullyRecordedTasks([2], [{ task: 2, question: 1 }]), []);
 });
 
-test("personal recording markup escapes labels and shows the expiry date", () => {
-  const markup = personalRecordingsMarkup([{
-    id: 7,
-    label: "<answer>",
-    variantId: "<variant>",
-    taskNumber: 2,
-    questionNumber: 1,
-    expiresAt: 1_800_000_000,
-  }]);
-
-  assert.match(markup, /&lt;answer&gt;/);
-  assert.match(markup, /&lt;variant&gt;/);
-  assert.match(markup, /\/api\/personal-recordings\/7/);
-  assert.match(markup, /Удалится/);
-  assert.doesNotMatch(markup, /вопрос 1/);
-  assert.doesNotMatch(markup, /<answer>|<variant>/);
-});
-
 function apiResponse(payload, status = 200) {
   return { ok: status < 400, status, json: async () => payload };
 }
 
 test("account reset invalidates an in-flight archive before another user can receive it", async () => {
-  const originalDocument = globalThis.document;
   const originalFetch = globalThis.fetch;
-  const nodes = { personalRecordingsList: { innerHTML: "" } };
   let user = { id: 1, role: "student" };
   let releaseFirstUpload;
   const firstUpload = new Promise(resolve => { releaseFirstUpload = resolve; });
   const postOwners = [];
-  globalThis.document = { getElementById: id => nodes[id] };
   globalThis.fetch = async (path, options = {}) => {
     if (options.method === "POST") {
       postOwners.push(user?.id);
@@ -131,54 +65,40 @@ test("account reset invalidates an in-flight archive before another user can rec
     await archive;
 
     assert.deepEqual(postOwners, [1]);
-    assert.equal(nodes.personalRecordingsList.innerHTML, "");
   } finally {
-    globalThis.document = originalDocument;
     globalThis.fetch = originalFetch;
   }
 });
 
-test("account reset prevents a delayed recording list from exposing the previous user", async () => {
-  const originalDocument = globalThis.document;
+test("successful archive upload does not fetch a separate recording list", async () => {
   const originalFetch = globalThis.fetch;
-  const nodes = { personalRecordingsList: { innerHTML: "" } };
-  let user = { id: 1, role: "student" };
-  let releaseList;
-  const delayedList = new Promise(resolve => { releaseList = resolve; });
-  globalThis.document = { getElementById: id => nodes[id] };
-  globalThis.fetch = async () => {
-    await delayedList;
-    return apiResponse({
-      recordings: [{ id: 99, label: "private-student-a", taskNumber: 2, questionNumber: 1 }],
-    });
+  const methods = [];
+  const statuses = [];
+  globalThis.fetch = async (_path, options = {}) => {
+    methods.push(options.method || "GET");
+    return apiResponse({ recording: { id: 99 } }, 201);
   };
   try {
     const controller = createAccountPersonalRecordingsController({
-      getUser: () => user,
-      setArchiveStatus() {},
+      getUser: () => ({ id: 1, role: "student" }),
+      setArchiveStatus: (message, canRetry) => statuses.push({ message, canRetry }),
     });
-    const loading = controller.loadPersonalRecordings();
-    await Promise.resolve();
-    user = null;
-    controller.reset();
-    user = { id: 2, role: "student" };
-    releaseList();
-    await loading;
+    await controller.archiveCompletedRun(
+      { id: "run-a", variantId: "demo-2026" },
+      [{ task: 2, question: null, label: "Answer", type: "audio/webm", blob: new Blob(["x"]) }],
+    );
 
-    assert.equal(nodes.personalRecordingsList.innerHTML, "");
+    assert.deepEqual(methods, ["POST"]);
+    assert.deepEqual(statuses.at(-1), { message: "Аудиозаписи сохранены в личном архиве.", canRetry: false });
   } finally {
-    globalThis.document = originalDocument;
     globalThis.fetch = originalFetch;
   }
 });
 
 test("starting another archive retries every older pending run", async () => {
-  const originalDocument = globalThis.document;
   const originalFetch = globalThis.fetch;
-  const nodes = { personalRecordingsList: { innerHTML: "" } };
   let attempts = 0;
   const requestedRuns = [];
-  globalThis.document = { getElementById: id => nodes[id] };
   globalThis.fetch = async (path, options = {}) => {
     if (options.method === "POST") {
       attempts += 1;
@@ -186,7 +106,7 @@ test("starting another archive retries every older pending run", async () => {
       if (attempts === 1) throw new Error("temporary network failure");
       return apiResponse({ recording: { id: 1 } }, 201);
     }
-    return apiResponse({ recordings: [] });
+    throw new Error(`Unexpected request: ${path}`);
   };
   try {
     const controller = createAccountPersonalRecordingsController({
@@ -203,7 +123,6 @@ test("starting another archive retries every older pending run", async () => {
     );
     assert.deepEqual(requestedRuns, ["old-run", "old-run", "new-run"]);
   } finally {
-    globalThis.document = originalDocument;
     globalThis.fetch = originalFetch;
   }
 });
