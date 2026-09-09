@@ -387,21 +387,22 @@ git commit -m "feat: add guest training history page"
 
 **Files:**
 
+- Create: `frontend/js/history/history-controller.js`
 - Modify: `frontend/js/history/history-page.js`
 - Create: `tests-js/unit/history-page.test.js`
 - Modify: `tests-e2e/history.spec.js`
 
-- [ ] **Step 1: Extract a testable page controller and write failing stale-response tests**
+- [x] **Step 1: Extract a testable page controller and write failing stale-response tests**
 
 Export:
 
 ```javascript
-export function createHistoryPageController({ request = api, storage = localStorage, render })
+export function createHistoryPageController({ request = api, discard = discardReviewRequest, storage = localStorage, render })
 ```
 
 Its `load()` method increments a generation number. Tests supply delayed promises for two users and assert that resolving user A after user B never calls `render` with A's account-scoped data. A 401 during any protected request must trigger a new guest load and remove account data from the rendered state.
 
-- [ ] **Step 2: Write failing tests for synchronization and partial-source errors**
+- [x] **Step 2: Write failing tests for synchronization and partial-source errors**
 
 For a student, assert the controller:
 
@@ -417,7 +418,7 @@ For a student, assert the controller:
 
 For a teacher, assert that no student data endpoint is called and the render state contains the teacher-cabinet explanation.
 
-- [ ] **Step 3: Run controller tests and confirm the red result**
+- [x] **Step 3: Run controller tests and confirm the red result**
 
 Run:
 
@@ -427,7 +428,7 @@ node --test tests-js/unit/history-page.test.js
 
 Expected: missing controller behavior.
 
-- [ ] **Step 4: Implement the controller state machine**
+- [x] **Step 4: Implement the controller state machine**
 
 Use this state shape between controller and DOM rendering:
 
@@ -444,7 +445,7 @@ Use this state shape between controller and DOM rendering:
 
 For student progress, a failed GET keeps validated local progress and records a progress error. A failed PUT does not discard the merged local copy. Protected 401 responses call `loadGuest()` after invalidating the generation. All async continuations verify both generation and `user.id` before rendering.
 
-- [ ] **Step 5: Wire DOM rendering, retries, and uploading-request deletion**
+- [x] **Step 5: Wire DOM rendering, retries, and uploading-request deletion**
 
 The page-level renderer uses the model and view modules, updates count/status/notice, and creates one retry button per failed source with `data-retry-source="progress|recordings|reviews"`.
 
@@ -464,13 +465,13 @@ historyTimeline.addEventListener("click", async event => {
 
 `discardReviewRequest` calls the existing DELETE helper, reloads only reviews on success, preserves the card and shows an error on failure, and rejects non-integer IDs.
 
-- [ ] **Step 6: Add student and partial-failure browser coverage**
+- [x] **Step 6: Add student and partial-failure browser coverage**
 
 Use the existing register/recorder helpers to complete one task, wait for personal archival, send it for review, then open `/history.html`. Assert one expanded card contains the attempt, audio, expiry text, and review status. Add a routed failure for `/api/personal-recordings`, assert the run/review remain visible, release the route, click `Повторить`, and assert the audio appears.
 
 Add an uploading review fixture through the API, click `Удалить незавершённую загрузку`, and assert the same card refreshes without that request.
 
-- [ ] **Step 7: Run focused controller and browser tests**
+- [x] **Step 7: Run focused controller and browser tests**
 
 Run:
 
@@ -481,7 +482,7 @@ npx playwright test tests-e2e/history.spec.js
 
 Expected: all history tests pass.
 
-- [ ] **Step 8: Commit authenticated history**
+- [x] **Step 8: Commit authenticated history**
 
 ```bash
 git add frontend/js/history/history-page.js tests-js/unit/history-page.test.js tests-e2e/history.spec.js

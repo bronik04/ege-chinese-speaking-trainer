@@ -1,6 +1,6 @@
-import { api } from "../shared/api.js";
-import { loadLocalProgress, progressStorageKeys } from "../shared/progress.js";
+import { escapeHtml } from "../shared/progress.js";
 import { pluralize } from "../shared/plural.js";
+import { createHistoryPageController } from "./history-controller.js";
 import { buildHistoryTimeline } from "./history-model.js";
 import { historyPageStateMarkup, historyTimelineMarkup } from "./history-view.js";
 import "../shared/site-shell.js";
@@ -8,53 +8,71 @@ import "../shared/site-shell.js";
 const historyCount = document.getElementById("historyCount");
 const historyStatus = document.getElementById("historyStatus");
 const historyNotice = document.getElementById("historyNotice");
+const historySourceErrors = document.getElementById("historySourceErrors");
 const historyTimeline = document.getElementById("historyTimeline");
 
-function renderTimeline(progress) {
-  const entries = buildHistoryTimeline({ runs: progress.runs, recordings: [], reviewRequests: [] });
-  historyCount.textContent = pluralize(entries.length, "попытка", "попытки", "попыток");
-  historyTimeline.innerHTML = historyTimelineMarkup(entries);
+const sourceLabels = {
+  progress: "Прогресс",
+  recordings: "Аудиозаписи",
+  reviews: "Разборы преподавателя",
+};
+
+function renderErrors(sourceErrors) {
+  const failures = Object.entries(sourceLabels).filter(([source]) => sourceErrors[source]);
+  historySourceErrors.classList.toggle("hidden", !failures.length);
+  historySourceErrors.innerHTML = failures.map(([source, label]) => (
+    `<div class="history-source-error"><span><b>${label}:</b> ${escapeHtml(sourceErrors[source])}</span><button class="secondary-btn history-retry" type="button" data-retry-source="${source}">Повторить</button></div>`
+  )).join("");
 }
 
-function showNotice(kind, message) {
-  historyNotice.innerHTML = historyPageStateMarkup({ kind, message });
+function renderNotice(state) {
+  if (state.mode === "student") {
+    historyNotice.classList.add("hidden");
+    historyNotice.innerHTML = "";
+    return;
+  }
+  const message = state.mode === "teacher"
+    ? "История учеников и очередь разборов находятся в кабинете преподавателя."
+    : state.sourceErrors.auth
+      ? "Не удалось проверить вход. Показана история из этого браузера."
+      : "Сейчас показана история из этого браузера. Войдите, чтобы синхронизировать попытки и видеть сохранённые аудиозаписи.";
+  historyNotice.innerHTML = historyPageStateMarkup({ kind: state.mode, message });
   historyNotice.classList.remove("hidden");
 }
 
-function loadLocal(userId = null) {
-  return loadLocalProgress(progressStorageKeys(userId), {
-    onError: message => { historyStatus.textContent = message; },
+function renderHistory(state) {
+  const entries = state.mode === "teacher" ? [] : buildHistoryTimeline({
+    runs: state.progress.runs,
+    recordings: state.recordings,
+    reviewRequests: state.reviewRequests,
   });
+  historyCount.textContent = state.mode === "teacher"
+    ? "История учеников"
+    : pluralize(entries.length, "попытка", "попытки", "попыток");
+  historyStatus.textContent = state.mode === "teacher"
+    ? "Аккаунт преподавателя"
+    : state.mode === "guest"
+      ? "Локальная история загружена"
+      : Object.values(state.sourceErrors).some(Boolean)
+        ? "История загружена частично"
+        : `Синхронизировано · ${state.user.email}`;
+  historyTimeline.innerHTML = state.mode === "teacher" ? "" : historyTimelineMarkup(entries);
+  renderNotice(state);
+  renderErrors(state.sourceErrors);
 }
 
-function renderGuest({ authUnavailable = false } = {}) {
-  renderTimeline(loadLocal());
-  showNotice(
-    "guest",
-    authUnavailable
-      ? "Не удалось проверить вход. Показана история из этого браузера."
-      : "Сейчас показана история из этого браузера. Войдите, чтобы синхронизировать попытки и видеть сохранённые аудиозаписи.",
-  );
-  historyStatus.textContent = "Локальная история загружена";
-}
+const controller = createHistoryPageController({ render: renderHistory });
 
-async function initialize() {
-  let user;
-  try {
-    user = (await api("/api/auth/me")).user;
-  } catch (error) {
-    renderGuest({ authUnavailable: error.status !== 401 });
-    return;
-  }
-  if (user.role === "teacher") {
-    historyCount.textContent = "История учеников";
-    historyTimeline.innerHTML = "";
-    showNotice("teacher", "История учеников и очередь разборов находятся в кабинете преподавателя.");
-    historyStatus.textContent = "Аккаунт преподавателя";
-    return;
-  }
-  renderTimeline(loadLocal(user.id));
-  historyStatus.textContent = `Локальная история · ${user.email}`;
-}
+historySourceErrors.addEventListener("click", event => {
+  const button = event.target.closest("[data-retry-source]");
+  if (button) controller.retry(button.dataset.retrySource);
+});
 
-initialize();
+historyTimeline.addEventListener("click", async event => {
+  const button = event.target.closest("[data-discard-review-request]");
+  if (!button) return;
+  button.disabled = true;
+  await controller.discardReviewRequest(Number(button.dataset.discardReviewRequest));
+});
+
+controller.load();
