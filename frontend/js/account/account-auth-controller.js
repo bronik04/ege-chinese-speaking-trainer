@@ -8,6 +8,7 @@ export function createAccountAuthController(ctx) {
   let user = null;
   let mode = "login";
   let syncTimer = null;
+  let progressHydrated = true;
 
   function showProgressSyncError(error) {
     $("progressSyncStatus").textContent = error?.code === "progress_data_incompatible"
@@ -20,8 +21,11 @@ export function createAccountAuthController(ctx) {
       const payload = await api("/api/auth/me");
       setUser(payload.user);
       ctx.switchProgressScope(user);
+      let syncError = null;
+      try { await syncProgress(); } catch (error) { syncError = error; }
       await ctx.refreshMaterials();
       renderAuth();
+      if (syncError) showProgressSyncError(syncError);
     } catch (error) {
       setUser(null);
       ctx.switchProgressScope(null);
@@ -29,11 +33,11 @@ export function createAccountAuthController(ctx) {
       if (error.status !== 401) $("progressSyncStatus").textContent = "Сервер недоступен · локальное сохранение";
       return;
     }
-    try { await syncProgress(); } catch (error) { showProgressSyncError(error); }
   }
 
   function setUser(value) {
     user = value;
+    progressHydrated = !value;
   }
 
   function renderAuth() {
@@ -113,9 +117,11 @@ export function createAccountAuthController(ctx) {
       const payload = await api(`/api/auth/${mode}`, { method: "POST", body: JSON.stringify(credentials) });
       setUser(payload.user);
       ctx.switchProgressScope(user, { adoptGuest: mode === "register" });
+      let syncError = null;
+      try { await syncProgress(); } catch (error) { syncError = error; }
       await ctx.refreshMaterials();
       renderAuth();
-      try { await syncProgress(); } catch (error) { showProgressSyncError(error); }
+      if (syncError) showProgressSyncError(syncError);
       closeModal($("authModal"));
       toast(mode === "login" ? "Вход выполнен" : "Аккаунт создан");
       $("authForm").reset();
@@ -138,13 +144,14 @@ export function createAccountAuthController(ctx) {
   }
 
   function scheduleProgressSync() {
+    if (!user || !progressHydrated) return;
     clearTimeout(syncTimer);
     $("progressSyncStatus").textContent = "Сохраняем на сервере…";
     syncTimer = setTimeout(() => pushProgress().catch(showProgressSyncError), 350);
   }
 
   async function pushProgress() {
-    if (!user) return;
+    if (!user || !progressHydrated) return;
     await api("/api/progress", { method: "PUT", body: JSON.stringify({ progress: ctx.getProgress() }) });
     $("progressSyncStatus").textContent = `Синхронизировано · ${user.email}`;
   }
@@ -154,6 +161,7 @@ export function createAccountAuthController(ctx) {
     const payload = await api("/api/progress");
     ctx.setProgress(mergeProgress(ctx.getProgress(), payload.progress));
     ctx.saveProgressLocal(false);
+    progressHydrated = true;
     await pushProgress();
   }
 

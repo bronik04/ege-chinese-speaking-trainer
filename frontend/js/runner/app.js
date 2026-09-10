@@ -17,12 +17,14 @@ const screens = {
 
 let variantIndex = [];
 let variant = null;
+let variantCatalogScope = null;
 const variantCache = new Map();
 let progressScope = progressStorageKeys();
 let progress = loadLocalProgress(progressScope, { onError: message => toast(message) });
 let account = null;
 let runner = null;
 let reviewRequestSent = false;
+let resumeActionPending = false;
 
 const taskData = (task) => variant.tasks[String(task)];
 
@@ -120,6 +122,7 @@ async function initVariants() {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const payload = await response.json();
     variantIndex = payload.materials;
+    variantCatalogScope = progressScope.current;
     $("variantCount").textContent = variantIndex.length;
     $("variantCountLabel").textContent = plural(variantIndex.length, "вариант", "варианта", "вариантов");
     const requestedVariant = new URLSearchParams(window.location.search).get("variant");
@@ -129,10 +132,12 @@ async function initVariants() {
         ? progress.settings.lastVariant
         : variantIndex[0].id;
     await loadVariant(preferredVariant);
+    return true;
   } catch (error) {
     $("variantSource").textContent = "Не удалось загрузить задания";
     toast("Запустите проект через локальный сервер");
     console.error("Variant loading failed", error);
+    return false;
   }
 }
 
@@ -182,7 +187,7 @@ function updateVariantUI() {
 function renderResumeRunOffer() {
   const panel = $("resumeRunPanel");
   const storedRun = progress.activeRun;
-  if (!storedRun || !variantIndex.length) {
+  if (!storedRun || !variantIndex.length || variantCatalogScope !== progressScope.current) {
     panel.classList.add("hidden");
     return;
   }
@@ -198,20 +203,38 @@ function renderResumeRunOffer() {
   panel.classList.remove("hidden");
 }
 
-async function continueInterruptedRun() {
+function setResumeActionsDisabled(disabled) {
+  $("continueRunBtn").disabled = disabled;
+  $("restartInterruptedRunBtn").disabled = disabled;
+}
+
+async function runResumeAction(action) {
+  if (resumeActionPending) return;
   const storedRun = progress.activeRun;
-  if (!storedRun || !(await loadVariant(storedRun.variantId))) return;
-  runner.resumeRun(storedRun);
-  $("resumeRunPanel").classList.add("hidden");
+  if (!storedRun) return;
+  resumeActionPending = true;
+  setResumeActionsDisabled(true);
+  try {
+    if (!(await loadVariant(storedRun.variantId))) return;
+    if (progress.activeRun?.id !== storedRun.id) return;
+    await action(storedRun);
+    $("resumeRunPanel").classList.add("hidden");
+  } finally {
+    resumeActionPending = false;
+    setResumeActionsDisabled(false);
+  }
+}
+
+async function continueInterruptedRun() {
+  await runResumeAction(storedRun => runner.resumeRun(storedRun));
 }
 
 async function restartInterruptedRun() {
-  const storedRun = progress.activeRun;
-  if (!storedRun || !(await loadVariant(storedRun.variantId))) return;
-  const startMode = storedRun.mode === "exam" ? "exam" : String(storedRun.tasks[0]);
-  finalizeActiveRun("interrupted", 0);
-  runner.startRun(startMode);
-  $("resumeRunPanel").classList.add("hidden");
+  await runResumeAction(storedRun => {
+    const startMode = storedRun.mode === "exam" ? "exam" : String(storedRun.tasks[0]);
+    finalizeActiveRun("interrupted", 0);
+    runner.startRun(startMode);
+  });
 }
 
 function startNewRun(startMode) {
@@ -296,16 +319,12 @@ account = createAccountController({
   toast, switchProgressScope, renderProgress,
   getProgress: () => progress,
   getProgressStorageKey: () => progressScope.current,
-  setProgress: (value) => {
-    progress = value;
-    renderResumeRunOffer();
-  },
+  setProgress: (value) => { progress = value; },
   saveProgressLocal,
   getVariant: () => variant,
   startRun,
   refreshMaterials: async () => {
-    await initVariants();
-    renderResumeRunOffer();
+    if (await initVariants()) renderResumeRunOffer();
   },
   getCompletedRecordings: () => runner.getCompletedRecordings(),
   getCompletedTasks: () => runner.getCompletedTasks(),
