@@ -9,6 +9,7 @@ export function createAccountAuthController(ctx) {
   let mode = "login";
   let syncTimer = null;
   let progressHydrated = true;
+  let authGeneration = 0;
 
   function showProgressSyncError(error) {
     $("progressSyncStatus").textContent = error?.code === "progress_data_incompatible"
@@ -38,6 +39,7 @@ export function createAccountAuthController(ctx) {
   function setUser(value) {
     user = value;
     progressHydrated = !value;
+    authGeneration += 1;
   }
 
   function renderAuth() {
@@ -151,19 +153,24 @@ export function createAccountAuthController(ctx) {
     syncTimer = setTimeout(() => operation().catch(showProgressSyncError), 350);
   }
 
-  async function pushProgress() {
-    if (!user || !progressHydrated) return;
+  async function pushProgress(expectedGeneration = authGeneration) {
+    const expectedUserId = user?.id;
+    if (!user || !progressHydrated || expectedGeneration !== authGeneration) return;
     await api("/api/progress", { method: "PUT", body: JSON.stringify({ progress: ctx.getProgress() }) });
+    if (expectedGeneration !== authGeneration || user?.id !== expectedUserId) return;
     $("progressSyncStatus").textContent = `Синхронизировано · ${user.email}`;
   }
 
   async function syncProgress() {
     if (!user) return;
+    const expectedGeneration = authGeneration;
+    const expectedUserId = user.id;
     const payload = await api("/api/progress");
+    if (expectedGeneration !== authGeneration || user?.id !== expectedUserId) return;
     ctx.setProgress(mergeProgress(ctx.getProgress(), payload.progress));
     ctx.saveProgressLocal(false);
     progressHydrated = true;
-    await pushProgress();
+    await pushProgress(expectedGeneration);
   }
 
   return {

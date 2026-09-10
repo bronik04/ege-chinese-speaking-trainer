@@ -283,3 +283,45 @@ test("a later progress change safely retries failed account hydration", async ({
   expect(writes.at(-1).activeRun).toMatchObject({ mode: "practice", tasks: [3], currentTask: 3 });
   await expect(page.locator("#progressSyncStatus")).toContainText("Синхронизировано");
 });
+
+test("a delayed hydration response cannot write account progress into guest storage", async ({ page }) => {
+  const guestProgress = {
+    ...storedProgress,
+    updatedAt: "2026-01-01T08:03:00.000Z",
+    activeRun: { ...storedProgress.activeRun, id: "guest-original" },
+  };
+  const remoteProgress = {
+    ...storedProgress,
+    updatedAt: "2099-01-01T08:03:00.000Z",
+    activeRun: { ...storedProgress.activeRun, id: "account-remote" },
+  };
+  await seedInterruptedRun(page, guestProgress);
+  await page.route("**/api/auth/me", route => route.fulfill({ json: { user: studentUser } }));
+  await page.route("**/api/auth/logout", route => route.fulfill({ json: { ok: true } }));
+  let releaseRetry;
+  const retryGate = new Promise(resolve => { releaseRetry = resolve; });
+  let progressGets = 0;
+  await page.route("**/api/progress", async route => {
+    if (route.request().method() === "PUT") return route.fulfill({ json: { ok: true, updatedAt: 1_789_000_000 } });
+    progressGets += 1;
+    if (progressGets === 1) return route.fulfill({ status: 503, json: { detail: "temporary failure" } });
+    await retryGate;
+    return route.fulfill({ json: { progress: remoteProgress, updatedAt: 1_789_000_000 } });
+  });
+
+  await page.goto("/");
+  await page.locator('[data-start="3"]').click();
+  await expect.poll(() => progressGets).toBe(2);
+  await page.locator("#authButton").click();
+  await page.locator("#logoutBtn").click();
+  await expect(page.locator("#authButtonText")).toHaveText("Войти");
+
+  const retryResponse = page.waitForResponse(response => response.url().endsWith("/api/progress") && response.request().method() === "GET" && response.status() === 200);
+  releaseRetry();
+  await retryResponse;
+  await page.waitForTimeout(100);
+
+  const savedGuest = await page.evaluate(() => JSON.parse(localStorage.getItem("egeChineseProgressV2")));
+  expect(savedGuest.activeRun.id).toBe("guest-original");
+  expect(savedGuest.runs).toEqual([]);
+});
