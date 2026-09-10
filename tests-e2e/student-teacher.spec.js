@@ -112,6 +112,103 @@ async function finishCompleteAttempt(page) {
   await expect(page.locator("#resultScreen")).not.toHaveClass(/hidden/);
 }
 
+test("completed attempt downloads every recording as one zip archive", async ({ browser }) => {
+  const guest = await browser.newContext({ baseURL: "http://127.0.0.1:8091" });
+  const page = await guest.newPage();
+  try {
+    await installRecorder(page);
+    await page.goto("/");
+    await finishCompleteAttempt(page);
+
+    await expect(page.locator("#recordingsList .download-link")).toHaveCount(7);
+    const downloadPromise = page.waitForEvent("download");
+    await page.locator("#downloadAllRecordingsBtn").click();
+    const download = await downloadPromise;
+
+    expect(download.suggestedFilename()).toMatch(/^ege-chinese-recordings-\d{4}-\d{2}-\d{2}\.zip$/);
+    const entries = JSON.parse(execFileSync(process.env.E2E_PYTHON || ".venv/bin/python", [
+      "-c",
+      "import json, sys, zipfile\nwith zipfile.ZipFile(sys.argv[1]) as archive:\n assert archive.testzip() is None\n print(json.dumps([{'name': item.filename, 'size': item.file_size} for item in archive.infolist()]))",
+      await download.path(),
+    ], { encoding: "utf8" }));
+    expect(entries.map(entry => entry.name)).toEqual([
+      "zadanie-1-vopros-1.webm",
+      "zadanie-1-vopros-2.webm",
+      "zadanie-1-vopros-3.webm",
+      "zadanie-1-vopros-4.webm",
+      "zadanie-1-vopros-5.webm",
+      "zadanie-2.webm",
+      "zadanie-3.webm",
+    ]);
+    expect(entries.every(entry => entry.size > 0)).toBe(true);
+  } finally {
+    await guest.close();
+  }
+});
+
+test("recording archive button reports preparation state", async ({ browser }) => {
+  const guest = await browser.newContext({ baseURL: "http://127.0.0.1:8091" });
+  const page = await guest.newPage();
+  try {
+    await installRecorder(page);
+    await page.goto("/");
+    await finishCompleteAttempt(page);
+    await page.evaluate(() => {
+      let pendingArchiveBytes;
+      Blob.prototype.arrayBuffer = () => {
+        pendingArchiveBytes ||= new Promise(resolve => { window.resolveArchiveBytes = resolve; });
+        return pendingArchiveBytes;
+      };
+    });
+
+    const downloadPromise = page.waitForEvent("download");
+    await page.locator("#downloadAllRecordingsBtn").click();
+    await expect(page.locator("#downloadAllRecordingsBtn")).toBeDisabled();
+    await expect(page.locator("#downloadAllRecordingsBtn")).toHaveText("Готовим архив…");
+    await page.evaluate(() => window.resolveArchiveBytes(new ArrayBuffer(1)));
+    await downloadPromise;
+    await expect(page.locator("#downloadAllRecordingsBtn")).toBeEnabled();
+    await expect(page.locator("#downloadAllRecordingsBtn")).toHaveText("Скачать все записи");
+  } finally {
+    await guest.close();
+  }
+});
+
+test("recording archive failure restores the download button", async ({ browser }) => {
+  const guest = await browser.newContext({ baseURL: "http://127.0.0.1:8091" });
+  const page = await guest.newPage();
+  try {
+    await installRecorder(page);
+    await page.goto("/");
+    await finishCompleteAttempt(page);
+    await page.evaluate(() => {
+      Blob.prototype.arrayBuffer = async () => { throw new Error("archive failed"); };
+    });
+
+    await page.locator("#downloadAllRecordingsBtn").click();
+
+    await expect(page.locator("#toast")).toHaveText("Не удалось подготовить архив. Попробуйте ещё раз");
+    await expect(page.locator("#downloadAllRecordingsBtn")).toBeEnabled();
+    await expect(page.locator("#downloadAllRecordingsBtn")).toHaveText("Скачать все записи");
+  } finally {
+    await guest.close();
+  }
+});
+
+test("recording archive action stays hidden when no audio was recorded", async ({ browser }) => {
+  const guest = await browser.newContext({ baseURL: "http://127.0.0.1:8091" });
+  const page = await guest.newPage();
+  try {
+    await installRecorder(page, { skipStops: [1, 2, 3, 4, 5, 6, 7] });
+    await page.goto("/");
+    await finishCompleteAttempt(page);
+
+    await expect(page.locator("#downloadAllRecordingsBtn")).toHaveClass(/hidden/);
+  } finally {
+    await guest.close();
+  }
+});
+
 test("personal archive", async ({ browser }) => {
   const stamp = Date.now();
   const guest = await browser.newContext({ baseURL: "http://127.0.0.1:8091" });

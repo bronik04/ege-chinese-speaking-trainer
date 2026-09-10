@@ -236,6 +236,7 @@ h1 em { color: var(--crimson); font-weight: inherit; }
 .result-layout { display: grid; grid-template-columns: 1fr 340px; gap: 20px; align-items: start; }
 .recordings-panel, .checklist-panel { background: var(--paper); border: 1px solid var(--line); border-top: 4px solid var(--crimson); padding: 27px; }
 .recordings-panel h2, .checklist-panel h2 { margin-bottom: 18px; }
+.recordings-download-all { margin-bottom: 12px; }
 .recording-item { border-top: 1px solid var(--line); padding: 17px 0; display: grid; grid-template-columns: 1fr auto; gap: 12px; }
 .recording-item:first-child { border-top: 0; }
 .recording-item b, .recording-item small { display: block; }

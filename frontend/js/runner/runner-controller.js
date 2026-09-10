@@ -1,4 +1,5 @@
 import { createRunId } from "../shared/progress.js";
+import { createRecordingArchive, recordingArchiveFilename } from "./recording-archive.js";
 import { formatTime, stepsMarkup, taskMarkup } from "./task-view.js";
 
 const $ = (id) => document.getElementById(id);
@@ -288,6 +289,7 @@ export function createRunnerController(ctx) {
   }
   
   function renderRecordings() {
+    $("downloadAllRecordingsBtn").classList.toggle("hidden", !recordings.length);
     if (!recordings.length) {
       $("recordingsList").innerHTML = '<p class="empty-recording">Записей нет. Проверьте разрешение на использование микрофона и попробуйте ещё раз.</p>';
       return;
@@ -296,6 +298,29 @@ export function createRunnerController(ctx) {
       const extension = item.type.includes("mp4") ? "m4a" : "webm";
       return `<div class="recording-item"><div><b>${item.label}</b><small>Запись ${index + 1}</small></div><a class="download-link" href="${item.url}" download="ege-chinese-${index + 1}.${extension}">Скачать</a><audio controls src="${item.url}"></audio></div>`;
     }).join("");
+  }
+
+  async function downloadRecordingsArchive() {
+    const button = $("downloadAllRecordingsBtn");
+    if (!recordings.length || button.disabled) return;
+    button.disabled = true;
+    button.textContent = "Готовим архив…";
+    try {
+      const archive = await createRecordingArchive(recordings);
+      const url = URL.createObjectURL(archive);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = recordingArchiveFilename();
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (_) {
+      ctx.toast("Не удалось подготовить архив. Попробуйте ещё раз");
+    } finally {
+      button.disabled = false;
+      button.textContent = "Скачать все записи";
+    }
   }
   
   async function exitRun() {
@@ -320,7 +345,7 @@ export function createRunnerController(ctx) {
 
   return {
     startRun, ensureMicrophone, startPreparation, skipPhase, exitRun, beep,
-    toggleSound, cleanup,
+    toggleSound, cleanup, downloadRecordingsArchive,
     getCompletedRecordings: () => completedRecordings.map(recording => ({ ...recording })),
     getCompletedTasks: () => [...completedTasks],
     getCompletedRun: () => completedRun && { ...completedRun, tasks: [...completedRun.tasks], completedTasks: [...completedRun.completedTasks] },

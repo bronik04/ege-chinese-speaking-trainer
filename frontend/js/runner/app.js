@@ -292,6 +292,7 @@ $("mainActionBtn").addEventListener("click", startPreparation);
 $("skipBtn").addEventListener("click", skipPhase);
 $("exitBtn").addEventListener("click", exitRun);
 $("restartBtn").addEventListener("click", () => showScreen("home"));
+$("downloadAllRecordingsBtn").addEventListener("click", runner.downloadRecordingsArchive);
 $("retryArchiveBtn").addEventListener("click", () => account.retryArchive());
 $("authButton").addEventListener("click", () => openModal($("authModal")));
 $("authCloseBtn").addEventListener("click", () => closeModal($("authModal")));
