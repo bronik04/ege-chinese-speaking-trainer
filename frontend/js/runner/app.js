@@ -32,6 +32,7 @@ let pendingRunStart = null;
 let readinessGeneration = 0;
 let readinessMicReady = false;
 let readinessStartPending = false;
+let readinessReturnFocus = null;
 
 const taskData = (task) => variant.tasks[String(task)];
 
@@ -257,6 +258,7 @@ async function checkReadinessMicrophone() {
 
 function openReadiness({ kind, startMode, storedRun = null }) {
   if (!variant) return;
+  readinessReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   readinessGeneration += 1;
   pendingRunStart = { kind, startMode, runId: storedRun?.id || null, scope: progressScope.current };
   const summary = buildReadinessSummary({ variant, pending: pendingRunStart, activeRun: storedRun });
@@ -266,21 +268,29 @@ function openReadiness({ kind, startMode, storedRun = null }) {
   $("readinessDuration").textContent = summary.duration;
   $("beginReadyRunBtn").textContent = summary.action;
   showScreen("readiness");
+  $("readinessTitle").focus();
   checkReadinessMicrophone();
 }
 
 function resetReadiness() {
   readinessGeneration += 1;
+  // A resume/restart confirmation may still be fetching its material. Make
+  // that response stale before returning home so it cannot change selection
+  // or start/archive a run after the user has cancelled.
+  variantLoadGeneration += 1;
   pendingRunStart = null;
   readinessMicReady = false;
   readinessStartPending = false;
+  readinessReturnFocus = null;
   $("beginReadyRunBtn").disabled = true;
 }
 
 function cancelReadiness() {
+  const returnFocus = readinessReturnFocus;
   resetReadiness();
   showScreen("home");
   renderResumeRunOffer();
+  if (returnFocus?.isConnected && !returnFocus.disabled) returnFocus.focus();
 }
 
 async function beginReadyRun() {
@@ -303,6 +313,7 @@ async function beginReadyRun() {
       const storedRun = progress.activeRun;
       if (!storedRun || storedRun.id !== pending.runId) return cancelReadiness();
       if (!(await loadVariant(storedRun.variantId))) return;
+      if (generation !== readinessGeneration || pendingRunStart !== pending) return;
       if (pending.scope !== progressScope.current || progress.activeRun?.id !== pending.runId) return cancelReadiness();
       if (pending.kind === "resume") runner.resumeRun(storedRun);
       else {
@@ -317,6 +328,8 @@ async function beginReadyRun() {
     pendingRunStart = null;
     readinessMicReady = false;
     $("resumeRunPanel").classList.add("hidden");
+    readinessReturnFocus = null;
+    $("mainActionBtn").focus();
   } finally {
     readinessStartPending = false;
     if (pendingRunStart && readinessMicReady) $("beginReadyRunBtn").disabled = false;

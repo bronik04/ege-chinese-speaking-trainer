@@ -27,6 +27,54 @@ async function installRetryingMicrophone(page) {
   });
 }
 
+async function installDelayedInterruptedMaterial(page, runId) {
+  const materialId = `delayed-${runId}`;
+  const interrupted = {
+    version: 2,
+    updatedAt: "2026-09-10T08:03:00.000Z",
+    settings: { lastVariant: "open-2026", fastMode: false },
+    runs: [],
+    activeRun: {
+      id: runId,
+      variantId: materialId,
+      variantLabel: "Отложенный вариант",
+      mode: "exam",
+      tasks: [1, 2, 3],
+      completedTasks: [1],
+      currentTask: 2,
+      phase: "prep",
+      fastMode: false,
+      startedAt: "2026-09-10T08:00:00.000Z",
+    },
+  };
+  await page.addInitScript(value => {
+    localStorage.setItem("egeChineseProgressV2", JSON.stringify(value));
+  }, interrupted);
+  await page.route("**/api/materials", route => route.fulfill({ json: {
+    materials: [
+      { id: "open-2026", year: 2026, label: "Официальный вариант 2026" },
+      { id: materialId, year: 2026, label: "Отложенный вариант" },
+    ],
+    canCreate: false,
+  } }));
+  let releaseMaterial;
+  const materialGate = new Promise(resolve => { releaseMaterial = resolve; });
+  let materialRequested = false;
+  await page.route(`**/api/materials/${materialId}`, async route => {
+    materialRequested = true;
+    await materialGate;
+    const response = await page.request.get("/api/materials/open-2026");
+    const payload = await response.json();
+    await route.fulfill({ json: { material: { ...payload.material, id: materialId, label: "Отложенный вариант" } } });
+  });
+  return {
+    interrupted,
+    materialId,
+    releaseMaterial,
+    wasRequested: () => materialRequested,
+  };
+}
+
 test("exam starts only after the readiness screen is confirmed", async ({ page }) => {
   await installWorkingMicrophone(page);
   await page.goto("/");
@@ -226,6 +274,26 @@ test("readiness fits a 360px viewport with touch-sized actions", async ({ page }
   }
 });
 
+test("readiness moves keyboard focus and restores it when going back", async ({ page }) => {
+  await installWorkingMicrophone(page);
+  await page.goto("/");
+  const startButton = page.locator('[data-start="1"]');
+
+  await startButton.focus();
+  await startButton.press("Enter");
+  await expect(page.locator("#readinessScreen")).toBeVisible();
+  await expect(page.locator("#readinessTitle")).toBeFocused();
+
+  await page.locator("#cancelReadyRunBtn").click();
+  await expect(page.locator("#homeScreen")).toBeVisible();
+  await expect(startButton).toBeFocused();
+
+  await startButton.press("Enter");
+  await expect(page.locator("#beginReadyRunBtn")).toBeEnabled();
+  await page.locator("#beginReadyRunBtn").click();
+  await expect(page.locator("#mainActionBtn")).toBeFocused();
+});
+
 test("signing in cancels a readiness action from the guest scope", async ({ page }) => {
   const student = {
     id: 501,
@@ -289,3 +357,34 @@ test("a disconnected microphone blocks confirmation after an earlier success", a
   const progress = await page.evaluate(() => JSON.parse(localStorage.getItem("egeChineseProgressV2")));
   expect(progress.activeRun).toBeNull();
 });
+
+for (const scenario of [
+  { name: "resume", selector: "#continueRunBtn" },
+  { name: "restart", selector: "#restartInterruptedRunBtn" },
+]) {
+  test(`back cancels a ${scenario.name} while its material is still loading`, async ({ page }) => {
+    await installWorkingMicrophone(page);
+    const delayed = await installDelayedInterruptedMaterial(page, `cancel-${scenario.name}`);
+    await page.goto("/");
+
+    await page.locator(scenario.selector).click();
+    await expect(page.locator("#beginReadyRunBtn")).toBeEnabled();
+    await page.locator("#beginReadyRunBtn").click();
+    await expect.poll(delayed.wasRequested).toBe(true);
+    await page.locator("#cancelReadyRunBtn").click();
+
+    await expect(page.locator("#homeScreen")).toBeVisible();
+    const materialResponse = page.waitForResponse(response => response.url().endsWith(`/api/materials/${delayed.materialId}`));
+    delayed.releaseMaterial();
+    await materialResponse;
+    await page.waitForTimeout(100);
+
+    await expect(page.locator("#runnerScreen")).toHaveClass(/hidden/);
+    await expect(page.locator("#readinessScreen")).toHaveClass(/hidden/);
+    await expect(page.locator("#selectedMaterialTitle")).toHaveText("Официальный вариант 2026");
+    await expect(page).not.toHaveURL(new RegExp(`variant=${delayed.materialId}`));
+    const progress = await page.evaluate(() => JSON.parse(localStorage.getItem("egeChineseProgressV2")));
+    expect(progress.activeRun).toEqual(delayed.interrupted.activeRun);
+    expect(progress.runs).toEqual([]);
+  });
+}

@@ -72,3 +72,32 @@ test("restart readiness restores the complete exam", () => {
   assert.equal(summary.duration, "14 минут");
   assert.equal(summary.action, "Начать заново");
 });
+
+test("stored-run readiness does not use the currently selected material timings", () => {
+  const currentTaskOnlyVariant = {
+    id: "task-2-only",
+    label: "Только задание 2",
+    totalMinutes: 4,
+    tasks: {
+      2: { prepSeconds: 120, answerSeconds: 120 },
+    },
+  };
+
+  const resumed = buildReadinessSummary({
+    variant: currentTaskOnlyVariant,
+    pending: { kind: "resume", startMode: "exam" },
+    activeRun: interrupted,
+  });
+  const restarted = buildReadinessSummary({
+    variant: currentTaskOnlyVariant,
+    pending: { kind: "restart", startMode: "exam" },
+    activeRun: interrupted,
+  });
+
+  assert.equal(resumed.material, variant.label);
+  assert.equal(resumed.tasks, "Задания 2–3");
+  assert.equal(resumed.duration, "10 минут");
+  assert.equal(restarted.material, variant.label);
+  assert.equal(restarted.tasks, "Задания 1–3");
+  assert.equal(restarted.duration, "14 минут");
+});
