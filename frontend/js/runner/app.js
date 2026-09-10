@@ -64,6 +64,7 @@ function switchProgressScope(user, { adoptGuest = false } = {}) {
     progress = loadLocalProgress(nextScope, { onError: message => toast(message) });
   }
   progressScope = nextScope;
+  $("resumeRunPanel").classList.add("hidden");
 }
 
 function saveProgressLocal(sync = true) {
@@ -82,7 +83,9 @@ function renderProgress() {
     ? `${pluralize(completed.length, "тренировка", "тренировки", "тренировок")} · ${pluralize(tasks, "задание", "задания", "заданий")}`
     : "Тренировок пока нет";
   $("progressSyncStatus").textContent = account?.user
-    ? `Синхронизировано · ${account.user.email}`
+    ? account.progressHydrated
+      ? `Синхронизировано · ${account.user.email}`
+      : "Нет связи · сохранено в браузере"
     : latest ? `Последняя: ${formatHistoryDate(latest.completedAt || latest.startedAt)}` : "Сохраняется в этом браузере";
   $("accountRuns").textContent = completed.length;
   $("accountRunsLabel").textContent = plural(completed.length, "завершённая тренировка", "завершённые тренировки", "завершённых тренировок");
@@ -153,7 +156,8 @@ async function loadVariant(id, snapshot = null) {
       variantCache.set(id, (await response.json()).material);
     }
     variant = variantCache.get(id);
-    if (progress.settings.lastVariant !== id) {
+    const canPersistSelection = !account?.user || account.progressHydrated;
+    if (progress.settings.lastVariant !== id && canPersistSelection) {
       progress.settings.lastVariant = id;
       saveProgressLocal();
     }

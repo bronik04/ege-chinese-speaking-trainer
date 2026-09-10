@@ -25,6 +25,7 @@ export function createAccountController(ctx) {
 
   return {
     get user() { return auth.user; },
+    get progressHydrated() { return auth.progressHydrated; },
     initAuth: auth.initAuth,
     renderAuth: auth.renderAuth,
     setAuthMode: auth.setAuthMode,

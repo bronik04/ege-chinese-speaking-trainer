@@ -144,10 +144,11 @@ export function createAccountAuthController(ctx) {
   }
 
   function scheduleProgressSync() {
-    if (!user || !progressHydrated) return;
+    if (!user) return;
     clearTimeout(syncTimer);
-    $("progressSyncStatus").textContent = "Сохраняем на сервере…";
-    syncTimer = setTimeout(() => pushProgress().catch(showProgressSyncError), 350);
+    const operation = progressHydrated ? pushProgress : syncProgress;
+    $("progressSyncStatus").textContent = progressHydrated ? "Сохраняем на сервере…" : "Проверяем связь с сервером…";
+    syncTimer = setTimeout(() => operation().catch(showProgressSyncError), 350);
   }
 
   async function pushProgress() {
@@ -167,6 +168,7 @@ export function createAccountAuthController(ctx) {
 
   return {
     get user() { return user; },
+    get progressHydrated() { return progressHydrated; },
     setUser,
     initAuth,
     renderAuth,

@@ -211,3 +211,75 @@ test("repeated restart clicks archive only the original interrupted run", async 
   expect(accountProgress.runs[0].id).toBe("interrupted-exam");
   expect(accountProgress.activeRun.id).not.toBe("interrupted-exam");
 });
+
+test("a failed catalog refresh after login hides the previous guest offer", async ({ page }) => {
+  await seedInterruptedRun(page);
+  await page.route("**/api/auth/me", route => route.fulfill({
+    status: 401,
+    json: { detail: "Authentication required", code: "authentication_required" },
+  }));
+  await page.route("**/api/auth/login", route => route.fulfill({ json: { user: studentUser } }));
+  await page.route("**/api/progress", route => {
+    if (route.request().method() === "PUT") return route.fulfill({ json: { ok: true, updatedAt: 1_789_000_000 } });
+    return route.fulfill({ json: { progress: null, updatedAt: null } });
+  });
+  let catalogRequests = 0;
+  await page.route("**/api/materials", route => {
+    catalogRequests += 1;
+    if (catalogRequests === 1) return route.continue();
+    return route.fulfill({ status: 503, json: { detail: "temporary failure" } });
+  });
+
+  await page.goto("/");
+  await expect(page.locator("#resumeRunPanel")).toBeVisible();
+  await page.locator("#authButton").click();
+  await page.locator("#authEmail").fill(studentUser.email);
+  await page.locator("#authPassword").fill("password123");
+  await page.locator("#authSubmitBtn").click();
+
+  await expect(page.locator("#authButtonText")).toHaveText(studentUser.email);
+  await expect(page.locator("#resumeRunPanel")).toHaveClass(/hidden/);
+});
+
+test("a failed catalog refresh after logout hides the previous account offer", async ({ page }) => {
+  await installAccountProgressApi(page, storedProgress);
+  await page.route("**/api/auth/logout", route => route.fulfill({ json: { ok: true } }));
+  let catalogRequests = 0;
+  await page.route("**/api/materials", route => {
+    catalogRequests += 1;
+    if (catalogRequests < 3) return route.continue();
+    return route.fulfill({ status: 503, json: { detail: "temporary failure" } });
+  });
+
+  await page.goto("/");
+  await expect(page.locator("#resumeRunPanel")).toBeVisible();
+  await page.locator("#authButton").click();
+  await page.locator("#logoutBtn").click();
+
+  await expect(page.locator("#authButtonText")).toHaveText("Войти");
+  await expect(page.locator("#resumeRunPanel")).toHaveClass(/hidden/);
+});
+
+test("a later progress change safely retries failed account hydration", async ({ page }) => {
+  await page.route("**/api/auth/me", route => route.fulfill({ json: { user: studentUser } }));
+  let progressGets = 0;
+  const writes = [];
+  await page.route("**/api/progress", route => {
+    if (route.request().method() === "PUT") {
+      writes.push(route.request().postDataJSON().progress);
+      return route.fulfill({ json: { ok: true, updatedAt: 1_789_000_000 } });
+    }
+    progressGets += 1;
+    if (progressGets === 1) return route.fulfill({ status: 503, json: { detail: "temporary failure" } });
+    return route.fulfill({ json: { progress: null, updatedAt: null } });
+  });
+
+  await page.goto("/");
+  await expect(page.locator("#progressSyncStatus")).toContainText("Нет связи");
+  await page.locator('[data-start="3"]').click();
+
+  await expect.poll(() => progressGets).toBe(2);
+  await expect.poll(() => writes.length).toBeGreaterThan(0);
+  expect(writes.at(-1).activeRun).toMatchObject({ mode: "practice", tasks: [3], currentTask: 3 });
+  await expect(page.locator("#progressSyncStatus")).toContainText("Синхронизировано");
+});
