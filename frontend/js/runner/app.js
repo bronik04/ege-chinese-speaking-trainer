@@ -18,6 +18,8 @@ const screens = {
 let variantIndex = [];
 let variant = null;
 let variantCatalogScope = null;
+let variantCatalogGeneration = 0;
+let variantLoadGeneration = 0;
 const variantCache = new Map();
 let progressScope = progressStorageKeys();
 let progress = loadLocalProgress(progressScope, { onError: message => toast(message) });
@@ -64,6 +66,12 @@ function switchProgressScope(user, { adoptGuest = false } = {}) {
     progress = loadLocalProgress(nextScope, { onError: message => toast(message) });
   }
   progressScope = nextScope;
+  variantCatalogGeneration += 1;
+  variantLoadGeneration += 1;
+  variantCatalogScope = null;
+  variantCache.clear();
+  variant = null;
+  setStartButtonsEnabled(false);
   $("resumeRunPanel").classList.add("hidden");
 }
 
@@ -120,12 +128,15 @@ function setStartButtonsEnabled(enabled) {
 }
 
 async function initVariants() {
+  const expectedScope = progressScope.current;
+  const requestGeneration = ++variantCatalogGeneration;
   try {
     const response = await fetch("/api/materials");
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const payload = await response.json();
+    if (expectedScope !== progressScope.current || requestGeneration !== variantCatalogGeneration) return false;
     variantIndex = payload.materials;
-    variantCatalogScope = progressScope.current;
+    variantCatalogScope = expectedScope;
     $("variantCount").textContent = variantIndex.length;
     $("variantCountLabel").textContent = plural(variantIndex.length, "вариант", "варианта", "вариантов");
     const requestedVariant = new URLSearchParams(window.location.search).get("variant");
@@ -137,6 +148,7 @@ async function initVariants() {
     await loadVariant(preferredVariant);
     return true;
   } catch (error) {
+    if (expectedScope !== progressScope.current || requestGeneration !== variantCatalogGeneration) return false;
     $("variantSource").textContent = "Не удалось загрузить задания";
     toast("Запустите проект через локальный сервер");
     console.error("Variant loading failed", error);
@@ -145,16 +157,24 @@ async function initVariants() {
 }
 
 async function loadVariant(id, snapshot = null) {
+  const expectedScope = progressScope.current;
+  const requestGeneration = ++variantLoadGeneration;
   setStartButtonsEnabled(false);
   const item = variantIndex.find(entry => entry.id === id);
-  if (!item && !snapshot) return false;
+  if (!item && !snapshot) {
+    if (variant) setStartButtonsEnabled(true);
+    return false;
+  }
   try {
     if (snapshot) variantCache.set(id, snapshot);
     if (!variantCache.has(id)) {
       const response = await fetch(`/api/materials/${encodeURIComponent(id)}`);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      variantCache.set(id, (await response.json()).material);
+      const material = (await response.json()).material;
+      if (expectedScope !== progressScope.current || requestGeneration !== variantLoadGeneration) return false;
+      variantCache.set(id, material);
     }
+    if (expectedScope !== progressScope.current || requestGeneration !== variantLoadGeneration) return false;
     variant = variantCache.get(id);
     const canPersistSelection = !account?.user || account.progressHydrated;
     if (progress.settings.lastVariant !== id && canPersistSelection) {
@@ -165,12 +185,16 @@ async function loadVariant(id, snapshot = null) {
     url.searchParams.set("variant", id);
     window.history.replaceState({}, "", url);
     updateVariantUI();
-    setStartButtonsEnabled(true);
     return true;
   } catch (error) {
+    if (expectedScope !== progressScope.current || requestGeneration !== variantLoadGeneration) return false;
     toast("Не удалось загрузить выбранный вариант");
     console.error("Variant loading failed", error);
     return false;
+  } finally {
+    if (expectedScope === progressScope.current && requestGeneration === variantLoadGeneration && variant) {
+      setStartButtonsEnabled(true);
+    }
   }
 }
 

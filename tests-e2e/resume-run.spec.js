@@ -325,3 +325,91 @@ test("a delayed hydration response cannot write account progress into guest stor
   expect(savedGuest.activeRun.id).toBe("guest-original");
   expect(savedGuest.runs).toEqual([]);
 });
+
+test("a delayed resume material response cannot escape the account scope", async ({ page }) => {
+  const privateMaterialId = "private-material";
+  const privateProgress = {
+    ...storedProgress,
+    settings: { ...storedProgress.settings, lastVariant: "open-2026" },
+    activeRun: {
+      ...storedProgress.activeRun,
+      variantId: privateMaterialId,
+      variantLabel: "Личный вариант",
+    },
+  };
+  await installAccountProgressApi(page, privateProgress);
+  await page.route("**/api/auth/logout", route => route.fulfill({ json: { ok: true } }));
+  let catalogRequests = 0;
+  await page.route("**/api/materials", route => {
+    catalogRequests += 1;
+    const materials = catalogRequests === 3
+      ? [{ id: "open-2026", year: 2026, label: "Официальный вариант 2026" }]
+      : [
+          { id: "open-2026", year: 2026, label: "Официальный вариант 2026" },
+          { id: privateMaterialId, year: 2026, label: "Личный вариант" },
+        ];
+    return route.fulfill({ json: { materials, canCreate: false } });
+  });
+  let releaseMaterial;
+  const materialGate = new Promise(resolve => { releaseMaterial = resolve; });
+  let privateMaterialRequested = false;
+  await page.route(`**/api/materials/${privateMaterialId}`, async route => {
+    privateMaterialRequested = true;
+    await materialGate;
+    const response = await page.request.get("/api/materials/open-2026");
+    const payload = await response.json();
+    return route.fulfill({ json: { material: { ...payload.material, id: privateMaterialId, label: "Личный вариант" } } });
+  });
+
+  await page.goto("/");
+  await expect(page.locator("#resumeRunPanel")).toBeVisible();
+  await page.locator("#continueRunBtn").click();
+  await expect.poll(() => privateMaterialRequested).toBe(true);
+  await page.locator("#authButton").click();
+  await page.locator("#logoutBtn").click();
+  await expect(page.locator("#authButtonText")).toHaveText("Войти");
+  await expect.poll(() => catalogRequests).toBe(3);
+
+  releaseMaterial();
+  await page.waitForResponse(response => response.url().endsWith(`/api/materials/${privateMaterialId}`));
+  await page.waitForTimeout(100);
+
+  await expect(page.locator("#selectedMaterialTitle")).toHaveText("Официальный вариант 2026");
+  await expect(page).not.toHaveURL(new RegExp(`variant=${privateMaterialId}`));
+  await expect(page.locator("#runnerScreen")).toHaveClass(/hidden/);
+});
+
+test("a failed resume material load restores the current training actions", async ({ page }) => {
+  const privateMaterialId = "unavailable-private-material";
+  const privateProgress = {
+    ...storedProgress,
+    settings: { ...storedProgress.settings, lastVariant: "open-2026" },
+    activeRun: {
+      ...storedProgress.activeRun,
+      variantId: privateMaterialId,
+      variantLabel: "Временно недоступный вариант",
+    },
+  };
+  await installAccountProgressApi(page, privateProgress);
+  await page.route("**/api/materials", route => route.fulfill({ json: {
+    materials: [
+      { id: "open-2026", year: 2026, label: "Официальный вариант 2026" },
+      { id: privateMaterialId, year: 2026, label: "Временно недоступный вариант" },
+    ],
+    canCreate: false,
+  } }));
+  await page.route(`**/api/materials/${privateMaterialId}`, route => route.fulfill({
+    status: 503,
+    json: { detail: "temporary failure" },
+  }));
+
+  await page.goto("/");
+  await expect(page.locator("#resumeRunPanel")).toBeVisible();
+  await expect(page.locator('[data-start="3"]')).toBeEnabled();
+  await page.locator("#continueRunBtn").click();
+
+  await expect(page.locator("#toast")).toHaveText("Не удалось загрузить выбранный вариант");
+  await expect(page.locator("#selectedMaterialTitle")).toHaveText("Официальный вариант 2026");
+  await expect(page.locator('[data-start="3"]')).toBeEnabled();
+  await expect(page.locator("#resumeRunPanel")).toBeVisible();
+});
