@@ -138,7 +138,8 @@ test("personal archive", async ({ browser }) => {
     await studentPage.goto("/");
     await registerStudent(studentPage, stamp);
     await finishTask(studentPage, 2);
-    await expect.poll(() => studentUploads).toBe(1);
+    await expect(studentPage.locator("#submissionStatus")).toContainText("сохранены");
+    expect(studentUploads).toBe(1);
     await studentPage.goto("/history.html");
     await studentPage.locator(".history-entry summary").click();
     await expect(studentPage.locator(".history-audio-item")).toContainText("Удалится");
@@ -287,12 +288,8 @@ test("owner scores queued review without groups, assignments, or comments", asyn
     await studentPage.getByRole("button", { name: "Отправить одно задание" }).click();
     await expect(studentPage.locator("#reviewRequestMessage")).toContainText("отправлена");
 
-    await teacherPage.goto("/");
-    await teacherPage.locator("#authButton").click();
-    await expect(teacherPage.locator("#authModal")).not.toHaveClass(/hidden/);
-    await expect(teacherPage.locator("#accountTitle")).toHaveText("Очередь разборов");
-    await teacherPage.getByRole("button", { name: "Открыть кабинет преподавателя" }).click();
-    await expect(teacherPage.getByRole("dialog", { name: "Очередь разбора" })).toBeVisible();
+    await teacherPage.goto("/teacher.html");
+    await expect(teacherPage.getByRole("heading", { name: "Очередь разбора", exact: true })).toBeVisible();
     await teacherPage.locator("#reviewStudentFilter").fill(`student-${stamp}@example.test`);
     const queuePayload = await (await teacher.request.get("/api/teacher/review-requests")).json();
     const submitted = new Date(queuePayload.requests.find(item => item.studentEmail === `student-${stamp}@example.test`).submittedAt * 1000);
@@ -351,14 +348,17 @@ test("owner history includes the student's earlier reviews outside the queue fil
     await studentPage.getByRole("button", { name: "Отправить одно задание" }).click();
     await expect(studentPage.locator("#reviewRequestMessage")).toContainText("отправлена");
 
-    await teacherPage.goto("/");
-    await teacherPage.locator("#authButton").click();
-    await teacherPage.getByRole("button", { name: "Открыть кабинет преподавателя" }).click();
+    await teacherPage.goto("/teacher.html");
     await teacherPage.locator("#reviewStudentFilter").fill(`student-${stamp}@example.test`);
     await teacherPage.locator("#reviewTaskFilter").selectOption("3");
     await teacherPage.getByRole("button", { name: "Применить" }).click();
-    await expect(teacherPage.getByRole("button", { name: "История заявок" })).toHaveCount(1);
-    await teacherPage.getByRole("button", { name: "История заявок" }).click();
+    const historyButton = teacherPage.getByRole("button", { name: "История заявок" });
+    await expect(historyButton).toHaveCount(1);
+    const requestId = await historyButton.getAttribute("data-student-review-history");
+    await historyButton.click();
+    await expect(teacherPage).toHaveURL(new RegExp(`teacher\\.html\\?request=${requestId}$`));
+    await expect(teacherPage.locator(".attempt-history")).toContainText(" · ");
+    await teacherPage.reload();
     await expect(teacherPage.locator(".attempt-history")).toContainText(" · ");
   } finally {
     await teacher.close();

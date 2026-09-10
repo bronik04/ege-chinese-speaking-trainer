@@ -184,6 +184,55 @@ test("student deletes the account and can no longer sign in", async ({ browser }
   await login.close();
 });
 
+test("owner account links to a separate teacher workspace", async ({ browser }) => {
+  const teacher = await browser.newContext({ baseURL });
+  await registerOwner(teacher);
+  const page = await teacher.newPage();
+  await page.goto("/");
+  await page.locator("#authButton").click();
+
+  const cabinetLink = page.locator("#teacherCabinetLink");
+  await expect(cabinetLink).toBeVisible();
+  await expect(cabinetLink).toHaveAttribute("href", "teacher.html");
+  await cabinetLink.click();
+
+  await expect(page).toHaveURL(/\/teacher\.html$/);
+  await expect(page.getByRole("heading", { name: "Очередь разбора", exact: true })).toBeVisible();
+  await expect(page.locator("#teacherModal")).toHaveCount(0);
+
+  await page.goto("/teacher.html?request=999999");
+  await expect(page.locator("#teacherReviewMessage")).toContainText("Запрос не найден");
+  await expect(page).toHaveURL(/\/teacher\.html$/);
+
+  const deletion = await teacher.request.delete("/api/account", {
+    headers: originHeaders,
+    data: { password: "original123" },
+  });
+  expect(deletion.ok(), await deletion.text()).toBeTruthy();
+  await teacher.close();
+});
+
+test("guest and student cannot open the teacher workspace", async ({ browser }) => {
+  const guest = await browser.newContext({ baseURL });
+  const student = await browser.newContext({ baseURL });
+  await register(student, `teacher-access-${Date.now()}@example.test`);
+
+  for (const context of [guest, student]) {
+    const page = await context.newPage();
+    let queueRequests = 0;
+    page.on("request", request => {
+      if (new URL(request.url()).pathname.startsWith("/api/teacher/review-requests")) queueRequests += 1;
+    });
+    await page.goto("/teacher.html");
+    await expect(page.locator("#authModal")).toBeVisible();
+    await expect(page.locator("#teacherWorkspace")).toHaveCount(0);
+    expect(queueRequests).toBe(0);
+  }
+
+  await guest.close();
+  await student.close();
+});
+
 test("student and owner cabinets have no assignment controls", async ({ browser }) => {
   const stamp = Date.now();
   const teacher = await browser.newContext({ baseURL });
@@ -195,15 +244,16 @@ test("student and owner cabinets have no assignment controls", async ({ browser 
   await teacherPage.goto("/");
   await studentPage.goto("/");
   await teacherPage.locator("#authButton").click();
-  await teacherPage.locator("#teacherCabinetBtn").click();
+  await teacherPage.locator("#teacherCabinetLink").click();
   await studentPage.locator("#authButton").click();
   await expect(studentPage.locator("#logoutBtn")).toHaveCSS("background-color", "rgb(244, 236, 219)");
   await expect(studentPage.locator("#logoutBtn")).toHaveCSS("box-shadow", "none");
   await expect(studentPage.locator("#accountSecurityLink")).toBeVisible();
   await expect(teacherPage.locator("#teacherMaterialEditorLink")).toBeVisible();
   await expect(teacherPage.locator("#teacherMaterialEditorLink")).toHaveAttribute("href", "variant-editor.html");
-  await expect(teacherPage.locator("#teacherModal .teacher-dialog")).toHaveCSS("border-radius", "16px");
-  await expect(teacherPage.locator("#teacherModal .teacher-materials-entry")).toHaveCSS("border-radius", "16px");
+  await expect(teacherPage.locator("#teacherModal")).toHaveCount(0);
+  await expect(teacherPage.locator(".teacher-review-section")).toHaveCSS("border-radius", "16px");
+  await expect(teacherPage.locator(".teacher-materials-entry")).toHaveCSS("border-radius", "16px");
   await expect(teacherPage.locator("#reviewRequestFilters")).toHaveCSS("border-radius", "12px");
   await teacherPage.setViewportSize({ width: 390, height: 844 });
   expect(await teacherPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();

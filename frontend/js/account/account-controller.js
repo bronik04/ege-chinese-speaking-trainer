@@ -1,33 +1,24 @@
 import { createAccountAuthController } from "./account-auth-controller.js";
-import { createAccountReviewsController } from "./account-reviews-controller.js";
 import { createAccountReviewRequestsController } from "./account-review-requests-controller.js";
 import { createAccountSecurityController } from "./account-security-controller.js";
 import { createAccountPersonalRecordingsController } from "./account-personal-recordings-controller.js";
 
 export function createAccountController(ctx) {
-  let reviews;
   let reviewRequests;
   let security;
   let personalRecordings;
 
-  const refreshAccountData = async () => {
-    if (auth.user?.role === "teacher") await reviews.loadTeacherReviewRequests();
-  };
-
   const resetAccountViews = () => {
-    reviews?.reset();
     reviewRequests?.reset();
     personalRecordings?.reset();
   };
 
   const auth = createAccountAuthController({
     ...ctx,
-    refreshAccountData,
     resetAccountViews,
     isPasswordResetting: () => security?.isPasswordResetting() || false,
   });
 
-  reviews = createAccountReviewsController({ toast: ctx.toast, getUser: () => auth.user });
   reviewRequests = createAccountReviewRequestsController({ ...ctx, getUser: () => auth.user });
   personalRecordings = createAccountPersonalRecordingsController({ ...ctx, getUser: () => auth.user });
   security = createAccountSecurityController({ ...ctx, auth });
@@ -44,14 +35,10 @@ export function createAccountController(ctx) {
     scheduleProgressSync: auth.scheduleProgressSync,
     pushProgress: auth.pushProgress,
     syncProgress: auth.syncProgress,
-    refreshAccountData,
     submitReviewRequest: reviewRequests.submitReviewRequest,
     clearPendingReviewRequest: reviewRequests.clearPendingReviewRequest,
     archiveCompletedRun: personalRecordings.archiveCompletedRun,
     retryArchive: personalRecordings.retryArchive,
-    loadTeacherReviewRequests: reviews.loadTeacherReviewRequests,
-    showStudentReviewHistory: reviews.showStudentReviewHistory,
-    saveReviewScores: reviews.saveReviewScores,
     requestPasswordReset: security.requestPasswordReset,
     submitPasswordReset: security.submitPasswordReset,
     cancelPasswordReset: security.cancelPasswordReset,

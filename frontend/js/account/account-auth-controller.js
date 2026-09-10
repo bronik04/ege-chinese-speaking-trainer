@@ -30,7 +30,6 @@ export function createAccountAuthController(ctx) {
       return;
     }
     try { await syncProgress(); } catch (error) { showProgressSyncError(error); }
-    try { await ctx.refreshAccountData(); } catch (_) {}
   }
 
   function setUser(value) {
@@ -50,7 +49,7 @@ export function createAccountAuthController(ctx) {
     $("accountRole").textContent = isTeacher ? "Преподаватель" : "Ученик";
     $("accountTitle").textContent = isTeacher ? "Очередь разборов" : "Прогресс синхронизирован";
     $("studentAccountTools").classList.toggle("hidden", !user || isTeacher);
-    $("teacherCabinetBtn").classList.toggle("hidden", !isTeacher);
+    $("teacherCabinetLink").classList.toggle("hidden", !isTeacher);
     $("emailVerificationPanel").classList.toggle("hidden", !user || user.emailVerified);
     if (!user) ctx.resetAccountViews();
     ctx.renderProgress();
@@ -73,7 +72,7 @@ export function createAccountAuthController(ctx) {
   let focusBeforeModal = null;
 
   function anyModalOpen() {
-    return [$("authModal"), $("teacherModal")].some(modal => !modal.classList.contains("hidden"));
+    return !$("authModal").classList.contains("hidden");
   }
 
   function openModal(modal) {
@@ -89,8 +88,7 @@ export function createAccountAuthController(ctx) {
   }
 
   function closeModal(modal) {
-    // Escape закрывает все три диалога подряд, поэтому повторный вызов на уже
-    // закрытом диалоге не должен второй раз трогать фокус.
+    // Повторный вызов на уже закрытом диалоге не должен второй раз трогать фокус.
     if (modal.classList.contains("hidden")) return;
     modal.classList.add("hidden");
     if (anyModalOpen()) return;
@@ -118,7 +116,6 @@ export function createAccountAuthController(ctx) {
       await ctx.refreshMaterials();
       renderAuth();
       try { await syncProgress(); } catch (error) { showProgressSyncError(error); }
-      try { await ctx.refreshAccountData(); } catch (_) {}
       closeModal($("authModal"));
       toast(mode === "login" ? "Вход выполнен" : "Аккаунт создан");
       $("authForm").reset();

@@ -284,7 +284,6 @@ const {
   initAuth, setAuthMode, openModal, closeModal, submitAuth, logout, requestPasswordReset,
   submitPasswordReset, cancelPasswordReset, sendVerificationEmail,
   handleAccountLinks,
-  saveReviewScores, showStudentReviewHistory, loadTeacherReviewRequests,
 } = account;
 
 document.querySelectorAll("[data-start]").forEach(button => button.addEventListener("click", () => startRun(button.dataset.start)));
@@ -296,7 +295,6 @@ $("restartBtn").addEventListener("click", () => showScreen("home"));
 $("retryArchiveBtn").addEventListener("click", () => account.retryArchive());
 $("authButton").addEventListener("click", () => openModal($("authModal")));
 $("authCloseBtn").addEventListener("click", () => closeModal($("authModal")));
-$("teacherCloseBtn").addEventListener("click", () => closeModal($("teacherModal")));
 $("loginTab").addEventListener("click", () => setAuthMode("login"));
 $("registerTab").addEventListener("click", () => setAuthMode("register"));
 $("authForm").addEventListener("submit", submitAuth);
@@ -304,26 +302,13 @@ $("forgotPasswordBtn").addEventListener("click", requestPasswordReset);
 $("passwordResetForm").addEventListener("submit", submitPasswordReset);
 $("cancelPasswordResetBtn").addEventListener("click", cancelPasswordReset);
 $("sendVerificationBtn").addEventListener("click", sendVerificationEmail);
-$("teacherReviewRequests").addEventListener("submit", event => {
-  const form = event.target.closest("[data-review-request]");
-  if (!form) return;
-  event.preventDefault();
-  saveReviewScores(form);
-});
-$("teacherReviewRequests").addEventListener("click", event => {
-  const button = event.target.closest("[data-student-review-history]");
-  if (button) showStudentReviewHistory(Number(button.dataset.studentReviewHistory));
-});
-$("reviewRequestFilters").addEventListener("submit", event => { event.preventDefault(); loadTeacherReviewRequests(); });
-$("teacherCabinetBtn").addEventListener("click", async () => { await loadTeacherReviewRequests(); closeModal($("authModal")); openModal($("teacherModal")); });
 $("logoutBtn").addEventListener("click", logout);
-[$("authModal"), $("teacherModal")].forEach(modal => modal.addEventListener("click", event => {
-  if (event.target === modal) closeModal(modal);
-}));
+$("authModal").addEventListener("click", event => {
+  if (event.target === $("authModal")) closeModal($("authModal"));
+});
 document.addEventListener("keydown", event => {
   if (event.key === "Escape") {
     closeModal($("authModal"));
-    closeModal($("teacherModal"));
   }
 });
 $("soundToggle").addEventListener("click", runner.toggleSound);

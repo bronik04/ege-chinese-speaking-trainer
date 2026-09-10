@@ -85,7 +85,7 @@ export function historyPageStateMarkup({ kind, message }) {
     return `${copy}<a class="secondary-btn" href="index.html?account=1">Войти и синхронизировать</a>`;
   }
   if (kind === "teacher") {
-    return `${copy}<a class="secondary-btn" href="index.html?account=1">Открыть кабинет преподавателя</a>`;
+    return `${copy}<a class="secondary-btn" href="teacher.html">Открыть кабинет преподавателя</a>`;
   }
   return copy;
 }

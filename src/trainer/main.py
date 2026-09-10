@@ -201,6 +201,7 @@ async def static_files(path: str):
         "variants.html",
         "history.html",
         "security.html",
+        "teacher.html",
         "variant-editor.html",
         "reference.html",
     }

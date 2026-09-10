@@ -120,6 +120,7 @@ test("recovered cards and page states explain incomplete and guest data", () => 
   assert.match(guest, /Данные &lt;локальные&gt;/);
   assert.match(guest, /href="index\.html\?account=1"/);
   assert.match(teacher, /Открыть кабинет преподавателя/);
+  assert.match(teacher, /href="teacher\.html"/);
 });
 
 test("empty history has a calm explanatory message", () => {

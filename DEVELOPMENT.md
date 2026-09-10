@@ -75,7 +75,7 @@ cp .env.example .env
 2. Задайте `TRAINER_OWNER_EMAIL` до регистрации владельца.
 3. Обновите базу командой `.venv/bin/alembic upgrade head`.
 4. Зарегистрируйте и подтвердите точный email владельца.
-5. Проверьте health, вход ученика, очередь преподавателя и один review request.
+5. Проверьте health, вход ученика, отдельную страницу очереди `/teacher.html` и один review request.
 
 ## SQLite и Alembic
 

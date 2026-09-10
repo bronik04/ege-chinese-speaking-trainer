@@ -143,39 +143,10 @@
           <section class="account-progress-card"><div><p class="mini-heading">Ваш прогресс</p><b id="progressSummary">Тренировок пока нет</b><small id="progressSyncStatus">Сохраняется в этом браузере</small></div><a class="text-btn account-history-link" href="history.html">История →</a></section>
         </div>
         <div class="account-actions">
-          <button class="primary-btn wide hidden" id="teacherCabinetBtn" type="button">Открыть кабинет преподавателя</button>
+          <a class="primary-btn wide hidden" id="teacherCabinetLink" href="teacher.html">Открыть кабинет преподавателя</a>
           <a class="secondary-btn account-security-link" id="accountSecurityLink" href="security.html">Безопасность аккаунта</a>
           <button class="secondary-btn" id="logoutBtn" type="button">Выйти из аккаунта</button>
         </div>
-      </div>
-    </section>
-  </div>
-
-  <div class="modal-backdrop hidden" id="teacherModal">
-    <section class="auth-dialog teacher-dialog" role="dialog" aria-modal="true" aria-labelledby="teacherTitle">
-      <button class="modal-close" id="teacherCloseBtn" type="button" aria-label="Закрыть">×</button>
-      <header class="dialog-heading">
-        <p class="eyebrow">Кабинет преподавателя</p>
-        <h2 id="teacherTitle">Очередь разбора</h2>
-        <p class="auth-lede">Прослушивайте отправленные записи и сохраняйте баллы по критериям.</p>
-      </header>
-      <div class="teacher-workspace">
-        <section class="teacher-materials-entry">
-          <div><p class="eyebrow">Учебные материалы</p><h3>Конструктор вариантов</h3><p>Создавайте полные варианты и отдельные задания, сохраняйте черновики и публикуйте их в каталоге.</p></div>
-          <a class="primary-btn" id="teacherMaterialEditorLink" href="variant-editor.html">Добавить материал →</a>
-        </section>
-        <section class="teacher-review-section">
-          <div class="review-heading"><div><p class="eyebrow">Проверка</p><h2>Заявки учеников</h2></div><b class="queue-count" id="reviewQueueCount">Нет заявок на разбор</b></div>
-          <form class="submission-filters" id="reviewRequestFilters">
-            <label>Ученик<input id="reviewStudentFilter" type="search" placeholder="Имя или email"></label>
-            <label>Задание<select id="reviewTaskFilter"><option value="">Все задания</option><option value="1">Задание 1</option><option value="2">Задание 2</option><option value="3">Задание 3</option></select></label>
-            <label>Статус<select id="reviewStatusFilter"><option value="">Все</option><option value="queued">На разборе</option><option value="reviewed">Разобрано</option></select></label>
-            <label>Дата<input id="reviewDateFilter" type="date"></label>
-            <button class="secondary-btn" type="submit">Применить</button>
-          </form>
-          <p class="auth-message" id="teacherReviewMessage" aria-live="polite"></p>
-          <div class="teacher-submissions" id="teacherReviewRequests"></div>
-        </section>
       </div>
     </section>
   </div>
