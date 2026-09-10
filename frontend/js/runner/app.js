@@ -4,6 +4,7 @@ import { shortTime } from "./task-view.js";
 import { plural, pluralize } from "../shared/plural.js";
 import { createAccountController } from "../account/account-controller.js";
 import { fullyRecordedTasks } from "../account/account-review-requests-controller.js";
+import { prepareRunResume } from "./resume-run.js";
 import "../shared/site-shell.js";
 
 const $ = (id) => document.getElementById(id);
@@ -19,10 +20,6 @@ let variant = null;
 const variantCache = new Map();
 let progressScope = progressStorageKeys();
 let progress = loadLocalProgress(progressScope, { onError: message => toast(message) });
-// Прогон, который лежал в хранилище на момент загрузки страницы. Прерванным
-// считается только он: тренировка, начатая пользователем пока идёт авторизация,
-// и активный прогон, подтянутый с сервера, сюда не попадают.
-const interruptedRunId = progress.activeRun?.id ?? null;
 let account = null;
 let runner = null;
 let reviewRequestSent = false;
@@ -110,13 +107,6 @@ function finalizeActiveRun(status, recordingsCount = 0) {
   saveProgressLocal();
 }
 
-function recoverInterruptedRun() {
-  if (!progress.activeRun || progress.activeRun.id !== interruptedRunId) return;
-  progress.runs.unshift({ ...progress.activeRun, status: "interrupted", completedAt: new Date().toISOString(), recordingsCount: 0 });
-  progress.activeRun = null;
-  saveProgressLocal();
-}
-
 function setStartButtonsEnabled(enabled) {
   document.querySelectorAll("[data-start]").forEach(button => {
     const unavailableForTask = variant?.kind === "task" && button.dataset.start !== String(variant.taskNumber);
@@ -149,7 +139,7 @@ async function initVariants() {
 async function loadVariant(id, snapshot = null) {
   setStartButtonsEnabled(false);
   const item = variantIndex.find(entry => entry.id === id);
-  if (!item && !snapshot) return;
+  if (!item && !snapshot) return false;
   try {
     if (snapshot) variantCache.set(id, snapshot);
     if (!variantCache.has(id)) {
@@ -167,9 +157,11 @@ async function loadVariant(id, snapshot = null) {
     window.history.replaceState({}, "", url);
     updateVariantUI();
     setStartButtonsEnabled(true);
+    return true;
   } catch (error) {
     toast("Не удалось загрузить выбранный вариант");
     console.error("Variant loading failed", error);
+    return false;
   }
 }
 
@@ -185,6 +177,47 @@ function updateVariantUI() {
     $("task3Timing").textContent = `${shortTime(taskData(3).prepSeconds)} + до ${shortTime(taskData(3).answerSeconds)}`;
     $("task3CardTitle").firstChild.textContent = taskData(3).title.startsWith("Сравнение") ? "Сравнение фото" : "Проектная работа";
   }
+}
+
+function renderResumeRunOffer() {
+  const panel = $("resumeRunPanel");
+  const storedRun = progress.activeRun;
+  if (!storedRun || !variantIndex.length) {
+    panel.classList.add("hidden");
+    return;
+  }
+  if (!variantIndex.some(item => item.id === storedRun.variantId)) {
+    finalizeActiveRun("interrupted", 0);
+    panel.classList.add("hidden");
+    toast("Незавершённый вариант больше недоступен. Попытка сохранена в истории");
+    return;
+  }
+  const resumedRun = prepareRunResume(storedRun);
+  const modeLabel = resumedRun.mode === "exam" ? "Экзамен" : "Тренировка";
+  $("resumeRunDetails").textContent = `${resumedRun.variantLabel} · ${modeLabel} · Задание ${resumedRun.currentTask}`;
+  panel.classList.remove("hidden");
+}
+
+async function continueInterruptedRun() {
+  const storedRun = progress.activeRun;
+  if (!storedRun || !(await loadVariant(storedRun.variantId))) return;
+  runner.resumeRun(storedRun);
+  $("resumeRunPanel").classList.add("hidden");
+}
+
+async function restartInterruptedRun() {
+  const storedRun = progress.activeRun;
+  if (!storedRun || !(await loadVariant(storedRun.variantId))) return;
+  const startMode = storedRun.mode === "exam" ? "exam" : String(storedRun.tasks[0]);
+  finalizeActiveRun("interrupted", 0);
+  runner.startRun(startMode);
+  $("resumeRunPanel").classList.add("hidden");
+}
+
+function startNewRun(startMode) {
+  if (progress.activeRun) finalizeActiveRun("interrupted", 0);
+  runner.startRun(startMode);
+  $("resumeRunPanel").classList.add("hidden");
 }
 
 function renderReviewRequestChooser() {
@@ -263,11 +296,17 @@ account = createAccountController({
   toast, switchProgressScope, renderProgress,
   getProgress: () => progress,
   getProgressStorageKey: () => progressScope.current,
-  setProgress: (value) => { progress = value; },
+  setProgress: (value) => {
+    progress = value;
+    renderResumeRunOffer();
+  },
   saveProgressLocal,
   getVariant: () => variant,
   startRun,
-  refreshMaterials: initVariants,
+  refreshMaterials: async () => {
+    await initVariants();
+    renderResumeRunOffer();
+  },
   getCompletedRecordings: () => runner.getCompletedRecordings(),
   getCompletedTasks: () => runner.getCompletedTasks(),
   getCompletedRun: () => runner.getCompletedRun(),
@@ -286,8 +325,10 @@ const {
   handleAccountLinks,
 } = account;
 
-document.querySelectorAll("[data-start]").forEach(button => button.addEventListener("click", () => startRun(button.dataset.start)));
+document.querySelectorAll("[data-start]").forEach(button => button.addEventListener("click", () => startNewRun(button.dataset.start)));
 $("checkMicBtn").addEventListener("click", () => ensureMicrophone(true));
+$("continueRunBtn").addEventListener("click", continueInterruptedRun);
+$("restartInterruptedRunBtn").addEventListener("click", restartInterruptedRun);
 $("mainActionBtn").addEventListener("click", startPreparation);
 $("skipBtn").addEventListener("click", skipPhase);
 $("exitBtn").addEventListener("click", exitRun);
@@ -323,7 +364,7 @@ async function initialize() {
   await initVariants();
   await handleAccountLinks();
   await initAuth();
-  recoverInterruptedRun();
+  renderResumeRunOffer();
   renderProgress();
   const url = new URL(window.location.href);
   if (url.searchParams.get("account") === "1") {

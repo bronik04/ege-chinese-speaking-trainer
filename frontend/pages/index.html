@@ -24,6 +24,10 @@
   <main class="app-shell">
     <section id="homeScreen" class="screen home-screen">
       <div class="hero-row"><span class="hero-idiom" lang="zh">熟能生巧</span><div class="hero-copy"><h1 class="hero-title">Мастерство приходит с практикой.</h1><p class="hero-text">Полный экзамен или одно задание — с официальными таймингами, записью ответа и разбором по критериям.</p><p class="hero-meta"><span class="hero-meta-rule" aria-hidden="true"></span>3 задания · <b id="totalMinutes">14</b> <span id="totalMinutesLabel">минут</span> · <b id="variantCount">7</b> <span id="variantCountLabel">вариантов</span> и банк ФИПИ</p></div></div>
+      <section class="resume-run-panel hidden" id="resumeRunPanel" aria-labelledby="resumeRunTitle">
+        <div><p class="eyebrow">Незавершённая тренировка</p><h2 id="resumeRunTitle">Продолжить с места остановки?</h2><p id="resumeRunDetails"></p><small>Текущее задание начнётся заново с полного времени подготовки. Записи из закрытой вкладки восстановить нельзя.</small></div>
+        <div class="resume-run-actions"><button class="primary-btn" id="continueRunBtn" type="button">Продолжить</button><button class="secondary-btn" id="restartInterruptedRunBtn" type="button">Начать заново</button></div>
+      </section>
       <div class="home-columns"><section class="material-panel" aria-labelledby="selectedMaterialTitle"><div class="material-heading"><div><p class="eyebrow">Выбранный материал</p><h2 id="selectedMaterialTitle">Загружаем материал…</h2></div><a class="material-catalog-link" href="variants.html" aria-label="Сменить материал">Сменить материал →</a></div><p class="selected-material-source" id="variantSource">Проверяем источник</p><p class="selected-material-duration" id="selectedMaterialDuration">— минут</p></section>
       <aside class="start-column"><div class="exam-card"><h2>Экзамен</h2><p>Три задания подряд, 14 минут, одна итоговая страница записей.</p><button class="primary-btn gold-btn" data-start="exam" type="button" disabled>Начать экзамен →</button></div><div class="practice-card"><div class="practice-heading"><b>По заданиям</b></div>
           <div class="task-grid">

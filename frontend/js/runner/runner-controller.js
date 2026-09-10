@@ -1,5 +1,6 @@
 import { createRunId } from "../shared/progress.js";
 import { createRecordingArchive, recordingArchiveFilename } from "./recording-archive.js";
+import { prepareRunResume } from "./resume-run.js";
 import { formatTime, stepsMarkup, taskMarkup } from "./task-view.js";
 
 const $ = (id) => document.getElementById(id);
@@ -119,6 +120,29 @@ export function createRunnerController(ctx) {
       startedAt: new Date().toISOString()
     };
     ctx.onRunStarted?.(ctx.getProgress().activeRun.id);
+    ctx.saveProgressLocal();
+    ctx.showScreen("runner");
+    renderTask();
+    setIdleControls();
+  }
+
+  function resumeRun(storedRun) {
+    const resumedRun = prepareRunResume(storedRun);
+    mode = resumedRun.mode;
+    taskQueue = [...resumedRun.tasks];
+    taskIndex = taskQueue.indexOf(resumedRun.currentTask);
+    questionIndex = 0;
+    selectedPhoto = 1;
+    photoChoiceMade = false;
+    recordings.forEach(item => URL.revokeObjectURL(item.url));
+    recordings = [];
+    completedRun = null;
+    completedTasks = [];
+    completedRecordings = [];
+    phase = "idle";
+    clearTimer();
+    ctx.getProgress().activeRun = resumedRun;
+    ctx.onRunStarted?.(resumedRun.id);
     ctx.saveProgressLocal();
     ctx.showScreen("runner");
     renderTask();
@@ -344,7 +368,7 @@ export function createRunnerController(ctx) {
   }
 
   return {
-    startRun, ensureMicrophone, startPreparation, skipPhase, exitRun, beep,
+    startRun, resumeRun, ensureMicrophone, startPreparation, skipPhase, exitRun, beep,
     toggleSound, cleanup, downloadRecordingsArchive,
     getCompletedRecordings: () => completedRecordings.map(recording => ({ ...recording })),
     getCompletedTasks: () => [...completedTasks],
