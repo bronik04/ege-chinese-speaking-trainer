@@ -35,6 +35,32 @@
       </aside></div>
     </section>
 
+    <section id="readinessScreen" class="screen readiness-screen hidden" aria-labelledby="readinessTitle">
+      <button class="back-btn readiness-back" id="cancelReadyRunBtn" type="button">← Назад к выбору</button>
+      <div class="readiness-heading">
+        <p class="eyebrow">Перед началом</p>
+        <h1 id="readinessTitle">Всё готово к тренировке?</h1>
+        <p>Проверьте параметры и микрофон. Задание останется закрытым, пока вы отдельно не запустите таймер подготовки.</p>
+      </div>
+      <div class="readiness-layout">
+        <section class="readiness-summary" aria-labelledby="readinessMaterial">
+          <p class="eyebrow">Выбранный материал</p>
+          <h2 id="readinessMaterial"></h2>
+          <dl class="readiness-facts">
+            <div><dt>Режим</dt><dd id="readinessMode"></dd></div>
+            <div><dt>Что выполняем</dt><dd id="readinessTasks"></dd></div>
+            <div><dt>Примерное время</dt><dd id="readinessDuration"></dd></div>
+          </dl>
+        </section>
+        <section class="readiness-check" aria-labelledby="readinessMicTitle">
+          <span class="status-dot" id="readinessMicDot"></span>
+          <div><p class="eyebrow">Проверка оборудования</p><h2 id="readinessMicTitle">Микрофон</h2><p id="readinessMicStatus" aria-live="polite">Проверяем доступ…</p></div>
+          <button class="secondary-btn" id="retryReadinessMicBtn" type="button">Повторить проверку</button>
+        </section>
+      </div>
+      <button class="primary-btn readiness-start" id="beginReadyRunBtn" type="button" disabled>Начать тренировку</button>
+    </section>
+
     <section id="runnerScreen" class="screen runner-screen hidden">
       <nav class="exam-steps" aria-label="Этапы экзамена">
         <button id="exitBtn" class="back-btn" type="button">← Выйти</button>

@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { confirmReadiness } from "./readiness-helpers.js";
 
 const originHeaders = { Origin: "http://127.0.0.1:8091", "Sec-Fetch-Site": "same-origin" };
 const ownerEmail = "owner@example.test";
@@ -84,6 +85,7 @@ async function registerStudent(page, stamp) {
 
 async function finishTask(page, task) {
   await page.locator(`[data-start="${task}"]`).click();
+  await confirmReadiness(page);
   await page.locator("#mainActionBtn").click();
   await page.locator("#skipBtn").click();
   await page.locator("#skipBtn").click();
@@ -92,6 +94,7 @@ async function finishTask(page, task) {
 
 async function finishTaskOne(page) {
   await page.locator('[data-start="1"]').click();
+  await confirmReadiness(page);
   await page.locator("#mainActionBtn").click();
   await page.locator("#skipBtn").click();
   for (let question = 0; question < 5; question += 1) await page.locator("#skipBtn").click();
@@ -100,6 +103,7 @@ async function finishTaskOne(page) {
 
 async function finishCompleteAttempt(page) {
   await page.locator('[data-start="exam"]').click();
+  await confirmReadiness(page);
   await page.locator("#mainActionBtn").click();
   await page.locator("#skipBtn").click();
   for (let question = 0; question < 5; question += 1) await page.locator("#skipBtn").click();

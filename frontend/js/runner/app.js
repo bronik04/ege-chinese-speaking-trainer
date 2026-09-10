@@ -5,12 +5,14 @@ import { plural, pluralize } from "../shared/plural.js";
 import { createAccountController } from "../account/account-controller.js";
 import { fullyRecordedTasks } from "../account/account-review-requests-controller.js";
 import { prepareRunResume } from "./resume-run.js";
+import { buildReadinessSummary } from "./readiness.js";
 import "../shared/site-shell.js";
 
 const $ = (id) => document.getElementById(id);
 
 const screens = {
   home: $("homeScreen"),
+  readiness: $("readinessScreen"),
   runner: $("runnerScreen"),
   result: $("resultScreen")
 };
@@ -26,7 +28,10 @@ let progress = loadLocalProgress(progressScope, { onError: message => toast(mess
 let account = null;
 let runner = null;
 let reviewRequestSent = false;
-let resumeActionPending = false;
+let pendingRunStart = null;
+let readinessGeneration = 0;
+let readinessMicReady = false;
+let readinessStartPending = false;
 
 const taskData = (task) => variant.tasks[String(task)];
 
@@ -46,6 +51,7 @@ function toast(message) {
 function switchProgressScope(user, { adoptGuest = false } = {}) {
   const nextScope = progressStorageKeys(user?.id);
   if (nextScope.current === progressScope.current) return;
+  const readinessWasOpen = !screens.readiness.classList.contains("hidden");
   const hasScopedProgress = localStorage.getItem(nextScope.current) !== null
     || localStorage.getItem(nextScope.legacy) !== null;
   if (user && adoptGuest && !hasScopedProgress && progressScope.current === progressStorageKeys().current) {
@@ -72,6 +78,8 @@ function switchProgressScope(user, { adoptGuest = false } = {}) {
   variantCache.clear();
   variant = null;
   setStartButtonsEnabled(false);
+  resetReadiness();
+  if (readinessWasOpen) showScreen("home");
   $("resumeRunPanel").classList.add("hidden");
 }
 
@@ -231,44 +239,106 @@ function renderResumeRunOffer() {
   panel.classList.remove("hidden");
 }
 
-function setResumeActionsDisabled(disabled) {
-  $("continueRunBtn").disabled = disabled;
-  $("restartInterruptedRunBtn").disabled = disabled;
+async function checkReadinessMicrophone() {
+  const generation = readinessGeneration;
+  readinessMicReady = false;
+  $("beginReadyRunBtn").disabled = true;
+  $("retryReadinessMicBtn").disabled = true;
+  $("readinessMicDot").className = "status-dot";
+  $("readinessMicStatus").textContent = "Проверяем доступ…";
+  const ready = await runner.ensureMicrophone(false);
+  if (generation !== readinessGeneration || !pendingRunStart) return;
+  readinessMicReady = ready;
+  $("readinessMicDot").className = `status-dot ${ready ? "ok" : "bad"}`;
+  $("readinessMicStatus").textContent = ready ? "Микрофон готов" : "Нет доступа к микрофону";
+  $("beginReadyRunBtn").disabled = !ready;
+  $("retryReadinessMicBtn").disabled = false;
 }
 
-async function runResumeAction(action) {
-  if (resumeActionPending) return;
-  const storedRun = progress.activeRun;
-  if (!storedRun) return;
-  resumeActionPending = true;
-  setResumeActionsDisabled(true);
+function openReadiness({ kind, startMode, storedRun = null }) {
+  if (!variant) return;
+  readinessGeneration += 1;
+  pendingRunStart = { kind, startMode, runId: storedRun?.id || null, scope: progressScope.current };
+  const summary = buildReadinessSummary({ variant, pending: pendingRunStart, activeRun: storedRun });
+  $("readinessMaterial").textContent = summary.material;
+  $("readinessMode").textContent = summary.mode;
+  $("readinessTasks").textContent = summary.tasks;
+  $("readinessDuration").textContent = summary.duration;
+  $("beginReadyRunBtn").textContent = summary.action;
+  showScreen("readiness");
+  checkReadinessMicrophone();
+}
+
+function resetReadiness() {
+  readinessGeneration += 1;
+  pendingRunStart = null;
+  readinessMicReady = false;
+  readinessStartPending = false;
+  $("beginReadyRunBtn").disabled = true;
+}
+
+function cancelReadiness() {
+  resetReadiness();
+  showScreen("home");
+  renderResumeRunOffer();
+}
+
+async function beginReadyRun() {
+  if (!pendingRunStart || !readinessMicReady || readinessStartPending) return;
+  const pending = pendingRunStart;
+  const generation = readinessGeneration;
+  readinessStartPending = true;
+  $("beginReadyRunBtn").disabled = true;
   try {
-    if (!(await loadVariant(storedRun.variantId))) return;
-    if (progress.activeRun?.id !== storedRun.id) return;
-    await action(storedRun);
+    const microphoneReady = await runner.ensureMicrophone(false);
+    if (generation !== readinessGeneration || pendingRunStart !== pending) return;
+    if (!microphoneReady) {
+      readinessMicReady = false;
+      $("readinessMicDot").className = "status-dot bad";
+      $("readinessMicStatus").textContent = "Нет доступа к микрофону";
+      return;
+    }
+    if (pending.scope !== progressScope.current) return cancelReadiness();
+    if (pending.kind !== "new") {
+      const storedRun = progress.activeRun;
+      if (!storedRun || storedRun.id !== pending.runId) return cancelReadiness();
+      if (!(await loadVariant(storedRun.variantId))) return;
+      if (pending.scope !== progressScope.current || progress.activeRun?.id !== pending.runId) return cancelReadiness();
+      if (pending.kind === "resume") runner.resumeRun(storedRun);
+      else {
+        finalizeActiveRun("interrupted", 0);
+        runner.startRun(pending.startMode);
+      }
+    } else {
+      if (progress.activeRun) finalizeActiveRun("interrupted", 0);
+      runner.startRun(pending.startMode);
+    }
+    readinessGeneration += 1;
+    pendingRunStart = null;
+    readinessMicReady = false;
     $("resumeRunPanel").classList.add("hidden");
   } finally {
-    resumeActionPending = false;
-    setResumeActionsDisabled(false);
+    readinessStartPending = false;
+    if (pendingRunStart && readinessMicReady) $("beginReadyRunBtn").disabled = false;
   }
 }
 
-async function continueInterruptedRun() {
-  await runResumeAction(storedRun => runner.resumeRun(storedRun));
+function continueInterruptedRun() {
+  const storedRun = progress.activeRun;
+  if (!storedRun) return;
+  const resumedRun = prepareRunResume(storedRun);
+  openReadiness({ kind: "resume", startMode: resumedRun.mode === "exam" ? "exam" : String(resumedRun.tasks[0]), storedRun });
 }
 
-async function restartInterruptedRun() {
-  await runResumeAction(storedRun => {
-    const startMode = storedRun.mode === "exam" ? "exam" : String(storedRun.tasks[0]);
-    finalizeActiveRun("interrupted", 0);
-    runner.startRun(startMode);
-  });
+function restartInterruptedRun() {
+  const storedRun = progress.activeRun;
+  if (!storedRun) return;
+  const startMode = storedRun.mode === "exam" ? "exam" : String(storedRun.tasks[0]);
+  openReadiness({ kind: "restart", startMode, storedRun });
 }
 
 function startNewRun(startMode) {
-  if (progress.activeRun) finalizeActiveRun("interrupted", 0);
-  runner.startRun(startMode);
-  $("resumeRunPanel").classList.add("hidden");
+  openReadiness({ kind: "new", startMode });
 }
 
 function renderReviewRequestChooser() {
@@ -376,6 +446,9 @@ document.querySelectorAll("[data-start]").forEach(button => button.addEventListe
 $("checkMicBtn").addEventListener("click", () => ensureMicrophone(true));
 $("continueRunBtn").addEventListener("click", continueInterruptedRun);
 $("restartInterruptedRunBtn").addEventListener("click", restartInterruptedRun);
+$("cancelReadyRunBtn").addEventListener("click", cancelReadiness);
+$("retryReadinessMicBtn").addEventListener("click", checkReadinessMicrophone);
+$("beginReadyRunBtn").addEventListener("click", beginReadyRun);
 $("mainActionBtn").addEventListener("click", startPreparation);
 $("skipBtn").addEventListener("click", skipPhase);
 $("exitBtn").addEventListener("click", exitRun);

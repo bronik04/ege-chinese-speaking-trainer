@@ -1,4 +1,9 @@
 import { expect, test } from "@playwright/test";
+import { chooseAndConfirmReadiness, installWorkingMicrophone } from "./readiness-helpers.js";
+
+test.beforeEach(async ({ page }) => {
+  await installWorkingMicrophone(page);
+});
 
 test("reference library filters phrases and switches exam tasks", async ({ page }) => {
   await page.goto("/reference.html");
@@ -97,7 +102,7 @@ test("primary actions share the flat cream and gold palette", async ({ page }) =
   await expect(homeAction).toHaveCSS("background-image", "none");
   await expect(homeAction).toHaveCSS("color", "rgb(92, 14, 14)");
 
-  await page.locator('[data-start="1"]').click();
+  await chooseAndConfirmReadiness(page, '[data-start="1"]');
   const runnerAction = page.locator("#mainActionBtn");
   await expect(runnerAction).toHaveCSS("background-color", "rgb(244, 236, 219)");
   await expect(runnerAction).toHaveCSS("background-image", "none");
@@ -129,13 +134,13 @@ test("account dialog follows the shared card system and closes safely", async ({
 test("reference link is hidden only during an active task", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("#referenceLink")).toBeVisible();
-  await page.locator('[data-start="1"]').click();
+  await chooseAndConfirmReadiness(page, '[data-start="1"]');
   await expect(page.locator("#referenceLink")).toBeHidden();
 });
 
 test("runner keeps locked task content out of the accessibility tree", async ({ page }) => {
   await page.goto("/");
-  await page.locator('[data-start="1"]').click();
+  await chooseAndConfirmReadiness(page, '[data-start="1"]');
   await expect(page.locator(".exam-steps")).toHaveCSS("border-radius", "16px");
   await expect(page.locator(".task-paper")).toHaveCSS("border-radius", "16px");
   await expect(page.locator(".timer-panel")).toHaveCSS("border-radius", "16px");
@@ -162,7 +167,7 @@ test("mobile navigation and utility controls fit the viewport and a finger", asy
     document.body.append(fixture);
   });
   await mobileTargets(["#checkMicBtn", ".material-catalog-link", "[data-mobile-target]", "[data-mobile-download]"]);
-  await page.locator('[data-start="1"]').click();
+  await chooseAndConfirmReadiness(page, '[data-start="1"]');
   await page.locator("#mainActionBtn").click();
   await expect(page.locator("#skipBtn")).toBeVisible();
   await mobileTargets(["#exitBtn", "#skipBtn"]);

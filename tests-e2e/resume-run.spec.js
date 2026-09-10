@@ -1,4 +1,9 @@
 import { expect, test } from "@playwright/test";
+import { chooseAndConfirmReadiness, confirmReadiness, installWorkingMicrophone } from "./readiness-helpers.js";
+
+test.beforeEach(async ({ page }) => {
+  await installWorkingMicrophone(page);
+});
 
 const storedProgress = {
   version: 2,
@@ -58,6 +63,7 @@ test("student continues an interrupted exam from the first unfinished task", asy
   expect(progress.activeRun.id).toBe("interrupted-exam");
 
   await page.locator("#continueRunBtn").click();
+  await confirmReadiness(page);
 
   await expect(page.locator("#runnerScreen")).toBeVisible();
   await expect(page.locator("#taskBadge")).toHaveText("Задание 2");
@@ -78,6 +84,7 @@ test("starting an interrupted exam again archives the old run and creates a new 
   await page.goto("/");
 
   await page.locator("#restartInterruptedRunBtn").click();
+  await confirmReadiness(page);
 
   await expect(page.locator("#runnerScreen")).toBeVisible();
   await expect(page.locator("#taskBadge")).toHaveText("Задание 1");
@@ -121,7 +128,7 @@ test("choosing another training archives the offered interrupted run", async ({ 
   await seedInterruptedRun(page);
   await page.goto("/");
 
-  await page.locator('[data-start="3"]').click();
+  await chooseAndConfirmReadiness(page, '[data-start="3"]');
 
   await expect(page.locator("#runnerScreen")).toBeVisible();
   await expect(page.locator("#taskBadge")).toHaveText("Задание 3");
@@ -204,6 +211,12 @@ test("repeated restart clicks archive only the original interrupted run", async 
     button.click();
     button.click();
   });
+  await expect(page.locator("#beginReadyRunBtn")).toBeEnabled();
+  await page.evaluate(() => {
+    const button = document.getElementById("beginReadyRunBtn");
+    button.click();
+    button.click();
+  });
 
   await expect(page.locator("#runnerScreen")).toBeVisible();
   const accountProgress = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), `egeChineseProgressV2:user:${studentUser.id}`);
@@ -276,7 +289,7 @@ test("a later progress change safely retries failed account hydration", async ({
 
   await page.goto("/");
   await expect(page.locator("#progressSyncStatus")).toContainText("Нет связи");
-  await page.locator('[data-start="3"]').click();
+  await chooseAndConfirmReadiness(page, '[data-start="3"]');
 
   await expect.poll(() => progressGets).toBe(2);
   await expect.poll(() => writes.length).toBeGreaterThan(0);
@@ -310,7 +323,7 @@ test("a delayed hydration response cannot write account progress into guest stor
   });
 
   await page.goto("/");
-  await page.locator('[data-start="3"]').click();
+  await chooseAndConfirmReadiness(page, '[data-start="3"]');
   await expect.poll(() => progressGets).toBe(2);
   await page.locator("#authButton").click();
   await page.locator("#logoutBtn").click();
@@ -364,6 +377,8 @@ test("a delayed resume material response cannot escape the account scope", async
   await page.goto("/");
   await expect(page.locator("#resumeRunPanel")).toBeVisible();
   await page.locator("#continueRunBtn").click();
+  await expect(page.locator("#beginReadyRunBtn")).toBeEnabled();
+  await page.locator("#beginReadyRunBtn").click();
   await expect.poll(() => privateMaterialRequested).toBe(true);
   await page.locator("#authButton").click();
   await page.locator("#logoutBtn").click();
@@ -379,7 +394,7 @@ test("a delayed resume material response cannot escape the account scope", async
   await expect(page.locator("#runnerScreen")).toHaveClass(/hidden/);
 });
 
-test("a failed resume material load restores the current training actions", async ({ page }) => {
+test("a failed resume material load keeps readiness retryable", async ({ page }) => {
   const privateMaterialId = "unavailable-private-material";
   const privateProgress = {
     ...storedProgress,
@@ -407,9 +422,17 @@ test("a failed resume material load restores the current training actions", asyn
   await expect(page.locator("#resumeRunPanel")).toBeVisible();
   await expect(page.locator('[data-start="3"]')).toBeEnabled();
   await page.locator("#continueRunBtn").click();
+  await confirmReadiness(page);
 
   await expect(page.locator("#toast")).toHaveText("Не удалось загрузить выбранный вариант");
+  await expect(page.locator("#readinessScreen")).toBeVisible();
+  await expect(page.locator("#beginReadyRunBtn")).toBeEnabled();
   await expect(page.locator("#selectedMaterialTitle")).toHaveText("Официальный вариант 2026");
-  await expect(page.locator('[data-start="3"]')).toBeEnabled();
+  const progress = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), `egeChineseProgressV2:user:${studentUser.id}`);
+  expect(progress.activeRun.id).toBe("interrupted-exam");
+  expect(progress.runs).toEqual([]);
+
+  await page.locator("#cancelReadyRunBtn").click();
   await expect(page.locator("#resumeRunPanel")).toBeVisible();
+  await expect(page.locator('[data-start="3"]')).toBeEnabled();
 });

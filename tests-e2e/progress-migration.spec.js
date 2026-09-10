@@ -1,4 +1,9 @@
 import { expect, test } from "@playwright/test";
+import { chooseAndConfirmReadiness, installWorkingMicrophone } from "./readiness-helpers.js";
+
+test.beforeEach(async ({ page }) => {
+  await installWorkingMicrophone(page);
+});
 
 test("guest V1 history migrates to V2 and a new run continues from it", async ({ page }) => {
   const legacy = {
@@ -25,7 +30,7 @@ test("guest V1 history migrates to V2 and a new run continues from it", async ({
   expect(stored.v2.version).toBe(2);
   expect(stored.v2.runs[0].id).toBe("legacy-run");
 
-  await page.locator('[data-start="2"]').click();
+  await chooseAndConfirmReadiness(page, '[data-start="2"]');
   const continued = await page.evaluate(() => JSON.parse(localStorage.getItem("egeChineseProgressV2")));
   expect(continued.version).toBe(2);
   expect(continued.runs[0].id).toBe("legacy-run");
@@ -42,7 +47,7 @@ test("legacy fast-mode preference no longer shortens a new run", async ({ page }
 
   await page.goto("/?variant=open-2026");
   await expect(page.getByRole("checkbox", { name: /быстро/i })).toHaveCount(0);
-  await page.locator('[data-start="1"]').click();
+  await chooseAndConfirmReadiness(page, '[data-start="1"]');
   await expect(page.locator("#timerValue")).toHaveText("01:30");
 
   const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("egeChineseProgressV2")));
