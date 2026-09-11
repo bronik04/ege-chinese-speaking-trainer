@@ -106,7 +106,13 @@ test("malicious text is escaped and an invalid image becomes a placeholder", asy
 });
 
 test("task-only preview is usable at 360px and keeps keyboard focus order", async ({ page }) => {
-  const source = fullMaterial({ id: "single-task", kind: "task", taskNumber: 2, totalMinutes: 4 });
+  const source = fullMaterial({
+    id: "single-task",
+    kind: "task",
+    taskNumber: 2,
+    totalMinutes: 4,
+    source: "И".repeat(200),
+  });
   source.tasks = { "2": source.tasks["2"] };
   await page.route("**/api/materials/single-task", route => route.fulfill({ json: { material: source } }));
   await page.setViewportSize({ width: 360, height: 800 });

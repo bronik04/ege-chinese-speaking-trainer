@@ -20,12 +20,11 @@ function invalidMaterial() {
 
 function fullyDecode(value) {
   let decoded = value;
-  for (let index = 0; index < 4; index += 1) {
+  while (true) {
     const next = decodeURIComponent(decoded);
     if (next === decoded) return decoded;
     decoded = next;
   }
-  return decoded;
 }
 
 export function isSafeMaterialImageUrl(value) {

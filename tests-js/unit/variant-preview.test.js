@@ -86,7 +86,8 @@ test("safe image URL allowlist accepts only exact same-origin material paths", (
     "", "javascript:alert(1)", "data:image/png;base64,abc", "//example.test/a.webp",
     "https://example.test/a.webp", "assets/a.webp?download=1", "assets/a.webp#fragment",
     "assets\\a.webp", "assets//a.webp", "assets/../secret", "assets/%2e%2e/secret",
-    "assets/%252e%252e/secret", "assets/a\u0000.webp", "/api/material-assets/0",
+    "assets/%252e%252e/secret", "assets/%252525252e%252525252e/secret.webp",
+    "assets/a\u0000.webp", "/api/material-assets/0",
     "/api/material-assets/-1", "/api/material-assets/not-a-number", "/api/material-assets/17/extra",
   ]) assert.equal(isSafeMaterialImageUrl(value), false, String(value));
 });
