@@ -28,11 +28,14 @@ export function buildComparisonSelection(entries, selectedRunIds = []) {
     const selected = selectedIds.includes(item.runId);
     const eligible = isSelectableAttempt(item);
     const compatible = !anchor || sameTaskSet(anchor, item);
+    const selectionFull = selectedIds.length === 2 && !selected;
     return {
       runId: item.runId,
       selected,
-      selectable: eligible && compatible,
-      reason: !eligible ? "incomplete" : compatible ? null : "different_tasks",
+      selectable: eligible && compatible && !selectionFull,
+      reason: !eligible
+        ? "incomplete"
+        : !compatible ? "different_tasks" : selectionFull ? "selection_full" : null,
     };
   });
   return { selectedIds, choices, canCompare: selectedIds.length === 2 };

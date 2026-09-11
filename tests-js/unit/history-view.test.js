@@ -208,3 +208,40 @@ test("comparison selector is omitted for interrupted and recovered entries", () 
   assert.doesNotMatch(markup, /data-compare-run/);
   assert.equal((markup.match(/<details /g) || []).length, 2);
 });
+
+test("comparison selector explains when two attempts are already selected", () => {
+  const completed = {
+    key: "run:third",
+    runId: "third",
+    run: {
+      mode: "practice",
+      status: "completed",
+      tasks: [2],
+      completedAt: "2026-09-09T10:00:00.000Z",
+    },
+    variantId: "open-2026",
+    variantLabel: "Третья попытка",
+    tasks: [2],
+    recordings: [],
+    reviewRequests: [],
+    latestReview: null,
+    recovered: false,
+    sortAt: 1_788_944_400_000,
+  };
+
+  const markup = historyTimelineMarkup([completed], {
+    comparison: {
+      selectedIds: ["first", "second"],
+      canCompare: true,
+      choices: [{
+        runId: "third",
+        selected: false,
+        selectable: false,
+        reason: "selection_full",
+      }],
+    },
+  });
+
+  assert.match(markup, /data-compare-run="third"[^>]*disabled/);
+  assert.match(markup, /Сначала снимите выбор с одной попытки/);
+});

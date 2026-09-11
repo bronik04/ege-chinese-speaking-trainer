@@ -109,6 +109,23 @@ test("removing the anchor makes every completed task set selectable again", () =
   assert.deepEqual(result.choices.map(choice => choice.selectable), [true, true]);
 });
 
+test("two selected attempts disable every other compatible choice", () => {
+  const entries = [
+    entry("first", [2]),
+    entry("second", [2]),
+    entry("third", [2]),
+  ];
+
+  const result = buildComparisonSelection(entries, ["first", "second"]);
+
+  assert.deepEqual(result.selectedIds, ["first", "second"]);
+  assert.deepEqual(result.choices, [
+    { runId: "first", selected: true, selectable: true, reason: null },
+    { runId: "second", selected: true, selectable: true, reason: null },
+    { runId: "third", selected: false, selectable: false, reason: "selection_full" },
+  ]);
+});
+
 test("comparison uses the latest reviewed score for each task", () => {
   const left = entry("left", [2], "completed", {
     reviewRequests: [reviewedRequest({

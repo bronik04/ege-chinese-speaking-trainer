@@ -67,6 +67,10 @@ test("comparison view renders aligned scores and audio without trusting network 
   assert.match(html, /Языковое оформление/);
   assert.match(html, /src="\/api\/personal-recordings\/7"/);
   assert.match(html, /src="\/api\/review-recordings\/8"/);
+  assert.match(html, /Оценки: 1 из 1 · Записи: 1 из 1/);
+  assert.match(html, /aria-label="Первая попытка, Ответ: Мой ответ"/);
+  assert.match(html, /aria-label="Вторая попытка, Ответ: Ответ для разбора"/);
+  assert.doesNotMatch(html, /<label class="comparison-audio"/);
   assert.match(html, /&lt;script&gt;bad&lt;\/script&gt;/);
   assert.doesNotMatch(html, /<script>|<img|onerror="|javascript:/);
 });
@@ -88,6 +92,8 @@ test("comparison view keeps missing score and audio slots explicit", () => {
   assert.match(html, /Запись недоступна/);
   assert.doesNotMatch(html, /javascript:|review-recordings\/0/);
   assert.equal((html.match(/<audio /g) || []).length, 1);
+  assert.match(html, /Оценки: 0 из 1 · Записи: 1 из 1/);
+  assert.match(html, /Оценки: 1 из 1 · Записи: 0 из 1/);
 });
 
 test("comparison page state uses stable copy and escapes optional details", () => {

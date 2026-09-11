@@ -182,6 +182,80 @@ test("a failed recording source retries independently and keeps reviewed scores 
   });
 });
 
+test("local comparison receives recordings and reviews while progress is still pending", async ({ page }) => {
+  let releaseProgress;
+  const progressResponse = new Promise(resolve => { releaseProgress = resolve; });
+  await page.route("**/api/auth/me", route => route.fulfill({ json: { user: student } }));
+  await page.route("**/api/progress", async route => {
+    if (route.request().method() === "PUT") return route.fulfill({ json: { ok: true } });
+    await progressResponse;
+    return route.fulfill({ json: { progress: null, updatedAt: null } });
+  });
+  await page.route("**/api/personal-recordings", route => route.fulfill({ json: { recordings: [{
+    id: 10,
+    runId: "left-run",
+    variantId: "open-2026",
+    taskNumber: 2,
+    questionNumber: 1,
+    label: "Локальная запись",
+    createdAt: 1_788_950_000,
+    expiresAt: 1_804_700_000,
+  }] } }));
+  await page.route("**/api/student/review-requests", route => route.fulfill({ json: { requests: [
+    reviewedRequest(101, "left-run", 4, 1_788_950_100),
+    reviewedRequest(102, "right-run", 6, 1_788_960_100),
+  ] } }));
+  await page.addInitScript(({ key, progress }) => localStorage.setItem(key, JSON.stringify(progress)), {
+    key: `egeChineseProgressV2:user:${student.id}`,
+    progress: comparisonProgress,
+  });
+
+  await page.goto("/compare.html?left=left-run&right=right-run");
+
+  await expect(page.locator(".comparison-task")).toContainText("+2 балла");
+  await expect(page.locator('.comparison-task audio[src="/api/personal-recordings/10"]')).toBeVisible();
+  await expect(page.locator("#comparisonStatus")).toHaveText("Обновляем данные сравнения…");
+
+  releaseProgress();
+  await expect(page.locator("#comparisonStatus")).toHaveText("Сравнение загружено");
+});
+
+test("retrying progress keeps an already assembled comparison visible", async ({ page }) => {
+  let progressCalls = 0;
+  let releaseRetry;
+  const retryResponse = new Promise(resolve => { releaseRetry = resolve; });
+  await page.route("**/api/auth/me", route => route.fulfill({ json: { user: student } }));
+  await page.route("**/api/progress", async route => {
+    if (route.request().method() === "PUT") return route.fulfill({ json: { ok: true } });
+    progressCalls += 1;
+    if (progressCalls === 1) {
+      return route.fulfill({ status: 503, json: { message: "Прогресс временно недоступен" } });
+    }
+    await retryResponse;
+    return route.fulfill({ json: { progress: null, updatedAt: null } });
+  });
+  await page.route("**/api/personal-recordings", route => route.fulfill({ json: { recordings: [] } }));
+  await page.route("**/api/student/review-requests", route => route.fulfill({ json: { requests: [
+    reviewedRequest(101, "left-run", 4, 1_788_950_100),
+    reviewedRequest(102, "right-run", 6, 1_788_960_100),
+  ] } }));
+  await page.addInitScript(({ key, progress }) => localStorage.setItem(key, JSON.stringify(progress)), {
+    key: `egeChineseProgressV2:user:${student.id}`,
+    progress: comparisonProgress,
+  });
+
+  await page.goto("/compare.html?left=left-run&right=right-run");
+  const comparison = page.locator(".comparison-task");
+  await expect(comparison).toContainText("+2 балла");
+  await page.locator('[data-retry-source="progress"]').click();
+
+  await expect(comparison).toContainText("+2 балла");
+  await expect(page.locator("#comparisonStatus")).toHaveText("Обновляем данные сравнения…");
+
+  releaseRetry();
+  await expect(page.locator("#comparisonStatus")).toHaveText("Сравнение загружено");
+});
+
 test("missing scores and recordings use explicit aligned empty states", async ({ page }) => {
   await installComparisonApi(page);
 
@@ -310,6 +384,7 @@ test("late student data cannot restore comparison after session expiry", async (
 
 test("comparison fits 360px and keeps actions keyboard-visible and touch-friendly", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 800 });
+  const longRecordingLabel = "Д".repeat(160);
   let recordingCalls = 0;
   await page.route("**/api/auth/me", route => route.fulfill({ json: { user: student } }));
   await page.route("**/api/progress", route => {
@@ -327,7 +402,7 @@ test("comparison fits 360px and keeps actions keyboard-visible and touch-friendl
     reviewedRequest(102, "right-run", 6, 1_788_960_100, [{
       id: 8,
       question_number: null,
-      label: "Ответ для разбора",
+      label: longRecordingLabel,
       url: "/api/review-recordings/8",
     }]),
   ] } }));
@@ -341,8 +416,10 @@ test("comparison fits 360px and keeps actions keyboard-visible and touch-friendl
   await expect(page.locator("#comparisonTitle")).toBeFocused();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBeTruthy();
   await expect(page.locator(".comparison-side-label")).toHaveCount(2);
-  await expect(page.locator('.comparison-task audio[src="/api/review-recordings/8"]')).toBeVisible();
-  for (const selector of [".comparison-back", '[data-retry-source="recordings"]']) {
+  const reviewAudio = page.locator('.comparison-task audio[src="/api/review-recordings/8"]');
+  await expect(reviewAudio).toBeVisible();
+  await expect(reviewAudio).toHaveAttribute("aria-label", new RegExp(`^Вторая попытка, Ответ: ${longRecordingLabel}$`));
+  for (const selector of [".comparison-back", '[data-retry-source="recordings"]', '.comparison-task audio[src="/api/review-recordings/8"]']) {
     const box = await page.locator(selector).boundingBox();
     expect(Math.min(box?.width || 0, box?.height || 0), `${selector} should be at least 44px`).toBeGreaterThanOrEqual(44);
   }

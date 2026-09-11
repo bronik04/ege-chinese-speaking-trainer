@@ -82,8 +82,12 @@ function comparisonEntryMarkup(entry, choice, index) {
   const selected = choice.selected;
   const disabled = !choice.selectable;
   const reasonId = `history-compare-reason-${index}`;
-  const reason = choice.reason === "different_tasks"
-    ? `<span class="history-compare-reason" id="${reasonId}">Можно сравнить только попытки с одинаковыми заданиями</span>`
+  const reasonCopy = {
+    different_tasks: "Можно сравнить только попытки с одинаковыми заданиями",
+    selection_full: "Сначала снимите выбор с одной попытки",
+  }[choice.reason];
+  const reason = reasonCopy
+    ? `<span class="history-compare-reason" id="${reasonId}">${reasonCopy}</span>`
     : "";
   return `<div class="history-entry-wrap${selected ? " is-selected" : ""}"><div class="history-compare-choice"><button class="history-compare-toggle" type="button" data-compare-run="${escapeHtml(entry.runId)}" aria-pressed="${selected}"${disabled ? ` aria-describedby="${reasonId}" disabled` : ""}>${selected ? '<span aria-hidden="true">✓</span> Выбрано' : "Выбрать для сравнения"}</button>${reason}</div>${details}</div>`;
 }

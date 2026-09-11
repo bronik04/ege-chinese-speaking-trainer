@@ -77,15 +77,15 @@ test("student history exposes independent loading and retry lifecycle", async ()
   await nextTurn();
   assert.deepEqual(rendered.at(-1).sourceLoading, { progress: true, recordings: true, reviews: true });
 
-  releaseProgress({ progress: null });
-  await nextTurn();
-  assert.deepEqual(rendered.at(-1).sourceLoading, { progress: false, recordings: true, reviews: true });
-
   releaseReviews({ requests: [] });
   await nextTurn();
-  assert.deepEqual(rendered.at(-1).sourceLoading, { progress: false, recordings: true, reviews: false });
+  assert.deepEqual(rendered.at(-1).sourceLoading, { progress: true, recordings: true, reviews: false });
 
   releaseRecordings({ recordings: [] });
+  await nextTurn();
+  assert.deepEqual(rendered.at(-1).sourceLoading, { progress: true, recordings: false, reviews: false });
+
+  releaseProgress({ progress: null });
   await load;
   assert.deepEqual(rendered.at(-1).sourceLoading, { progress: false, recordings: false, reviews: false });
 
@@ -192,6 +192,47 @@ test("a delayed response from the previous load cannot replace the current accou
 
   assert.equal(rendered.at(-1).user.id, 2);
   assert.equal(rendered.some(state => state.user?.id === 1), false);
+});
+
+test("a delayed protected response from student A cannot replace student B data", async () => {
+  const studentA = { id: 1, email: "a@example.test", role: "student", displayName: "A", emailVerified: true };
+  const studentB = { id: 2, email: "b@example.test", role: "student", displayName: "B", emailVerified: true };
+  let authCalls = 0;
+  let recordingCalls = 0;
+  let releaseStudentARecordings;
+  const studentARecordings = new Promise(resolve => { releaseStudentARecordings = resolve; });
+  const rendered = [];
+  const request = async (path, options = {}) => {
+    if (path === "/api/auth/me") {
+      authCalls += 1;
+      return { user: authCalls === 1 ? studentA : studentB };
+    }
+    if (path === "/api/progress" && options.method === "PUT") return { ok: true };
+    if (path === "/api/progress") return { progress: null };
+    if (path === "/api/personal-recordings") {
+      recordingCalls += 1;
+      if (recordingCalls === 1) return studentARecordings;
+      return { recordings: [{ id: 22, runId: "b-run", label: "Запись B" }] };
+    }
+    if (path === "/api/student/review-requests") return { requests: [] };
+    throw new Error(`Unexpected request: ${path}`);
+  };
+  const controller = createHistoryPageController({
+    request,
+    storage: memoryStorage(),
+    render: state => rendered.push(state),
+  });
+
+  const oldLoad = controller.load();
+  await nextTurn();
+  await controller.load();
+  releaseStudentARecordings({ recordings: [{ id: 11, runId: "a-run", label: "Запись A" }] });
+  await oldLoad;
+
+  const state = rendered.at(-1);
+  assert.equal(state.user.id, studentB.id);
+  assert.deepEqual(state.recordings.map(recording => recording.id), [22]);
+  assert.equal(rendered.some(item => item.user?.id === studentB.id && item.recordings.some(recording => recording.id === 11)), false);
 });
 
 test("a protected 401 clears account data and falls back to guest-local history", async () => {

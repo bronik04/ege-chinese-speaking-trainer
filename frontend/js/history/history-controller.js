@@ -171,8 +171,8 @@ export function createHistoryPageController({
       sourceLoading: { progress: true, recordings: true, reviews: true },
     };
     publish();
-    if (!await synchronizeProgress(token, user)) return;
     await Promise.all([
+      synchronizeProgress(token, user),
       loadStudentSource("recordings", token, user),
       loadStudentSource("reviews", token, user),
     ]);

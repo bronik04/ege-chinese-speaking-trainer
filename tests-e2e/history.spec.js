@@ -101,6 +101,12 @@ test("student selects exactly two compatible completed attempts", async ({ page 
       completedAt: "2026-09-07T10:05:00.000Z",
     }, {
       ...baseRun,
+      id: "task-2-c",
+      variantLabel: "Попытка 2C",
+      startedAt: "2026-09-06T12:00:00.000Z",
+      completedAt: "2026-09-06T12:05:00.000Z",
+    }, {
+      ...baseRun,
       id: "interrupted-2",
       variantLabel: "Прерванная попытка 2",
       completedTasks: [],
@@ -119,7 +125,7 @@ test("student selects exactly two compatible completed attempts", async ({ page 
 
   const compareBar = page.locator("#historyCompareBar");
   await expect(compareBar).toBeVisible();
-  await expect(page.locator("[data-compare-run]")).toHaveCount(3);
+  await expect(page.locator("[data-compare-run]")).toHaveCount(4);
   await expect(page.locator('[data-history-key="run:interrupted-2"]')).toContainText("Прервано");
 
   await page.locator('[data-compare-run="task-2-a"]').click();
@@ -133,6 +139,8 @@ test("student selects exactly two compatible completed attempts", async ({ page 
 
   await expect(page.locator("#historyCompareStatus")).toContainText("Выбрано 2 из 2");
   await expect(page.locator("#historyCompareBtn")).toBeEnabled();
+  await expect(page.locator('[data-compare-run="task-2-c"]')).toBeDisabled();
+  await expect(page.locator('[data-compare-run="task-2-c"] + .history-compare-reason')).toContainText("Сначала снимите выбор");
   await page.locator("#historyCompareBtn").click();
   await expect(page).toHaveURL(/\/compare\.html\?left=task-2-a&right=task-2-b$/);
 });

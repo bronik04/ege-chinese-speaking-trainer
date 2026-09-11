@@ -58,10 +58,6 @@ function renderComparison(state) {
     return;
   }
   renderSourceErrors(state);
-  if (state.sourceLoading.progress) {
-    renderPageState("loading", "Загружаем попытки…");
-    return;
-  }
   const entries = buildHistoryTimeline({
     runs: state.progress.runs,
     recordings: state.recordings,
@@ -72,6 +68,10 @@ function renderComparison(state) {
     comparison = buildAttemptComparison(entries, leftRunId, rightRunId);
   } catch (error) {
     const kind = error instanceof AttemptComparisonError ? error.code : "network";
+    if (kind === "attempt_missing" && state.sourceLoading.progress) {
+      renderPageState("loading", "Загружаем попытки…");
+      return;
+    }
     renderPageState(kind, "Сравнение недоступно");
     focusTitle();
     return;

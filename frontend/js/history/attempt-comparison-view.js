@@ -10,8 +10,8 @@ function attemptKind(attempt) {
   return attempt.tasks.length === 3 ? "Полный экзамен" : `Задание ${attempt.tasks.join(", ")}`;
 }
 
-function attemptHeaderMarkup(attempt, label) {
-  return `<article class="comparison-attempt"><p class="eyebrow">${label}</p><h2>${escapeHtml(attempt.variantLabel || attempt.variantId || "Материал")}</h2><p>${escapeHtml(attemptKind(attempt))}</p><time>${escapeHtml(formatHistoryDate(attempt.completedAt))}</time></article>`;
+function attemptHeaderMarkup(attempt, label, availability) {
+  return `<article class="comparison-attempt"><p class="eyebrow">${label}</p><h2>${escapeHtml(attempt.variantLabel || attempt.variantId || "Материал")}</h2><p>${escapeHtml(attemptKind(attempt))}</p><time>${escapeHtml(formatHistoryDate(attempt.completedAt))}</time><p class="comparison-attempt-availability">Оценки: ${availability.scores} из ${availability.tasks} · Записи: ${availability.recordings} из ${availability.slots}</p></article>`;
 }
 
 function criterionLabel(taskNumber, key) {
@@ -49,11 +49,22 @@ function audioUrl(slot) {
   return null;
 }
 
-function audioMarkup(slot) {
+function audioMarkup(slot, sideLabel) {
   const url = audioUrl(slot);
   if (!url) return '<p class="comparison-empty">Запись недоступна</p>';
   const label = slot.recording?.label || slot.label || "Аудиозапись";
-  return `<label class="comparison-audio"><span>${escapeHtml(label)}</span><audio preload="none" controls src="${escapeHtml(url)}"></audio></label>`;
+  const accessibleName = `${sideLabel}, ${slot.label || "Ответ"}: ${label}`;
+  return `<div class="comparison-audio"><span>${escapeHtml(label)}</span><audio preload="none" controls src="${escapeHtml(url)}" aria-label="${escapeHtml(accessibleName)}"></audio></div>`;
+}
+
+function attemptAvailability(tasks, side) {
+  const slots = tasks.flatMap(task => task[side].recordings);
+  return {
+    tasks: tasks.length,
+    scores: tasks.filter(task => task[side].score).length,
+    slots: slots.length,
+    recordings: slots.filter(slot => audioUrl(slot)).length,
+  };
 }
 
 function recordingRowsMarkup(left, right) {
@@ -63,7 +74,7 @@ function recordingRowsMarkup(left, right) {
     const leftSlot = left.find(slot => slot.key === key);
     const rightSlot = rightByKey.get(key);
     const label = leftSlot?.label || rightSlot?.label || "Ответ";
-    return `<section class="comparison-recording-row"><h3>${escapeHtml(label)}</h3><div class="comparison-side" data-comparison-side="left"><span class="comparison-side-label">Первая попытка</span>${audioMarkup(leftSlot)}</div><div class="comparison-side" data-comparison-side="right"><span class="comparison-side-label">Вторая попытка</span>${audioMarkup(rightSlot)}</div></section>`;
+    return `<section class="comparison-recording-row"><h3>${escapeHtml(label)}</h3><div class="comparison-side" data-comparison-side="left"><span class="comparison-side-label">Первая попытка</span>${audioMarkup(leftSlot, "Первая попытка")}</div><div class="comparison-side" data-comparison-side="right"><span class="comparison-side-label">Вторая попытка</span>${audioMarkup(rightSlot, "Вторая попытка")}</div></section>`;
   }).join("");
 }
 
@@ -72,7 +83,7 @@ function taskMarkup(task) {
 }
 
 export function attemptComparisonMarkup(comparison) {
-  return `<section class="comparison-attempts">${attemptHeaderMarkup(comparison.left, "Первая попытка")}${attemptHeaderMarkup(comparison.right, "Вторая попытка")}</section><section class="comparison-tasks">${comparison.tasks.map(taskMarkup).join("")}</section>`;
+  return `<section class="comparison-attempts">${attemptHeaderMarkup(comparison.left, "Первая попытка", attemptAvailability(comparison.tasks, "left"))}${attemptHeaderMarkup(comparison.right, "Вторая попытка", attemptAvailability(comparison.tasks, "right"))}</section><section class="comparison-tasks">${comparison.tasks.map(taskMarkup).join("")}</section>`;
 }
 
 const stateMessages = {
