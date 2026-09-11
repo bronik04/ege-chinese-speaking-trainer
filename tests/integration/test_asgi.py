@@ -48,6 +48,9 @@ class FastApiSmokeTest(unittest.TestCase):
             "/history.html",
             "/js/history/history-page.js",
             "/styles/pages/history.css",
+            "/compare.html",
+            "/js/history/attempt-comparison-page.js",
+            "/styles/pages/attempt-comparison.css",
         ):
             response = self.client.get(path)
             self.assertEqual(response.status_code, 200)

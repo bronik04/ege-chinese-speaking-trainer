@@ -43,6 +43,62 @@ function apiError(status, message) {
   return Object.assign(new Error(message), { status });
 }
 
+const nextTurn = () => new Promise(resolve => setTimeout(resolve, 0));
+
+test("student history exposes independent loading and retry lifecycle", async () => {
+  const user = { id: 17, email: "student@example.test", role: "student", displayName: "Student", emailVerified: true };
+  let releaseProgress;
+  let releaseRecordings;
+  let releaseReviews;
+  let recordingCalls = 0;
+  const progressResponse = new Promise(resolve => { releaseProgress = resolve; });
+  const firstRecordings = new Promise(resolve => { releaseRecordings = resolve; });
+  const reviewsResponse = new Promise(resolve => { releaseReviews = resolve; });
+  let retryRecordings;
+  const request = async (path, options = {}) => {
+    if (path === "/api/auth/me") return { user };
+    if (path === "/api/progress" && options.method === "PUT") return { ok: true };
+    if (path === "/api/progress") return progressResponse;
+    if (path === "/api/personal-recordings") {
+      recordingCalls += 1;
+      return recordingCalls === 1 ? firstRecordings : retryRecordings;
+    }
+    if (path === "/api/student/review-requests") return reviewsResponse;
+    throw new Error(`Unexpected request: ${path}`);
+  };
+  const rendered = [];
+  const controller = createHistoryPageController({
+    request,
+    storage: memoryStorage(),
+    render: state => rendered.push(state),
+  });
+
+  const load = controller.load();
+  await nextTurn();
+  assert.deepEqual(rendered.at(-1).sourceLoading, { progress: true, recordings: true, reviews: true });
+
+  releaseProgress({ progress: null });
+  await nextTurn();
+  assert.deepEqual(rendered.at(-1).sourceLoading, { progress: false, recordings: true, reviews: true });
+
+  releaseReviews({ requests: [] });
+  await nextTurn();
+  assert.deepEqual(rendered.at(-1).sourceLoading, { progress: false, recordings: true, reviews: false });
+
+  releaseRecordings({ recordings: [] });
+  await load;
+  assert.deepEqual(rendered.at(-1).sourceLoading, { progress: false, recordings: false, reviews: false });
+
+  let releaseRetry;
+  retryRecordings = new Promise(resolve => { releaseRetry = resolve; });
+  const retry = controller.retry("recordings");
+  await nextTurn();
+  assert.deepEqual(rendered.at(-1).sourceLoading, { progress: false, recordings: true, reviews: false });
+  releaseRetry({ recordings: [] });
+  await retry;
+  assert.deepEqual(rendered.at(-1).sourceLoading, { progress: false, recordings: false, reviews: false });
+});
+
 test("student history merges progress, preserves a failed source and retries only that source", async () => {
   const user = { id: 17, email: "student@example.test", role: "student", displayName: "Student", emailVerified: true };
   const local = progressWith(completedRun("local-run", "2026-09-09T11:00:00.000Z"));
@@ -77,6 +133,7 @@ test("student history merges progress, preserves a failed source and retries onl
   assert.equal(first.reviewRequests.length, 1);
   assert.match(first.sourceErrors.recordings, /recordings unavailable/);
   assert.equal(first.sourceErrors.reviews, null);
+  assert.deepEqual(first.sourceLoading, { progress: false, recordings: false, reviews: false });
   assert.deepEqual(JSON.parse(storage.getItem(scope.current)).runs.map(run => run.id), ["local-run", "remote-run"]);
   const progressWrite = calls.find(call => call.path === "/api/progress" && call.options.method === "PUT");
   assert.deepEqual(JSON.parse(progressWrite.options.body).progress.runs.map(run => run.id), ["local-run", "remote-run"]);
@@ -105,6 +162,7 @@ test("teacher history never loads student-owned sources", async () => {
   assert.deepEqual(calls, ["/api/auth/me"]);
   assert.equal(rendered.at(-1).mode, "teacher");
   assert.deepEqual(rendered.at(-1).progress.runs, []);
+  assert.deepEqual(rendered.at(-1).sourceLoading, { progress: false, recordings: false, reviews: false });
 });
 
 test("a delayed response from the previous load cannot replace the current account", async () => {
@@ -159,6 +217,7 @@ test("a protected 401 clears account data and falls back to guest-local history"
   assert.equal(state.user, null);
   assert.deepEqual(state.progress.runs.map(run => run.id), ["guest-run"]);
   assert.equal(state.progress.runs.some(run => run.id === "account-run"), false);
+  assert.deepEqual(state.sourceLoading, { progress: false, recordings: false, reviews: false });
 });
 
 test("discarding an uploading review reloads reviews and keeps a failed deletion visible", async () => {

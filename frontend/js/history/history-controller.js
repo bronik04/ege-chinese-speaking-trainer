@@ -7,6 +7,7 @@ import {
 } from "../shared/progress.js";
 
 const emptyErrors = () => ({ auth: null, progress: null, recordings: null, reviews: null });
+const idleSources = () => ({ progress: false, recordings: false, reviews: false });
 const messageOf = error => error?.message || "Не удалось загрузить данные";
 
 function publicState(state) {
@@ -15,6 +16,7 @@ function publicState(state) {
     recordings: [...state.recordings],
     reviewRequests: [...state.reviewRequests],
     sourceErrors: { ...state.sourceErrors },
+    sourceLoading: { ...state.sourceLoading },
   };
 }
 
@@ -32,6 +34,7 @@ export function createHistoryPageController({
     recordings: [],
     reviewRequests: [],
     sourceErrors: emptyErrors(),
+    sourceLoading: idleSources(),
   };
 
   const publish = () => render(publicState(state));
@@ -56,6 +59,7 @@ export function createHistoryPageController({
       recordings: [],
       reviewRequests: [],
       sourceErrors,
+      sourceLoading: idleSources(),
     };
     publish();
   }
@@ -76,6 +80,7 @@ export function createHistoryPageController({
         return false;
       }
       state.sourceErrors.progress = messageOf(error);
+      state.sourceLoading.progress = false;
       publish();
       return true;
     }
@@ -98,7 +103,10 @@ export function createHistoryPageController({
       }
       state.sourceErrors.progress = messageOf(error);
     }
-    if (current(token, user.id)) publish();
+    if (current(token, user.id)) {
+      state.sourceLoading.progress = false;
+      publish();
+    }
     return current(token, user.id);
   }
 
@@ -113,6 +121,7 @@ export function createHistoryPageController({
       if (source === "recordings") state.recordings = payload.recordings || [];
       else state.reviewRequests = payload.requests || [];
       state.sourceErrors[source] = null;
+      state.sourceLoading[source] = false;
       publish();
     } catch (error) {
       if (!current(token, user.id)) return;
@@ -121,6 +130,7 @@ export function createHistoryPageController({
         return;
       }
       state.sourceErrors[source] = messageOf(error);
+      state.sourceLoading[source] = false;
       publish();
     }
   }
@@ -144,6 +154,7 @@ export function createHistoryPageController({
         recordings: [],
         reviewRequests: [],
         sourceErrors: emptyErrors(),
+        sourceLoading: idleSources(),
       };
       publish();
       return;
@@ -157,6 +168,7 @@ export function createHistoryPageController({
       recordings: [],
       reviewRequests: [],
       sourceErrors,
+      sourceLoading: { progress: true, recordings: true, reviews: true },
     };
     publish();
     if (!await synchronizeProgress(token, user)) return;
@@ -170,6 +182,9 @@ export function createHistoryPageController({
     const token = generation;
     const user = state.user;
     if (state.mode !== "student" || !user) return;
+    if (!Object.hasOwn(state.sourceLoading, source)) return;
+    state.sourceLoading[source] = true;
+    publish();
     if (source === "progress") await synchronizeProgress(token, user);
     if (source === "recordings" || source === "reviews") await loadStudentSource(source, token, user);
   }
