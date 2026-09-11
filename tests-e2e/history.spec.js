@@ -35,7 +35,7 @@ const studentProgress = {
   runs: [{ ...guestProgress.runs[0], id: "student-run" }],
 };
 
-async function installStudentHistoryApi(page, { recordings, getReviews }) {
+async function installStudentHistoryApi(page, { recordings, getReviews, progress = studentProgress }) {
   await page.route("**/api/auth/me", route => route.fulfill({ json: { user: studentUser } }));
   await page.route("**/api/progress", route => {
     if (route.request().method() === "PUT") return route.fulfill({ json: { ok: true, updatedAt: 1_788_950_000 } });
@@ -45,7 +45,7 @@ async function installStudentHistoryApi(page, { recordings, getReviews }) {
   await page.route("**/api/student/review-requests", route => route.fulfill({ json: { requests: getReviews() } }));
   await page.addInitScript(({ key, progress }) => localStorage.setItem(key, JSON.stringify(progress)), {
     key: `egeChineseProgressV2:user:${studentUser.id}`,
-    progress: studentProgress,
+    progress,
   });
 }
 
@@ -69,7 +69,87 @@ test("guest history shows only browser-local attempts and invites sign-in", asyn
   await expect(page.locator(".history-entry")).toContainText("Открытый вариант 2026");
   await expect(page.locator("#historyNotice").getByRole("link", { name: /войти/i })).toBeVisible();
   await expect(page.getByRole("button", { name: /очистить историю/i })).toHaveCount(0);
+  await expect(page.locator("#historyCompareBar")).toBeHidden();
+  await expect(page.locator("[data-compare-run]")).toHaveCount(0);
   expect(protectedRequests).toEqual([]);
+});
+
+test("student selects exactly two compatible completed attempts", async ({ page }) => {
+  const baseRun = guestProgress.runs[0];
+  const comparisonProgress = {
+    ...studentProgress,
+    runs: [{
+      ...baseRun,
+      id: "task-2-a",
+      variantLabel: "Попытка 2A",
+      completedAt: "2026-09-09T10:05:00.000Z",
+    }, {
+      ...baseRun,
+      id: "task-2-b",
+      variantId: "demo-2025",
+      variantLabel: "Попытка 2B",
+      startedAt: "2026-09-08T10:00:00.000Z",
+      completedAt: "2026-09-08T10:05:00.000Z",
+    }, {
+      ...baseRun,
+      id: "task-3",
+      variantLabel: "Попытка 3",
+      tasks: [3],
+      completedTasks: [3],
+      currentTask: 3,
+      startedAt: "2026-09-07T10:00:00.000Z",
+      completedAt: "2026-09-07T10:05:00.000Z",
+    }, {
+      ...baseRun,
+      id: "interrupted-2",
+      variantLabel: "Прерванная попытка 2",
+      completedTasks: [],
+      status: "interrupted",
+      startedAt: "2026-09-06T10:00:00.000Z",
+      completedAt: "2026-09-06T10:05:00.000Z",
+    }],
+  };
+  await installStudentHistoryApi(page, {
+    recordings: [],
+    getReviews: () => [],
+    progress: comparisonProgress,
+  });
+
+  await page.goto("/history.html");
+
+  const compareBar = page.locator("#historyCompareBar");
+  await expect(compareBar).toBeVisible();
+  await expect(page.locator("[data-compare-run]")).toHaveCount(3);
+  await expect(page.locator('[data-history-key="run:interrupted-2"]')).toContainText("Прервано");
+
+  await page.locator('[data-compare-run="task-2-a"]').click();
+
+  await expect(page.locator('[data-compare-run="task-2-a"]')).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator('[data-compare-run="task-3"]')).toBeDisabled();
+  await expect(page.locator('[data-compare-run="task-3"] + .history-compare-reason')).toContainText("одинаковыми заданиями");
+  await expect(page.locator("#historyCompareBtn")).toBeDisabled();
+
+  await page.locator('[data-compare-run="task-2-b"]').click();
+
+  await expect(page.locator("#historyCompareStatus")).toContainText("Выбрано 2 из 2");
+  await expect(page.locator("#historyCompareBtn")).toBeEnabled();
+  await page.locator("#historyCompareBtn").click();
+  await expect(page).toHaveURL(/\/compare\.html\?left=task-2-a&right=task-2-b$/);
+});
+
+test("teacher history does not offer attempt comparison", async ({ page }) => {
+  await page.route("**/api/auth/me", route => route.fulfill({ json: { user: {
+    id: 1,
+    email: "owner@example.test",
+    displayName: "Owner",
+    role: "teacher",
+    emailVerified: true,
+  } } }));
+
+  await page.goto("/history.html");
+
+  await expect(page.locator("#historyCompareBar")).toBeHidden();
+  await expect(page.locator("[data-compare-run]")).toHaveCount(0);
 });
 
 test("every public page links to the dedicated history page", async ({ page }) => {
@@ -226,7 +306,12 @@ test("history fits a 360px viewport and supports keyboard and touch targets", as
   await page.keyboard.press("Enter");
   await expect(page.locator(".history-entry")).toHaveAttribute("open", "");
 
-  for (const selector of ['[data-retry-source="recordings"]', "[data-discard-review-request]"]) {
+  for (const selector of [
+    '[data-retry-source="recordings"]',
+    "[data-discard-review-request]",
+    '[data-compare-run="student-run"]',
+    "#historyCompareBtn",
+  ]) {
     const box = await page.locator(selector).boundingBox();
     expect(Math.min(box?.width || 0, box?.height || 0), `${selector} should be at least 44px on its short side`).toBeGreaterThanOrEqual(44);
   }

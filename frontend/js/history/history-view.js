@@ -72,11 +72,29 @@ function reviewRequestsMarkup(requests) {
   }).join("");
 }
 
-export function historyTimelineMarkup(entries) {
+function historyEntryMarkup(entry) {
+  return `<details class="history-entry" data-history-key="${escapeHtml(entry.key)}"><summary class="history-entry-summary">${historySummaryMarkup(entry)}</summary><div class="history-entry-details"><section class="history-recordings"><h2>Аудиозаписи</h2>${historyRecordingsMarkup(entry.recordings)}</section><section class="history-reviews"><h2>Разбор преподавателя</h2>${reviewRequestsMarkup(entry.reviewRequests)}</section></div></details>`;
+}
+
+function comparisonEntryMarkup(entry, choice, index) {
+  const details = historyEntryMarkup(entry);
+  if (!choice || choice.reason === "incomplete") return details;
+  const selected = choice.selected;
+  const disabled = !choice.selectable;
+  const reasonId = `history-compare-reason-${index}`;
+  const reason = choice.reason === "different_tasks"
+    ? `<span class="history-compare-reason" id="${reasonId}">Можно сравнить только попытки с одинаковыми заданиями</span>`
+    : "";
+  return `<div class="history-entry-wrap${selected ? " is-selected" : ""}"><div class="history-compare-choice"><button class="history-compare-toggle" type="button" data-compare-run="${escapeHtml(entry.runId)}" aria-pressed="${selected}"${disabled ? ` aria-describedby="${reasonId}" disabled` : ""}>${selected ? '<span aria-hidden="true">✓</span> Выбрано' : "Выбрать для сравнения"}</button>${reason}</div>${details}</div>`;
+}
+
+export function historyTimelineMarkup(entries, { comparison = null } = {}) {
   if (!entries.length) {
     return '<p class="history-empty">Здесь появятся завершённые и прерванные тренировки.</p>';
   }
-  return entries.map(entry => `<details class="history-entry" data-history-key="${escapeHtml(entry.key)}"><summary class="history-entry-summary">${historySummaryMarkup(entry)}</summary><div class="history-entry-details"><section class="history-recordings"><h2>Аудиозаписи</h2>${historyRecordingsMarkup(entry.recordings)}</section><section class="history-reviews"><h2>Разбор преподавателя</h2>${reviewRequestsMarkup(entry.reviewRequests)}</section></div></details>`).join("");
+  if (!comparison) return entries.map(historyEntryMarkup).join("");
+  const choices = new Map(comparison.choices.map(choice => [choice.runId, choice]));
+  return entries.map((entry, index) => comparisonEntryMarkup(entry, choices.get(entry.runId), index)).join("");
 }
 
 export function historyPageStateMarkup({ kind, message }) {

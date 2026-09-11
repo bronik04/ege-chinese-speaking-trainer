@@ -126,3 +126,85 @@ test("recovered cards and page states explain incomplete and guest data", () => 
 test("empty history has a calm explanatory message", () => {
   assert.match(historyTimelineMarkup([]), /Здесь появятся завершённые и прерванные тренировки/);
 });
+
+test("comparison selector is a sibling of details and explains incompatible attempts", () => {
+  const completedEntry = {
+    key: "run:run-a",
+    runId: "run-a",
+    run: {
+      mode: "practice",
+      status: "completed",
+      tasks: [2],
+      completedAt: "2026-09-09T10:00:00.000Z",
+    },
+    variantId: "open-2026",
+    variantLabel: "Открытый вариант 2026",
+    tasks: [2],
+    recordings: [],
+    reviewRequests: [],
+    latestReview: null,
+    recovered: false,
+    sortAt: 1_788_944_400_000,
+  };
+  const incompatibleEntry = {
+    ...completedEntry,
+    key: "run:run-b",
+    runId: "run-b",
+    run: { ...completedEntry.run, tasks: [3] },
+    tasks: [3],
+  };
+  const comparison = {
+    selectedIds: ["run-a"],
+    canCompare: false,
+    choices: [
+      { runId: "run-a", selected: true, selectable: true, reason: null },
+      { runId: "run-b", selected: false, selectable: false, reason: "different_tasks" },
+    ],
+  };
+
+  const markup = historyTimelineMarkup([completedEntry, incompatibleEntry], { comparison });
+
+  assert.match(markup, /class="history-entry-wrap is-selected"/);
+  assert.match(markup, /data-compare-run="run-a"[^>]*aria-pressed="true"/);
+  assert.match(markup, /data-compare-run="run-b"[^>]*aria-pressed="false"[^>]*disabled/);
+  assert.match(markup, /Можно сравнить только попытки с одинаковыми заданиями/);
+  assert.ok(markup.indexOf('data-compare-run="run-a"') < markup.indexOf("<details"));
+  for (const summary of markup.matchAll(/<summary[^>]*>(.*?)<\/summary>/gs)) {
+    assert.doesNotMatch(summary[1], /<button/);
+  }
+});
+
+test("comparison selector is omitted for interrupted and recovered entries", () => {
+  const interrupted = {
+    key: "run:stopped",
+    runId: "stopped",
+    run: {
+      mode: "practice",
+      status: "interrupted",
+      tasks: [2],
+      completedAt: "2026-09-09T10:00:00.000Z",
+    },
+    variantId: "open-2026",
+    variantLabel: "Открытый вариант 2026",
+    tasks: [2],
+    recordings: [],
+    reviewRequests: [],
+    latestReview: null,
+    recovered: false,
+    sortAt: 1_788_944_400_000,
+  };
+  const recovered = { ...interrupted, key: "review:1", runId: null, run: null, recovered: true };
+  const comparison = {
+    selectedIds: [],
+    canCompare: false,
+    choices: [
+      { runId: "stopped", selected: false, selectable: false, reason: "incomplete" },
+      { runId: null, selected: false, selectable: false, reason: "incomplete" },
+    ],
+  };
+
+  const markup = historyTimelineMarkup([interrupted, recovered], { comparison });
+
+  assert.doesNotMatch(markup, /data-compare-run/);
+  assert.equal((markup.match(/<details /g) || []).length, 2);
+});

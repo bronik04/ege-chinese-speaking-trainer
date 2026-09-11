@@ -1,5 +1,6 @@
 import { escapeHtml } from "../shared/progress.js";
 import { pluralize } from "../shared/plural.js";
+import { buildComparisonSelection } from "./attempt-comparison.js";
 import { createHistoryPageController } from "./history-controller.js";
 import { buildHistoryTimeline } from "./history-model.js";
 import { historyPageStateMarkup, historyTimelineMarkup } from "./history-view.js";
@@ -10,6 +11,12 @@ const historyStatus = document.getElementById("historyStatus");
 const historyNotice = document.getElementById("historyNotice");
 const historySourceErrors = document.getElementById("historySourceErrors");
 const historyTimeline = document.getElementById("historyTimeline");
+const historyCompareBar = document.getElementById("historyCompareBar");
+const historyCompareStatus = document.getElementById("historyCompareStatus");
+const historyCompareBtn = document.getElementById("historyCompareBtn");
+
+let latestState = null;
+let selectedRunIds = [];
 
 const sourceLabels = {
   progress: "Прогресс",
@@ -41,6 +48,7 @@ function renderNotice(state) {
 }
 
 function renderHistory(state) {
+  latestState = state;
   const entries = state.mode === "teacher" ? [] : buildHistoryTimeline({
     runs: state.progress.runs,
     recordings: state.recordings,
@@ -56,7 +64,21 @@ function renderHistory(state) {
       : Object.values(state.sourceErrors).some(Boolean)
         ? "История загружена частично"
         : `Синхронизировано · ${state.user.email}`;
-  historyTimeline.innerHTML = state.mode === "teacher" ? "" : historyTimelineMarkup(entries);
+  if (state.mode === "student") {
+    const comparison = buildComparisonSelection(entries, selectedRunIds);
+    selectedRunIds = comparison.selectedIds;
+    historyTimeline.innerHTML = historyTimelineMarkup(entries, { comparison });
+    historyCompareStatus.textContent = comparison.selectedIds.length
+      ? `Выбрано ${comparison.selectedIds.length} из 2`
+      : "Выберите две завершённые попытки";
+    historyCompareBtn.disabled = !comparison.canCompare;
+    historyCompareBar.classList.remove("hidden");
+  } else {
+    selectedRunIds = [];
+    historyTimeline.innerHTML = state.mode === "teacher" ? "" : historyTimelineMarkup(entries);
+    historyCompareBtn.disabled = true;
+    historyCompareBar.classList.add("hidden");
+  }
   renderNotice(state);
   renderErrors(state.sourceErrors);
 }
@@ -69,10 +91,25 @@ historySourceErrors.addEventListener("click", event => {
 });
 
 historyTimeline.addEventListener("click", async event => {
+  const compareButton = event.target.closest("[data-compare-run]");
+  if (compareButton && latestState?.mode === "student") {
+    const runId = compareButton.dataset.compareRun;
+    selectedRunIds = selectedRunIds.includes(runId)
+      ? selectedRunIds.filter(id => id !== runId)
+      : [...selectedRunIds, runId].slice(0, 2);
+    renderHistory(latestState);
+    return;
+  }
   const button = event.target.closest("[data-discard-review-request]");
   if (!button) return;
   button.disabled = true;
   await controller.discardReviewRequest(Number(button.dataset.discardReviewRequest));
+});
+
+historyCompareBtn.addEventListener("click", () => {
+  if (selectedRunIds.length !== 2) return;
+  const query = new URLSearchParams({ left: selectedRunIds[0], right: selectedRunIds[1] });
+  window.location.assign(`compare.html?${query}`);
 });
 
 controller.load();
