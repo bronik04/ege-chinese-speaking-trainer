@@ -1,1 +1,1 @@
-"""Domain controllers shared by FastAPI and the compatibility server."""
+"""Synchronous application controllers used by FastAPI routes."""

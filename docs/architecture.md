@@ -2,120 +2,235 @@
 
 ## Обзор
 
-Браузерный frontend на vanilla JavaScript обращается к FastAPI-приложению через JSON API. FastAPI запускается через `asgi.py`, проверяет запросы и передаёт прикладные сценарии контроллерам. Приложение поддерживает SQLite локально и PostgreSQL в scale-профиле, локальное или S3/R2-хранилище, SMTP/outbox и отдельный worker транскрибации.
+Браузерный frontend на vanilla JavaScript обращается к FastAPI через JSON API. FastAPI через `asgi.py` —
+единственный HTTP runtime. SQLite в WAL-режиме — единственный поддерживаемый движок БД. Закрытые файлы
+хранятся локально или в S3/R2; почта отправляется через SMTP либо приватный development outbox.
 
-Архитектурные решения зафиксированы в [ADR 0001](decisions/0001-fastapi-runtime.md) и [ADR 0002](decisions/0002-content-and-runtime-data.md).
+Решения зафиксированы в [ADR 0001](decisions/0001-fastapi-runtime.md),
+[ADR 0002](decisions/0002-content-and-runtime-data.md),
+[ADR 0003](decisions/0003-database-migration-strategy.md) и отменяющем dual-database требования
+[ADR 0004](decisions/0004-sqlite-only-storage.md).
 
 ## Текущая структура
 
 ```text
-src/trainer/main.py  FastAPI application и статическая выдача
-asgi.py              совместимый ASGI wrapper
-legacy/server.py     изолированный compatibility HTTP runtime
-src/trainer/api/      HTTP, schemas и controllers
-src/trainer/domain/         чистые бизнес-правила
-src/trainer/services/       прикладные сервисы
-src/trainer/infrastructure/ БД и внешние adapters
-src/trainer/workers/  фоновые процессы
-frontend/             HTML, CSS и браузерные JavaScript-модули
-content/              версионируемые JSON-материалы
-public/               публичные браузерные assets
-migrations/           Alembic-миграции PostgreSQL
-scripts/              backup, smoke checks и worker
-tests*/               Python, JavaScript и Playwright
-deploy/               Caddy и nginx
+asgi.py                         ASGI wrapper
+src/trainer/main.py             FastAPI application и middleware
+src/trainer/api/                routes, controllers, schemas, dependencies, errors
+src/trainer/domain/             чистые бизнес-правила
+src/trainer/services/           прикладные операции
+src/trainer/infrastructure/     SQLite, storage, mailer, observability
+frontend/                       HTML, CSS и браузерные ES-модули
+content/                        версионируемые JSON-материалы
+public/                         публичные браузерные assets
+migrations/                     Alembic-ревизии SQLite
+scripts/                        backup, restore, cleanup, import и проверки
+tests*/, tests-e2e/             Python, JavaScript и Playwright
+deploy/                         Caddy и nginx
 ```
 
-Контроллеры отвечают за HTTP-оркестрацию, domain — за чистые правила, services — за прикладные операции, infrastructure — за SQL и внешние интеграции. Зависимости domain не направляются в API или infrastructure.
-
-## Целевая структура
-
-```text
-src/trainer/
-├── api/                 HTTP, schemas, dependencies, errors
-├── domain/              аккаунты, материалы, назначения, оценивание
-├── infrastructure/      database, storage, mailer, observability, OpenAI
-├── workers/             фоновые процессы
-├── config.py
-└── main.py
-frontend/
-├── pages/
-├── js/
-└── styles/
-content/
-├── variants/
-└── reference/
-public/                  напрямую раздаваемые файлы
-docs/                    архитектура, ADR и runbooks
-tests/                   unit и integration
-tests-e2e/               браузерные сценарии
-var/                     локальные runtime-данные
-backups/                 резервные копии
-tmp/                     воспроизводимые временные файлы
-```
-
-Это рабочая структура и одновременно правило дальнейшей декомпозиции. Плоский модуль превращается в пакет только
-когда внутри появились реальные отдельные ответственности; пустые каталоги и дублирующие слои не создаются.
+Плоский модуль превращается в пакет только при появлении нескольких реальных ответственностей. Пустые
+compatibility-слои и параллельные реализации не создаются.
 
 ## Границы и зависимости
 
-Целевое направление: `API → domain → infrastructure interfaces`.
-
-- API знает HTTP, Pydantic, cookies, status codes и JSON-контракт.
-- Domain описывает правила ролей, материалов, назначений, попыток и оценивания без зависимости от FastAPI.
-- Infrastructure реализует SQL, filesystem, S3/R2, SMTP, PDF, observability и OpenAI.
-- Worker вызывает domain-сценарий и infrastructure adapters, но не импортируется API ради фонового выполнения.
+- API знает HTTP, Pydantic, cookies, статусы и JSON-контракт.
+- Domain описывает аккаунты, материалы, review selection, оценивание и retention без зависимости от HTTP,
+  environment или внешних adapters.
+- Services оркестрирует прикладные сценарии и зависит от infrastructure через явные ports там, где граница уже
+  выделена.
+- Infrastructure реализует SQLite, filesystem, S3/R2, SMTP/outbox и observability и не импортирует API.
 - Frontend зависит только от публичного HTTP-контракта и публичных assets.
 
-Domain может задавать interface/Protocol для хранилища или внешнего сервиса. Конкретный adapter передаётся на границе приложения; domain не выбирает S3, SMTP или модель OpenAI через environment напрямую.
+Контроллеры — синхронные функции, возвращающие `ActionResult`/`FileResult`. FastAPI routes выполняют их через
+thread pool и преобразуют результат в response. Это сохраняет transport на границе API и позволяет тестировать
+сценарии без web framework.
 
-## Поток данных
+### Вертикальная граница аккаунтов
+
+Все десять сценариев аутентификации и жизненного цикла аккаунта проходят через прикладной сервис:
+
+```text
+accounts routes/dependencies → auth controller → AccountService
+AccountService → AccountRepository / AccountLinkSender / cleanup runner ports
+runtime → SQLiteAccountRepository / MailAccountLinkSender / durable cleanup processor
+```
+
+Routes и dependencies отвечают за cookies и получение текущего пользователя, controller преобразует схемы и
+`AccountError` в прежний HTTP-контракт. `AccountService` владеет регистрацией, входом, сессиями, подтверждением
+email, восстановлением пароля, аудитом и удалением аккаунта, не импортируя API или infrastructure. SQLite adapter
+владеет SQL, rate limits, account tokens и границами транзакций; mail adapter формирует и отправляет ссылки.
+
+При удалении аккаунта SQLite adapter собирает ключи всех приватных файлов и ставит durable cleanup job в той же
+транзакции, где записываются `account_deleted` и удаляется пользователь. Физическое удаление из storage начинается
+только после commit. Если storage недоступен, аккаунт остаётся удалённым, а задача сохраняется для повторной
+обработки.
+
+### Вертикальная граница review requests
+
+Все восемь review-request сценариев проходят через одну прикладную границу:
+
+```text
+review_requests controller
+  → ReviewRequestService
+    → ReviewRequestRepository port
+      → SQLiteReviewRequestRepository
+```
+
+Controller разбирает HTTP-значения, проверяет owner-only detail и преобразует `ReviewRequestError` в прежний
+`ApiError`. Service содержит правила selection, snapshots, аудиозаписей, переходов статуса и оценивания.
+SQLite adapter владеет SQL, audit, cleanup intents и обычными/immediate transactions. Физическую обработку
+очистки запускает callback прикладного сервиса после commit. Snapshot helper получает только
+`ReviewAssetRegistry`, а не database connection.
+
+Новые review requests принимают только строгий `CompletedProgressRun`: transport schema проверяет форму,
+review domain — статус и связи с вариантом/выбранными заданиями, а service повторяет domain-проверку и сохраняет
+канонический JSON до открытия transaction. Существующие legacy `run_json` не мигрируются и не читаются list/detail
+сценариями.
+
+Каждая вертикальная миграция ограничена своим bounded context и не вводит общий DI framework. Остальные
+контроллеры могут сохранять переходную структуру и переносятся только отдельными проверяемыми изменениями.
+
+### Вертикальная граница материалов
+
+Все девять material-сценариев проходят через одну прикладную границу:
+
+```text
+materials controller
+  → MaterialService
+    → MaterialRepository port
+      → SQLiteMaterialRepository
+    → image encoder и storage port
+```
+
+Controller преобразует API-входы и semantic errors в прежние HTTP-ответы. Service владеет видимостью каталога,
+черновиками, публикацией, сохранением изображений из assignment snapshots и компенсационным удалением при сбое
+загрузки. SQLite adapter владеет SQL, транзакциями и audit persistence, а Pillow adapter — декодированием,
+проверкой и WebP-кодированием изображений. Публичные маршруты, payloads и правила storage при этом не меняются.
+
+### Вертикальная граница личных записей
+
+Создание, список и выдача личных тренировочных записей проходят через отдельный прикладной сервис:
+
+```text
+personal_recordings controller
+  → PersonalRecordingService
+    → PersonalRecordingRepository / storage ports
+      → SQLitePersonalRecordingRepository / configured storage
+```
+
+Controller только преобразует Pydantic schema, `PersonalRecordingError` и `FileResult`. Service проверяет позицию
+ответа, MIME, размер и длительность, управляет временным файлом и порядком записи в хранилище. Перед загрузкой
+SQLite adapter отдельной транзакцией фиксирует cleanup intent с защитным интервалом. После успешной загрузки он
+атомарно создаёт метаданные и удаляет intent; при сбое хранилища или финализации intent остаётся для повторной
+очистки. SQL, SQLite-транзакции, ffprobe и выбор local/S3 storage не попадают в controller или service.
+
+### Вертикальная граница очистки хранилищ
+
+Очистка просроченных записей и приватных файлов проходит через одну прикладную границу:
+
+```text
+runtime / cleanup CLI / application callbacks
+  → StorageCleanupService
+    → StorageCleanupRepository / storage ports
+      → SQLiteStorageCleanupRepository / configured storage
+```
+
+`StorageCleanupService` владеет временем, часовыми lease/retry интервалами и попытками удаления из всех трёх
+категорий хранилищ. SQLite adapter короткими транзакциями удаляет просроченные метаданные, выдаёт задачи в
+аренду и фиксирует результат; сетевой или файловый I/O выполняется без SQLite write lock. Результат устаревшего
+worker игнорируется, если задачу уже получил новый worker.
+
+Account, review и personal-recording adapters создают или отменяют cleanup intents через
+`SQLiteStorageCleanupQueue` внутри своей текущей транзакции. Поэтому изменение метаданных и постановка очистки
+атомарны, а физическое удаление начинается только после commit. Выбор local/S3/R2 реализации остаётся в runtime
+и выполняется лениво только для реально используемой категории файлов.
+
+### Вертикальная граница прогресса
+
+Маршруты `/api/progress` принимают legacy V1 только как вход миграции и строгий V2 как основной контракт.
+`domain/progress.py` владеет нейтральными моделями, инвариантами, канонической сериализацией и V1→V2;
+Pydantic повторяет строгую форму на HTTP-границе. `ProgressService` лениво нормализует V1 при GET без записи,
+сохраняет только V2 при PUT и отделяет клиентский `progress.updatedAt` от серверного timestamp строки.
+SQLite adapter отвечает только за JSON/транзакции и сообщает повреждённое хранилище через repository port.
+Frontend синхронизирует уже нормализованный V2 и переносит guest/per-user localStorage только по правилу
+write-V2-before-delete-V1.
+
+Сервер хранит документ целиком без merge и сравнения клиентского времени. Объединение локальной и серверной
+истории остаётся в браузере. Строгий `ReviewRequestCreate.run` повторно использует эту модель.
+`MaterialRequest.content` использует отдельный строгий контракт редактируемого черновика: API и
+`MaterialService` проверяют точный набор заданий, поля, типы и длины списков до transaction, а публикация
+отдельно проверяет заполненность и добавляет фиксированный `EXAM_SPEC`. Существующие `content_json` читаются без
+миграции; новый write-путь сохраняет только канонические редактируемые поля. Старые API-модули `groups` удалены;
+исторические таблицы групп, назначений и submissions сохранены без изменений.
+
+### Вертикальная граница доступа к записям
+
+Маршруты legacy-записей, review-аудио и review-изображений используют
+transport-only controller и `RecordingAccessService`. Сервис владеет правилами
+видимости и сроком review-записи; `RecordingAccessRepository` связывает его с
+SQLite adapter, которому принадлежат SELECT/JOIN.
+
+Range-обработка и физическое чтение local/S3/R2 остаются в route/`file_response`.
+Старые записи назначений остаются доступны по прежнему URL; таблицы и frontend
+не меняются.
+
+## Потоки данных
 
 ```text
 Browser
-  → FastAPI route и Pydantic validation
-  → authentication/authorization dependency
-  → domain operation
-  → database и/или storage interface
-  → SQLite/PostgreSQL, local storage или S3/R2
+  → FastAPI middleware и Pydantic validation
+  → role dependency
+  → controller
+  → domain/service
+  → SQLite и/или storage adapter
+  → ActionResult/FileResult
   → единый API response с requestId
 ```
 
-Для транскрибации запись сначала сохраняется в закрытом storage и устойчивой очереди БД. Отдельный worker забирает задание, скачивает объект через storage adapter, вызывает OpenAI и записывает результат или состояние повторной попытки. SMTP следует тому же принципу: domain запрашивает отправку, mailer adapter использует SMTP или приватный локальный outbox.
+Review request сначала фиксирует selection и материал, затем сохраняет приватные аудио и snapshot-изображения.
+После завершения uploading-заявка становится видна преподавателю. Удаление или переиздание исходного материала
+не меняет snapshot.
+
+SMTP использует adapter: при настроенном SMTP письмо отправляется провайдеру, иначе development-режим пишет
+JSON в приватный outbox. Фоновые операции хранения выполняются командой
+`.venv/bin/python -m scripts.cleanup_storage`.
+
+## База и совместимость данных
+
+Baseline SQLite 1–7 заморожен. При создании существующей базы он применяется и штампуется исходной
+Alembic-ревизией; затем Alembic выполняет все последующие revisions. Новые изменения схемы добавляются только
+новой ревизией.
+
+Старые таблицы групп, назначений, submissions и reviews сохраняются, чтобы не терять существующие данные и
+корректно удалять аккаунты. Активный UI и API их не развивают. Физический каталог `var/assignment-assets`
+сохраняет историческое имя и содержит приватные изображения review snapshots.
 
 ## Категории файлов
 
 | Категория | Назначение | Git | Публичный доступ |
 |---|---|---:|---:|
 | `content/` | проверяемые учебные материалы | да | только через разрешённый API |
-| `public/` | браузерные изображения и стили | да | да |
-| `var/` | SQLite, аудио, material assets, outbox | нет | нет |
-| `backups/` | резервные копии БД и файлов | нет | нет |
-| `tmp/` | восстанавливаемые промежуточные результаты | нет | нет |
+| `public/` | браузерные изображения | да | да |
+| `var/` | SQLite, аудио, assets, outbox | нет | нет |
+| `backups/` | резервные копии | нет | нет |
+| `tmp/` | воспроизводимые временные результаты | нет | нет |
 
-Секреты находятся только в environment/secret manager. `.env.example` документирует имена переменных, но не содержит реальные значения.
-
-## Стратегия перехода
-
-1. Сначала фиксируются правила и тесты текущего поведения.
-2. Затем вводится единый command layer и package metadata.
-3. Python-модули размещены в пакете `src/trainer` с совместимым `asgi.py`; следующим этапом backend делится по обязанностям.
-4. Frontend, content и public assets разделены с сохранением прежних URL.
-5. Миграции SQLite/PostgreSQL унифицируются отдельной задачей.
-6. Compatibility runtime изолирован в `legacy/` и удаляется после одного стабильного релизного цикла и подтверждения FastAPI/E2E-сценариев.
-
-Каждый шаг должен завершаться рабочим приложением и самостоятельным commit. Массовое перемещение backend, frontend и данных в одном изменении не допускается.
+Секреты находятся только в environment/secret manager. `.env.example` содержит имена и демонстрационные
+значения, но не реальные credentials.
 
 ## Где размещать изменения
 
-| Изменение | Сейчас | Цель | Обязательная проверка |
-|---|---|---|---|
-| HTTP endpoint или schema | `src/trainer/api` | `src/trainer/api` | Python integration test и OpenAPI contract |
-| Бизнес-правило | `src/trainer/domain` | `src/trainer/domain` | независимый unit test |
-| SQL или migration | `src/trainer/infrastructure/database`, `migrations/` | `src/trainer/infrastructure/database` | чистая и обновляемая БД |
-| S3/filesystem/SMTP/OpenAI | `src/trainer/infrastructure` | `src/trainer/infrastructure` | adapter unit test и smoke test |
-| UI rendering | `frontend/` | `frontend/` | JS test; Playwright для сценария |
-| Вариант или справочник | `content/` и `public/assets/variants` | те же каталоги | JSON check и профильный content test |
-| Worker или backup | `scripts/` | `workers/` или `scripts/` | unit/integration test и dry-run/smoke |
+| Изменение | Каталог | Обязательная проверка |
+|---|---|---|
+| HTTP endpoint или schema | `src/trainer/api` | Python integration и OpenAPI contract |
+| Бизнес-правило | `src/trainer/domain` | независимый unit test |
+| Прикладная операция | `src/trainer/services` | unit/integration test |
+| SQL или migration | `src/trainer/infrastructure/database`, `migrations/` | чистая, обновляемая и повторно обновляемая SQLite |
+| Storage/SMTP | `src/trainer/infrastructure` | adapter test и профильный smoke |
+| UI | `frontend/` | JS test и Playwright для сценария |
+| Вариант или справочник | `content/`, `public/assets/variants` | JSON check и content test |
+| Backup или cleanup | `scripts/` | unit/integration и smoke |
 
-Правила безопасной работы с данными находятся в [SECURITY.md](../SECURITY.md), а пошаговый workflow — в [CONTRIBUTING.md](../CONTRIBUTING.md).
+Правила безопасной работы с данными находятся в [SECURITY.md](../SECURITY.md), workflow — в
+[CONTRIBUTING.md](../CONTRIBUTING.md).

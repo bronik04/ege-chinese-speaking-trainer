@@ -1,7 +1,6 @@
 import {
-  api, completeReviewRequest, createReviewRequest, discardReviewRequest, uploadReviewRecording,
+  completeReviewRequest, createReviewRequest, uploadReviewRecording,
 } from "../shared/api.js";
-import { studentReviewRequestsMarkup } from "./account-view.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -18,23 +17,6 @@ export function createAccountReviewRequestsController(ctx) {
 
   function reset() {
     pendingSubmission = null;
-    $("studentReviewRequestsPanel").classList.add("hidden");
-    $("studentReviewRequestsList").innerHTML = "";
-  }
-
-  async function loadStudentReviewRequests() {
-    if (ctx.getUser()?.role !== "student") {
-      $("studentReviewRequestsPanel").classList.add("hidden");
-      return;
-    }
-    try {
-      const payload = await api("/api/student/review-requests");
-      const requests = payload.requests || [];
-      $("studentReviewRequestsPanel").classList.toggle("hidden", !requests.length);
-      $("studentReviewRequestsList").innerHTML = studentReviewRequestsMarkup(requests);
-    } catch (_) {
-      $("studentReviewRequestsPanel").classList.add("hidden");
-    }
   }
 
   function showError(error, selection, submission) {
@@ -89,13 +71,6 @@ export function createAccountReviewRequestsController(ctx) {
     return submission.promise;
   }
 
-  async function discardUploadingReviewRequest(requestId) {
-    await discardReviewRequest(requestId);
-    if (pendingSubmission?.requestId === requestId) pendingSubmission = null;
-    ctx.toast("Незавершённая загрузка удалена");
-    await loadStudentReviewRequests();
-  }
-
   async function sendReviewRequest(submission, selection, run, recordings) {
     try {
       if (!submission.requestId) {
@@ -115,7 +90,6 @@ export function createAccountReviewRequestsController(ctx) {
       pendingSubmission = null;
       $("reviewRequestMessage").textContent = "Заявка отправлена на разбор.";
       ctx.toast("Аудиозаписи отправлены преподавателю");
-      await loadStudentReviewRequests();
       return true;
     } catch (error) {
       if (pendingSubmission === submission) showError(error, selection, submission);
@@ -128,8 +102,6 @@ export function createAccountReviewRequestsController(ctx) {
   return {
     reset,
     clearPendingReviewRequest: () => { pendingSubmission = null; },
-    loadStudentReviewRequests,
     submitReviewRequest,
-    discardUploadingReviewRequest,
   };
 }

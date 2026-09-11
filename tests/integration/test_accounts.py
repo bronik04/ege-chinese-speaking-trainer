@@ -9,10 +9,11 @@ from trainer.api.controllers import auth
 from trainer.api.results import RequestContext
 from trainer.api.schemas import DeleteAccountRequest
 from trainer.domain.accounts import password_hash
+from trainer.domain.recording_retention import expires_at
 from trainer.infrastructure.database.accounts import consume_rate_limit, consume_token, issue_token, record_audit
 from trainer.infrastructure.database.core import connect, initialize
 from trainer.infrastructure.mailer import send_email
-from trainer.services.storage_cleanup import CleanupSummary, process_cleanup_jobs
+from trainer.services.storage_cleanup import CleanupSummary
 
 
 class AccountSecurityTest(unittest.TestCase):
@@ -92,9 +93,9 @@ class AccountSecurityTest(unittest.TestCase):
             ).lastrowid
             database.execute(
                 """INSERT INTO review_request_recordings(
-                       item_id,question_number,label,storage_key,mime_type,size_bytes,created_at
-                   ) VALUES (?,?,?,?,?,?,?)""",
-                (item_id, None, "Answer", audio_key, "audio/webm", 5, 1001),
+                       item_id,question_number,label,storage_key,mime_type,size_bytes,created_at,expires_at
+                   ) VALUES (?,?,?,?,?,?,?,?)""",
+                (item_id, None, "Answer", audio_key, "audio/webm", 5, 1001, expires_at(1001)),
             )
             database.execute(
                 """INSERT INTO review_request_assets(request_id,storage_key,mime_type,size_bytes,created_at)
@@ -119,8 +120,8 @@ class AccountSecurityTest(unittest.TestCase):
             patch.object(runtime, "DB_PATH", self.database_path),
             patch.object(runtime, "AUDIO_DIR", audio_root),
             patch.object(runtime, "MATERIAL_ASSET_DIR", material_root),
-            patch.object(runtime, "ASSIGNMENT_ASSET_DIR", copied_asset_root),
-            patch.object(auth, "process_cleanup_jobs", return_value=CleanupSummary(pending=1)),
+            patch.object(runtime, "REVIEW_ASSET_DIR", copied_asset_root),
+            patch.object(runtime, "_process_storage_cleanup", return_value=CleanupSummary(pending=1)),
         ):
             result = auth.account_delete(
                 DeleteAccountRequest(password="password123"),
@@ -135,15 +136,18 @@ class AccountSecurityTest(unittest.TestCase):
         self.assertTrue(audio_path.is_file())
         self.assertTrue(copied_asset_path.is_file())
 
-        with patch.dict(os.environ, {"TRAINER_AUDIO_STORAGE": "local"}):
+        with (
+            patch.dict(os.environ, {"TRAINER_AUDIO_STORAGE": "local"}),
+            patch.object(runtime, "DB_PATH", self.database_path),
+            patch.object(runtime, "AUDIO_DIR", audio_root),
+            patch.object(runtime, "MATERIAL_ASSET_DIR", material_root),
+            patch.object(runtime, "REVIEW_ASSET_DIR", copied_asset_root),
+        ):
             with connect(self.database_path) as database:
-                summary = process_cleanup_jobs(
-                    database,
-                    audio_root=audio_root,
-                    material_root=material_root,
-                    assignment_root=copied_asset_root,
-                    now=1002,
-                )
+                available_at = database.execute(
+                    "SELECT available_at FROM storage_cleanup_jobs ORDER BY id DESC LIMIT 1"
+                ).fetchone()[0]
+            summary = runtime.storage_cleanup_service().process_batch(now=available_at)
 
         self.assertEqual((summary.completed, summary.failed, summary.pending), (1, 0, 0))
         self.assertFalse(audio_path.exists())

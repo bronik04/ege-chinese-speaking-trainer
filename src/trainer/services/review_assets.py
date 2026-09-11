@@ -11,26 +11,34 @@ from pathlib import Path
 from urllib.parse import unquote
 
 from trainer.infrastructure.storage import storage_from_env
+from trainer.services.review_request_repository import ReviewAssetRegistry
 
 MATERIAL_ASSET_URL = re.compile(r"/api/material-assets/(\d+)")
 
 
-def copy_review_assets_from_env(database, request_id: int, material_snapshot: dict, created_keys: list[str]) -> dict:
-    from trainer.api import runtime
-
+def copy_review_assets_from_roots(
+    registry: ReviewAssetRegistry,
+    request_id: int,
+    material_snapshot: dict,
+    created_keys: list[str],
+    *,
+    material_asset_root: Path,
+    review_asset_root: Path,
+    public_root: Path,
+) -> dict:
     return copy_review_assets(
-        database,
+        registry,
         request_id,
         material_snapshot,
-        storage_from_env(runtime.MATERIAL_ASSET_DIR),
-        storage_from_env(runtime.ASSIGNMENT_ASSET_DIR),
+        storage_from_env(material_asset_root),
+        storage_from_env(review_asset_root),
         created_keys,
-        public_root=runtime.ROOT / "public",
+        public_root=public_root,
     )
 
 
 def copy_review_assets(
-    database,
+    registry: ReviewAssetRegistry,
     request_id: int,
     material_snapshot: dict,
     source_storage,
@@ -60,13 +68,15 @@ def copy_review_assets(
         finally:
             if temporary_path:
                 temporary_path.unlink(missing_ok=True)
-        cursor = database.execute(
-            """INSERT INTO review_request_assets(request_id,storage_key,mime_type,size_bytes,created_at)
-               VALUES (?,?,?,?,?)""",
-            (request_id, target_key, mime_type, len(data), int(time.time())),
+        asset_id = registry.add_review_asset(
+            request_id,
+            target_key,
+            mime_type,
+            len(data),
+            int(time.time()),
         )
-        created_ids.append(cursor.lastrowid)
-        snapshot_url = f"/api/review-assets/{cursor.lastrowid}"
+        created_ids.append(asset_id)
+        snapshot_url = f"/api/review-assets/{asset_id}"
         urls[cache_key] = snapshot_url
         return snapshot_url
 
@@ -83,13 +93,11 @@ def copy_review_assets(
             cache_key = ("material", source_id)
             if cache_key in urls:
                 return urls[cache_key]
-            row = database.execute(
-                "SELECT storage_key,mime_type,size_bytes FROM material_assets WHERE id=?", (source_id,)
-            ).fetchone()
+            row = registry.material_asset(source_id)
             if not row:
                 raise ValueError(f"Material asset {source_id} does not exist")
-            suffix = Path(row["storage_key"]).suffix or ".bin"
-            return store_copy(cache_key, source_storage.read(row["storage_key"]), suffix, row["mime_type"])
+            suffix = Path(row.storage_key).suffix or ".bin"
+            return store_copy(cache_key, source_storage.read(row.storage_key), suffix, row.mime_type)
 
         relative_url = unquote(value).removeprefix("/")
         if not relative_url.startswith("assets/variants/"):
@@ -110,7 +118,7 @@ def copy_review_assets(
     except Exception:
         for asset_id in created_ids:
             with suppress(Exception):
-                database.execute("DELETE FROM review_request_assets WHERE id=?", (asset_id,))
+                registry.remove_review_asset(asset_id)
         for key in created_keys:
             with suppress(Exception):
                 target_storage.delete(key)

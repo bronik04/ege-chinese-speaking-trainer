@@ -17,7 +17,7 @@ from starlette.routing import Match
 from trainer.api.body_limit import BodyLimitMiddleware
 from trainer.api.dependencies import validate_account_configuration
 from trainer.api.errors import ApiError, api_error_handler, default_error_code, error_payload
-from trainer.api.routes import accounts, groups, materials, recordings, review_requests
+from trainer.api.routes import accounts, materials, personal_recordings, progress, recordings, review_requests
 from trainer.api.runtime import MAX_AUDIO_BODY, MAX_BODY, ROOT, connect, init_database
 from trainer.api.security import request_has_same_origin
 from trainer.infrastructure.observability import (
@@ -43,14 +43,15 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="Тренажёр устной части ЕГЭ по китайскому", docs_url=None, redoc_url=None, lifespan=lifespan)
 app.add_exception_handler(ApiError, api_error_handler)
 app.include_router(accounts.router)
-app.include_router(groups.router)
+app.include_router(progress.router)
 app.include_router(recordings.router)
+app.include_router(personal_recordings.router)
 app.include_router(review_requests.router)
 app.include_router(materials.router)
 
 
 BODY_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
-RECORDING_UPLOAD_PATH = re.compile(r"^/api/(?:submissions|review-requests)/\d+/recordings$")
+RECORDING_UPLOAD_PATH = re.compile(r"^/api/(?:submissions|review-requests)/\d+/recordings$|^/api/personal-recordings$")
 MATERIAL_ASSET_UPLOAD_PATH = re.compile(r"^/api/materials/[^/]+/assets$")
 MAX_MATERIAL_ASSET_BODY = 5_000_000
 
@@ -198,6 +199,11 @@ async def static_files(path: str):
     pages = {
         "index.html",
         "variants.html",
+        "variant-preview.html",
+        "history.html",
+        "compare.html",
+        "security.html",
+        "teacher.html",
         "variant-editor.html",
         "reference.html",
     }

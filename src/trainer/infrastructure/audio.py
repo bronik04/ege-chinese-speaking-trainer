@@ -5,6 +5,8 @@ import os
 import subprocess
 from pathlib import Path
 
+from trainer.services.personal_recording_repository import PersonalRecordingAudioError
+
 TASK_AUDIO_LIMITS = {1: 30.0, 2: 150.0, 3: 210.0}
 
 
@@ -26,3 +28,10 @@ def validate_duration(path: Path, task: int) -> float:
     if duration <= 0 or duration > maximum:
         raise ValueError(f"Длительность записи должна быть не больше {int(maximum)} секунд")
     return duration
+
+
+def validate_personal_recording_duration(path: Path, task: int) -> float:
+    try:
+        return validate_duration(path, task)
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        raise PersonalRecordingAudioError from error

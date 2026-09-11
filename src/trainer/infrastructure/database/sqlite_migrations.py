@@ -223,6 +223,8 @@ def migration_007_assignment_material_snapshots(database: sqlite3.Connection) ->
         database.execute("ALTER TABLE assignments ADD COLUMN material_snapshot_json TEXT")
 
 
+# This compatibility baseline is deliberately frozen. New schema revisions,
+# including personal-recording retention, are applied by Alembic to SQLite too.
 MIGRATIONS = [
     (1, migration_001_core),
     (2, migration_002_assignments_and_reviews),

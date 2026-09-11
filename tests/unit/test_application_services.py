@@ -1,17 +1,12 @@
 from __future__ import annotations
 
-import sqlite3
 import tempfile
 import unittest
-from contextlib import closing
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
-from trainer.infrastructure.database.migrations import upgrade_sqlite_database
-from trainer.services.accounts import delete_account_storage
-from trainer.services.assignment_assets import copy_assignment_assets_from_env, read_assignment_asset
+from trainer.api import runtime
 from trainer.services.recordings import delete_recordings, read_recording, write_recording
-from trainer.services.storage_cleanup import enqueue_cleanup_job, process_cleanup_jobs
 
 
 class RecordingStorageServiceTest(unittest.TestCase):
@@ -35,112 +30,169 @@ class RecordingStorageServiceTest(unittest.TestCase):
         storage.delete.assert_called_once_with("1/answer.webm")
 
 
-class AssignmentStorageServiceTest(unittest.TestCase):
-    @patch("trainer.services.assignment_assets.storage_from_env")
-    @patch("trainer.services.assignment_assets.copy_assignment_assets")
-    def test_factory_wrapper_supplies_source_and_target_storage(self, copy_assets, factory):
-        source_storage = Mock()
-        target_storage = Mock()
-        factory.side_effect = [source_storage, target_storage]
-        copy_assets.return_value = {"tasks": {}}
-        database = Mock()
-        result = copy_assignment_assets_from_env(database, 12, {"tasks": {}}, Path("materials"), Path("assignments"))
-        self.assertEqual(result, {"tasks": {}})
-        copy_assets.assert_called_once_with(database, 12, {"tasks": {}}, source_storage, target_storage)
+class AccountServiceRuntimeTest(unittest.TestCase):
+    def test_factory_composes_current_runtime_dependencies_without_cache(self):
+        repository = object()
+        sender = object()
+        service = object()
+        with (
+            patch.object(runtime, "SQLiteAccountRepository", return_value=repository) as repository_type,
+            patch.object(runtime, "MailAccountLinkSender", return_value=sender) as sender_type,
+            patch.object(runtime, "AccountService", return_value=service) as service_type,
+            patch.object(runtime, "account_public_url", return_value="https://trainer.example"),
+            patch.object(runtime, "owner_email", return_value="owner@example.test"),
+        ):
+            first = runtime.account_service()
+            second = runtime.account_service()
 
-    @patch("trainer.services.assignment_assets.storage_from_env")
-    def test_reads_assignment_asset_through_factory(self, factory):
-        factory.return_value.read.return_value = b"image"
-        self.assertEqual(read_assignment_asset(Path("assignments"), "asset.webp"), b"image")
-
-
-class AccountStorageServiceTest(unittest.TestCase):
-    @patch("trainer.services.accounts.storage_from_env")
-    def test_account_cleanup_uses_each_private_storage_root(self, factory):
-        audio = Mock()
-        materials = Mock()
-        assignments = Mock()
-        factory.side_effect = [audio, materials, assignments]
-        delete_account_storage(
-            Path("audio"),
-            ["recording.webm"],
-            Path("materials"),
-            ["material.webp"],
-            Path("assignments"),
-            ["assignment.webp"],
+        self.assertIs(first, service)
+        self.assertIs(second, service)
+        self.assertEqual(repository_type.call_count, 2)
+        repository_type.assert_called_with(runtime.connect)
+        sender_type.assert_called_with(runtime.DATA_DIR, "https://trainer.example")
+        service_type.assert_called_with(
+            repository,
+            sender,
+            runtime._process_account_cleanup,
+            owner_email="owner@example.test",
+            session_days=runtime.SESSION_DAYS,
         )
-        audio.delete.assert_called_once_with("recording.webm")
-        materials.delete.assert_called_once_with("material.webp")
-        assignments.delete.assert_called_once_with("assignment.webp")
 
 
-class StorageCleanupJobServiceTest(unittest.TestCase):
-    @patch("trainer.services.storage_cleanup.storage_from_env")
-    def test_failed_job_is_retained_and_successful_retry_removes_it(self, factory):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            path = root / "trainer.sqlite3"
-            upgrade_sqlite_database(path)
-            with closing(sqlite3.connect(path)) as database:
-                database.row_factory = sqlite3.Row
-                job_id = enqueue_cleanup_job(
-                    database,
-                    audio_keys=["recording.webm"],
-                    material_keys=[],
-                    assignment_keys=[],
-                    now=100,
-                )
-                factory.return_value.delete.side_effect = OSError("storage unavailable")
-                summary = process_cleanup_jobs(
-                    database,
-                    audio_root=root / "audio",
-                    material_root=root / "materials",
-                    assignment_root=root / "assignments",
-                    now=101,
-                )
-                self.assertEqual((summary.completed, summary.failed), (0, 1))
-                self.assertEqual(
-                    database.execute("SELECT attempts FROM storage_cleanup_jobs WHERE id=?", (job_id,)).fetchone()[0], 1
-                )
-                factory.return_value.delete.side_effect = None
-                summary = process_cleanup_jobs(
-                    database,
-                    audio_root=root / "audio",
-                    material_root=root / "materials",
-                    assignment_root=root / "assignments",
-                    now=102,
-                )
-                self.assertEqual((summary.completed, summary.failed), (1, 0))
-                self.assertIsNone(
-                    database.execute("SELECT id FROM storage_cleanup_jobs WHERE id=?", (job_id,)).fetchone()
-                )
+class PersonalRecordingServiceRuntimeTest(unittest.TestCase):
+    def test_factory_composes_current_runtime_dependencies_without_cache(self):
+        repository = object()
+        storage = object()
+        service = object()
+        with (
+            patch.object(runtime, "SQLitePersonalRecordingRepository", return_value=repository) as repository_type,
+            patch.object(runtime, "storage_from_env", return_value=storage) as storage_factory,
+            patch.object(runtime, "PersonalRecordingService", return_value=service) as service_type,
+        ):
+            first = runtime.personal_recording_service()
+            second = runtime.personal_recording_service()
 
-    @patch("trainer.services.accounts.storage_from_env")
-    def test_account_cleanup_propagates_storage_failure(self, factory):
-        factory.return_value.delete.side_effect = OSError("storage unavailable")
-        with self.assertRaisesRegex(OSError, "storage unavailable"):
-            delete_account_storage(Path("audio"), ["recording.webm"], Path("materials"), [], Path("assignments"), [])
+        self.assertIs(first, service)
+        self.assertIs(second, service)
+        self.assertEqual(repository_type.call_count, 2)
+        repository_type.assert_called_with(runtime.connect)
+        storage_factory.assert_called_with(runtime.AUDIO_DIR)
+        service_type.assert_called_with(
+            repository,
+            storage,
+            temporary_root=runtime.DATA_DIR / "tmp",
+            max_audio_body=runtime.MAX_AUDIO_BODY,
+            duration_validator=runtime.validate_personal_recording_duration,
+            upload_intent_grace_seconds=runtime.UPLOAD_INTENT_GRACE_SECONDS,
+        )
 
-    @patch("trainer.services.accounts.storage_from_env")
-    def test_account_cleanup_removes_every_key_despite_one_failure(self, factory):
-        audio = Mock()
-        audio.delete.side_effect = [OSError("first key is unreachable"), None]
-        assignments = Mock()
-        factory.side_effect = [audio, Mock(), assignments]
 
-        with self.assertRaisesRegex(OSError, "first key is unreachable"):
-            delete_account_storage(
-                Path("audio"),
-                ["broken.webm", "second.webm"],
-                Path("materials"),
-                [],
-                Path("assignments"),
-                ["assignment.webp"],
-            )
+class RecordingAccessRuntimeTest(unittest.TestCase):
+    def test_factory_composes_uncached_repository_without_storage(self):
+        repository, service = object(), object()
+        with (
+            patch.object(
+                runtime,
+                "SQLiteRecordingAccessRepository",
+                return_value=repository,
+            ) as repository_type,
+            patch.object(
+                runtime,
+                "RecordingAccessService",
+                return_value=service,
+            ) as service_type,
+            patch.object(runtime, "owner_email", return_value="owner@example.test"),
+            patch.object(runtime, "storage_from_env") as storage_factory,
+        ):
+            first = runtime.recording_access_service()
+            second = runtime.recording_access_service()
 
-        # Один сбойный ключ не должен оставлять остальные приватные файлы на диске.
-        self.assertEqual([call.args[0] for call in audio.delete.call_args_list], ["broken.webm", "second.webm"])
-        assignments.delete.assert_called_once_with("assignment.webp")
+        self.assertIs(first, service)
+        self.assertIs(second, service)
+        self.assertEqual(repository_type.call_count, 2)
+        self.assertEqual(service_type.call_count, 2)
+        repository_type.assert_called_with(runtime.connect)
+        service_type.assert_called_with(repository, owner_email="owner@example.test")
+        storage_factory.assert_not_called()
+
+
+class StorageCleanupRuntimeTest(unittest.TestCase):
+    def test_factory_composes_uncached_repository_and_lazy_storage_factories(self):
+        repository = object()
+        service = object()
+        with (
+            patch.object(
+                runtime,
+                "SQLiteStorageCleanupRepository",
+                return_value=repository,
+            ) as repository_type,
+            patch.object(runtime, "StorageCleanupService", return_value=service) as service_type,
+            patch.object(runtime, "storage_from_env") as storage_factory,
+        ):
+            first = runtime.storage_cleanup_service()
+            second = runtime.storage_cleanup_service()
+
+            self.assertIs(first, service)
+            self.assertIs(second, service)
+            self.assertEqual(repository_type.call_args_list, [call(runtime.connect), call(runtime.connect)])
+            self.assertEqual(service_type.call_count, 2)
+            storage_factory.assert_not_called()
+
+            factories = service_type.call_args.kwargs
+            factories["audio_storage"]()
+            factories["material_storage"]()
+            factories["assignment_storage"]()
+
+        self.assertEqual(
+            storage_factory.call_args_list,
+            [call(runtime.AUDIO_DIR), call(runtime.MATERIAL_ASSET_DIR), call(runtime.REVIEW_ASSET_DIR)],
+        )
+
+    @patch("trainer.api.runtime.initialize_database")
+    @patch.object(runtime.logger, "exception")
+    def test_startup_cleanup_failure_is_best_effort(self, log_error, _initialize):
+        service = Mock()
+        service.expire_batch.side_effect = OSError("storage unavailable")
+        with patch.object(runtime, "storage_cleanup_service", return_value=service):
+            runtime.init_database()
+
+        service.process_batch.assert_not_called()
+        log_error.assert_called_once_with(
+            "Storage cleanup startup attempt failed",
+            extra={"event": "storage_cleanup_startup_failed"},
+        )
+
+    def test_review_factory_injects_cleanup_callback_without_repository_roots(self):
+        repository = object()
+        service = object()
+        with (
+            patch.object(runtime, "SQLiteReviewRequestRepository", return_value=repository) as repository_type,
+            patch.object(runtime, "ReviewRequestService", return_value=service) as service_type,
+        ):
+            self.assertIs(runtime.review_request_service(), service)
+
+        repository_type.assert_called_once_with(runtime.connect)
+        self.assertIs(service_type.call_args.args[0], repository)
+        self.assertIs(service_type.call_args.kwargs["cleanup_runner"], runtime._process_storage_cleanup)
+
+
+class ProgressServiceRuntimeTest(unittest.TestCase):
+    def test_factory_composes_uncached_repository_without_external_services(self):
+        repository, service = object(), object()
+        with (
+            patch.object(runtime, "SQLiteProgressRepository", return_value=repository) as repository_type,
+            patch.object(runtime, "ProgressService", return_value=service) as service_type,
+            patch.object(runtime, "storage_from_env") as storage_factory,
+            patch.object(runtime, "MailAccountLinkSender") as mail_sender,
+        ):
+            self.assertIs(runtime.progress_service(), service)
+            self.assertIs(runtime.progress_service(), service)
+        self.assertEqual(repository_type.call_count, 2)
+        self.assertEqual(service_type.call_count, 2)
+        repository_type.assert_called_with(runtime.connect)
+        service_type.assert_called_with(repository)
+        storage_factory.assert_not_called()
+        mail_sender.assert_not_called()
 
 
 if __name__ == "__main__":

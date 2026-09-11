@@ -1,15 +1,24 @@
 from __future__ import annotations
 
+import os
 import sqlite3
 import tempfile
 import unittest
 from contextlib import closing
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
 
+from alembic import command
+from alembic.config import Config
+from sqlalchemy import create_engine, text
+from sqlalchemy.exc import IntegrityError
+
+from trainer.config import PROJECT_ROOT
 from trainer.infrastructure.database.migrations import (
     apply_sqlite_baseline,
     head_revision,
+    sqlite_url,
     upgrade_sqlite_database,
 )
 
@@ -22,6 +31,7 @@ EXPECTED_TABLES = {
     "group_members",
     "material_assets",
     "materials",
+    "personal_recordings",
     "recordings",
     "review_request_assets",
     "review_request_items",
@@ -78,6 +88,12 @@ class SqliteMigrationTest(unittest.TestCase):
                     row[1] for row in database.execute("PRAGMA table_info(assignment_material_assets)")
                 }
                 cleanup_columns = {row[1] for row in database.execute("PRAGMA table_info(storage_cleanup_jobs)")}
+                personal_recording_columns = {
+                    row[1] for row in database.execute("PRAGMA table_info(personal_recordings)")
+                }
+                review_recording_columns = {
+                    row[1] for row in database.execute("PRAGMA table_info(review_request_recordings)")
+                }
             self.assertEqual(versions, list(range(1, 8)))
             self.assertEqual(revision, head_revision())
             self.assertEqual(sqlite_schema(path)[0], EXPECTED_TABLES)
@@ -97,9 +113,35 @@ class SqliteMigrationTest(unittest.TestCase):
                     "last_error",
                     "created_at",
                     "updated_at",
+                    "available_at",
                 },
             )
             self.assertIn("storage_cleanup_jobs_created_idx", sqlite_schema(path)[1])
+            self.assertIn("storage_cleanup_jobs_available_idx", sqlite_schema(path)[1])
+            self.assertEqual(
+                personal_recording_columns,
+                {
+                    "id",
+                    "student_id",
+                    "run_id",
+                    "variant_id",
+                    "task_number",
+                    "question_number",
+                    "label",
+                    "storage_key",
+                    "mime_type",
+                    "size_bytes",
+                    "duration_seconds",
+                    "created_at",
+                    "expires_at",
+                },
+            )
+            self.assertIn("expires_at", review_recording_columns)
+            self.assertTrue(
+                {"personal_recordings_student_expiry_idx", "review_request_recordings_expiry_idx"}.issubset(
+                    sqlite_schema(path)[1]
+                )
+            )
             self.assertTrue(
                 {
                     "review_requests_student_submitted_idx",
@@ -111,6 +153,129 @@ class SqliteMigrationTest(unittest.TestCase):
                     "review_request_assets_request_idx",
                 }.issubset(sqlite_schema(path)[1])
             )
+
+    def test_personal_recording_is_unique_per_student_run_and_position(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "trainer.sqlite3"
+            upgrade_sqlite_database(path)
+            with closing(sqlite3.connect(path)) as database:
+                student_id = database.execute(
+                    "INSERT INTO users(email,password_hash,display_name,role,created_at) VALUES (?,?,?,?,?)",
+                    ("student@example.test", "hash", "Student", "student", 1),
+                ).lastrowid
+                recording = (
+                    student_id,
+                    "run-1",
+                    "demo-2026",
+                    1,
+                    1,
+                    "Answer",
+                    "personal-recordings/1/one.webm",
+                    "audio/webm",
+                    1,
+                    1.0,
+                    1,
+                    2,
+                )
+                database.execute(
+                    """INSERT INTO personal_recordings(
+                           student_id,run_id,variant_id,task_number,question_number,label,storage_key,
+                           mime_type,size_bytes,duration_seconds,created_at,expires_at
+                       ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    recording,
+                )
+                with self.assertRaises(sqlite3.IntegrityError):
+                    database.execute(
+                        """INSERT INTO personal_recordings(
+                               student_id,run_id,variant_id,task_number,question_number,label,storage_key,
+                               mime_type,size_bytes,duration_seconds,created_at,expires_at
+                           ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (*recording[:6], "personal-recordings/1/two.webm", *recording[7:]),
+                    )
+                with self.assertRaises(sqlite3.IntegrityError):
+                    database.execute(
+                        """INSERT INTO personal_recordings(
+                               student_id,run_id,variant_id,task_number,question_number,label,storage_key,
+                               mime_type,size_bytes,duration_seconds,created_at,expires_at
+                           ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (*recording[:4], None, *recording[5:6], "personal-recordings/1/null.webm", *recording[7:]),
+                    )
+
+    def test_upgrade_backfills_review_recording_expiry_from_created_at(self):
+        created_at = int(datetime(2026, 8, 31, tzinfo=UTC).timestamp())
+        expected_expiry = int(datetime(2027, 2, 28, tzinfo=UTC).timestamp())
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "trainer.sqlite3"
+            with closing(sqlite3.connect(path)) as database:
+                database.row_factory = sqlite3.Row
+                with database:
+                    apply_sqlite_baseline(database)
+                config = Config(str(PROJECT_ROOT / "alembic.ini"))
+                config.set_main_option("sqlalchemy.url", sqlite_url(path))
+                command.stamp(config, "20260711_03")
+                command.upgrade(config, "20260819_07")
+                with database:
+                    student_id = database.execute(
+                        "INSERT INTO users(email,password_hash,display_name,role,created_at) VALUES (?,?,?,?,?)",
+                        ("student@example.test", "hash", "Student", "student", created_at),
+                    ).lastrowid
+                    request_id = database.execute(
+                        "INSERT INTO review_requests(student_id,kind,status,variant_id,run_json) VALUES (?,?,?,?,?)",
+                        (student_id, "task", "uploading", "demo-2026", "{}"),
+                    ).lastrowid
+                    item_id = database.execute(
+                        "INSERT INTO review_request_items(request_id,task_number,task_snapshot_json) VALUES (?,?,?)",
+                        (request_id, 2, "{}"),
+                    ).lastrowid
+                    recording_id = database.execute(
+                        """INSERT INTO review_request_recordings
+                           (item_id,question_number,label,storage_key,mime_type,size_bytes,created_at)
+                           VALUES (?,?,?,?,?,?,?)""",
+                        (item_id, 1, "Answer", "private/answer.webm", "audio/webm", 1, created_at),
+                    ).lastrowid
+                    cleanup_job_id = database.execute(
+                        """INSERT INTO storage_cleanup_jobs(
+                               audio_keys_json,material_keys_json,assignment_keys_json,attempts,created_at,updated_at
+                           ) VALUES (?,?,?,?,?,?)""",
+                        ('["private/orphan.webm"]', "[]", "[]", 0, created_at, created_at),
+                    ).lastrowid
+
+            upgrade_sqlite_database(path)
+            with closing(sqlite3.connect(path)) as database:
+                expires_at = database.execute(
+                    "SELECT expires_at FROM review_request_recordings WHERE id=?", (recording_id,)
+                ).fetchone()[0]
+                cleanup_available_at = database.execute(
+                    "SELECT available_at FROM storage_cleanup_jobs WHERE id=?", (cleanup_job_id,)
+                ).fetchone()[0]
+            self.assertEqual(expires_at, expected_expiry)
+            self.assertEqual(cleanup_available_at, created_at)
+
+    def test_cleanup_scheduling_upgrades_a_database_already_at_personal_recordings_revision(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "trainer.sqlite3"
+            with closing(sqlite3.connect(path)) as database:
+                database.row_factory = sqlite3.Row
+                with database:
+                    apply_sqlite_baseline(database)
+                config = Config(str(PROJECT_ROOT / "alembic.ini"))
+                config.set_main_option("sqlalchemy.url", sqlite_url(path))
+                command.stamp(config, "20260711_03")
+                command.upgrade(config, "20260828_08")
+                with database:
+                    job_id = database.execute(
+                        """INSERT INTO storage_cleanup_jobs(
+                               audio_keys_json,material_keys_json,assignment_keys_json,attempts,created_at,updated_at
+                           ) VALUES (?,?,?,?,?,?)""",
+                        ('["private/orphan.webm"]', "[]", "[]", 0, 123, 123),
+                    ).lastrowid
+
+            upgrade_sqlite_database(path)
+            with closing(sqlite3.connect(path)) as database:
+                row = database.execute("SELECT available_at FROM storage_cleanup_jobs WHERE id=?", (job_id,)).fetchone()
+                indexes = sqlite_schema(path)[1]
+            self.assertEqual(row[0], 123)
+            self.assertIn("storage_cleanup_jobs_available_idx", indexes)
 
     def test_review_recording_allows_one_unquestioned_recording_per_item(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -133,16 +298,18 @@ class SqliteMigrationTest(unittest.TestCase):
                     (request_id, 2, "{}"),
                 ).lastrowid
                 database.execute(
-                    """INSERT INTO review_request_recordings(item_id,question_number,label,storage_key,mime_type,size_bytes,created_at)
-                       VALUES (?,?,?,?,?,?,?)""",
-                    (item_id, None, "First", "private/first.webm", "audio/webm", 1, 1),
+                    """INSERT INTO review_request_recordings
+                       (item_id,question_number,label,storage_key,mime_type,size_bytes,created_at,expires_at)
+                       VALUES (?,?,?,?,?,?,?,?)""",
+                    (item_id, None, "First", "private/first.webm", "audio/webm", 1, 1, 2),
                 )
 
                 with self.assertRaises(sqlite3.IntegrityError):
                     database.execute(
-                        """INSERT INTO review_request_recordings(item_id,question_number,label,storage_key,mime_type,size_bytes,created_at)
-                           VALUES (?,?,?,?,?,?,?)""",
-                        (item_id, None, "Second", "private/second.webm", "audio/webm", 1, 1),
+                        """INSERT INTO review_request_recordings
+                           (item_id,question_number,label,storage_key,mime_type,size_bytes,created_at,expires_at)
+                           VALUES (?,?,?,?,?,?,?,?)""",
+                        (item_id, None, "Second", "private/second.webm", "audio/webm", 1, 1, 2),
                     )
 
     def test_existing_legacy_rows_are_retained_when_review_queue_is_added(self):
@@ -254,6 +421,155 @@ class SqliteMigrationTest(unittest.TestCase):
                 ).fetchone()
         self.assertEqual(status, "uploading")
         self.assertIsNone(submitted_at)
+
+
+@unittest.skipUnless(os.environ.get("TEST_DATABASE_URL"), "TEST_DATABASE_URL is not configured")
+class PostgresMigrationTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.database_url = os.environ["TEST_DATABASE_URL"]
+        cls.engine = create_engine(cls.database_url)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.engine.dispose()
+
+    def setUp(self):
+        with self.engine.begin() as database:
+            database.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
+            database.execute(text("CREATE SCHEMA public"))
+
+    def alembic_config(self) -> Config:
+        config = Config(str(PROJECT_ROOT / "alembic.ini"))
+        config.set_main_option("sqlalchemy.url", self.database_url.replace("%", "%%"))
+        return config
+
+    def test_head_creates_complete_personal_recording_contract(self):
+        command.upgrade(self.alembic_config(), "head")
+        with self.engine.connect() as database:
+            columns = {
+                row[0]
+                for row in database.execute(
+                    text(
+                        """SELECT column_name FROM information_schema.columns
+                           WHERE table_schema='public' AND table_name='personal_recordings'"""
+                    )
+                )
+            }
+            question_number_nullable = database.execute(
+                text(
+                    """SELECT is_nullable FROM information_schema.columns
+                       WHERE table_schema='public' AND table_name='personal_recordings'
+                       AND column_name='question_number'"""
+                )
+            ).scalar_one()
+        self.assertEqual(
+            columns,
+            {
+                "id",
+                "student_id",
+                "run_id",
+                "variant_id",
+                "task_number",
+                "question_number",
+                "label",
+                "storage_key",
+                "mime_type",
+                "size_bytes",
+                "duration_seconds",
+                "created_at",
+                "expires_at",
+            },
+        )
+        self.assertEqual(question_number_nullable, "NO")
+
+        values = {
+            "email": "student@example.test",
+            "run_id": "run-1",
+            "variant_id": "demo-2026",
+            "task_number": 1,
+            "question_number": 1,
+            "label": "Answer",
+            "storage_key": "personal-recordings/1/one.webm",
+        }
+        with self.engine.begin() as database:
+            student_id = database.execute(
+                text(
+                    """INSERT INTO users(email,password_hash,display_name,role,created_at)
+                       VALUES (:email,'hash','Student','student',1) RETURNING id"""
+                ),
+                values,
+            ).scalar_one()
+            values["student_id"] = student_id
+            database.execute(
+                text(
+                    """INSERT INTO personal_recordings(
+                           student_id,run_id,variant_id,task_number,question_number,label,storage_key,
+                           mime_type,size_bytes,duration_seconds,created_at,expires_at
+                       ) VALUES (
+                           :student_id,:run_id,:variant_id,:task_number,:question_number,:label,:storage_key,
+                           'audio/webm',1,1.0,1,2
+                       )"""
+                ),
+                values,
+            )
+        with self.assertRaises(IntegrityError):
+            with self.engine.begin() as database:
+                database.execute(
+                    text(
+                        """INSERT INTO personal_recordings(
+                               student_id,run_id,variant_id,task_number,question_number,label,storage_key,
+                               mime_type,size_bytes,duration_seconds,created_at,expires_at
+                           ) VALUES (
+                               :student_id,:run_id,:variant_id,:task_number,:question_number,:label,
+                               'personal-recordings/1/two.webm','audio/webm',1,1.0,1,2
+                           )"""
+                    ),
+                    values,
+                )
+
+    def test_upgrade_backfills_review_recording_expiry_from_created_at(self):
+        created_at = int(datetime(2026, 8, 31, tzinfo=UTC).timestamp())
+        expected_expiry = int(datetime(2027, 2, 28, tzinfo=UTC).timestamp())
+        config = self.alembic_config()
+        command.upgrade(config, "20260819_07")
+        with self.engine.begin() as database:
+            student_id = database.execute(
+                text(
+                    """INSERT INTO users(email,password_hash,display_name,role,created_at)
+                       VALUES ('student@example.test','hash','Student','student',:created_at) RETURNING id"""
+                ),
+                {"created_at": created_at},
+            ).scalar_one()
+            request_id = database.execute(
+                text(
+                    """INSERT INTO review_requests(student_id,kind,status,variant_id,run_json)
+                       VALUES (:student_id,'task','uploading','demo-2026','{}') RETURNING id"""
+                ),
+                {"student_id": student_id},
+            ).scalar_one()
+            item_id = database.execute(
+                text(
+                    """INSERT INTO review_request_items(request_id,task_number,task_snapshot_json)
+                       VALUES (:request_id,2,'{}') RETURNING id"""
+                ),
+                {"request_id": request_id},
+            ).scalar_one()
+            recording_id = database.execute(
+                text(
+                    """INSERT INTO review_request_recordings(
+                           item_id,question_number,label,storage_key,mime_type,size_bytes,created_at
+                       ) VALUES (:item_id,1,'Answer','private/answer.webm','audio/webm',1,:created_at)
+                       RETURNING id"""
+                ),
+                {"item_id": item_id, "created_at": created_at},
+            ).scalar_one()
+        command.upgrade(config, "head")
+        with self.engine.connect() as database:
+            expiry = database.execute(
+                text("SELECT expires_at FROM review_request_recordings WHERE id=:id"), {"id": recording_id}
+            ).scalar_one()
+        self.assertEqual(expiry, expected_expiry)
 
 
 if __name__ == "__main__":

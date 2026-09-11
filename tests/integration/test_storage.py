@@ -1,57 +1,14 @@
 import os
-import sqlite3
 import tempfile
 import unittest
-from contextlib import closing
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from trainer.infrastructure.database.migrations import upgrade_sqlite_database
 from trainer.infrastructure.storage import LocalAudioStorage, S3AudioStorage, storage_from_env
 from trainer.services.recordings import stream_recording
 
 
 class LocalStorageTest(unittest.TestCase):
-    def test_selects_private_review_keys_before_account_cascade(self):
-        from trainer.services.storage_cleanup import account_review_storage_keys
-
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "trainer.sqlite3"
-            upgrade_sqlite_database(path)
-            with closing(sqlite3.connect(path)) as database:
-                database.row_factory = sqlite3.Row
-                database.execute("PRAGMA foreign_keys=ON")
-                student_id = database.execute(
-                    "INSERT INTO users(email,password_hash,display_name,role,created_at) VALUES (?,?,?,?,?)",
-                    ("cleanup@example.test", "hash", "Cleanup", "student", 1),
-                ).lastrowid
-                request_id = database.execute(
-                    """INSERT INTO review_requests(student_id,kind,status,variant_id,run_json)
-                       VALUES (?,?,?,?,?)""",
-                    (student_id, "task", "uploading", "demo-2026", "{}"),
-                ).lastrowid
-                item_id = database.execute(
-                    """INSERT INTO review_request_items(request_id,task_number,task_snapshot_json)
-                       VALUES (?,?,?)""",
-                    (request_id, 2, "{}"),
-                ).lastrowid
-                database.execute(
-                    """INSERT INTO review_request_recordings
-                       (item_id,question_number,label,storage_key,mime_type,size_bytes,created_at)
-                       VALUES (?,?,?,?,?,?,?)""",
-                    (item_id, None, "Answer", "review-requests/1/audio.webm", "audio/webm", 5, 1),
-                )
-                database.execute(
-                    """INSERT INTO review_request_assets(request_id,storage_key,mime_type,size_bytes,created_at)
-                       VALUES (?,?,?,?,?)""",
-                    (request_id, "review-requests/1/image.webp", "image/webp", 5, 1),
-                )
-
-                audio_keys, asset_keys = account_review_storage_keys(database, student_id)
-
-            self.assertEqual(audio_keys, ["review-requests/1/audio.webm"])
-            self.assertEqual(asset_keys, ["review-requests/1/image.webp"])
-
     def test_round_trip_and_delete(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

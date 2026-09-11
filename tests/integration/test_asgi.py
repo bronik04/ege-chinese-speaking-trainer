@@ -44,6 +44,21 @@ class FastApiSmokeTest(unittest.TestCase):
         self.assertEqual(self.client.get("/styles/pages/variant-editor.css").status_code, 200)
         self.assertEqual(self.client.get("/reference.html").status_code, 200)
         self.assertEqual(self.client.get("/styles/pages/reference.css").status_code, 200)
+        for path in (
+            "/variant-preview.html",
+            "/js/catalog/variant-preview-page.js",
+            "/styles/pages/variant-preview.css",
+            "/history.html",
+            "/js/history/history-page.js",
+            "/styles/pages/history.css",
+            "/compare.html",
+            "/js/history/attempt-comparison-page.js",
+            "/styles/pages/attempt-comparison.css",
+        ):
+            response = self.client.get(path)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.headers["Cache-Control"], "no-cache")
+            self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
         self.assertEqual(self.client.get("/about.html").status_code, 404)
         self.assertEqual(self.client.get("/styles/pages/about.css").status_code, 404)
         self.assertEqual(self.client.get("/js/runner/app.js").status_code, 200)
@@ -99,6 +114,18 @@ class FastApiSmokeTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "TRAINER_OWNER_EMAIL"):
                 with TestClient(asgi.app):
                     pass
+
+    def test_example_environment_satisfies_public_startup_requirements(self):
+        example_path = Path(__file__).resolve().parents[2] / ".env.example"
+        example_environment = {
+            key: value
+            for line in example_path.read_text().splitlines()
+            if line and not line.startswith("#")
+            for key, value in [line.split("=", 1)]
+        }
+
+        with patch.dict(os.environ, example_environment, clear=True):
+            dependencies.validate_account_configuration()
 
     def test_registration_rejects_obsolete_role_field(self):
         response = self.client.post(

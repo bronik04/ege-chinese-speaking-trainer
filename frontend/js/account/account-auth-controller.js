@@ -8,14 +8,25 @@ export function createAccountAuthController(ctx) {
   let user = null;
   let mode = "login";
   let syncTimer = null;
+  let progressHydrated = true;
+  let authGeneration = 0;
+
+  function showProgressSyncError(error) {
+    $("progressSyncStatus").textContent = error?.code === "progress_data_incompatible"
+      ? "Серверный прогресс несовместим · локальная копия сохранена"
+      : "Нет связи · сохранено в браузере";
+  }
 
   async function initAuth() {
     try {
       const payload = await api("/api/auth/me");
       setUser(payload.user);
       ctx.switchProgressScope(user);
+      let syncError = null;
+      try { await syncProgress(); } catch (error) { syncError = error; }
       await ctx.refreshMaterials();
       renderAuth();
+      if (syncError) showProgressSyncError(syncError);
     } catch (error) {
       setUser(null);
       ctx.switchProgressScope(null);
@@ -23,12 +34,12 @@ export function createAccountAuthController(ctx) {
       if (error.status !== 401) $("progressSyncStatus").textContent = "Сервер недоступен · локальное сохранение";
       return;
     }
-    try { await syncProgress(); } catch (_) { $("progressSyncStatus").textContent = "Нет связи · сохранено в браузере"; }
-    try { await ctx.refreshAccountData(); } catch (_) {}
   }
 
   function setUser(value) {
     user = value;
+    progressHydrated = !value;
+    authGeneration += 1;
   }
 
   function renderAuth() {
@@ -44,7 +55,7 @@ export function createAccountAuthController(ctx) {
     $("accountRole").textContent = isTeacher ? "Преподаватель" : "Ученик";
     $("accountTitle").textContent = isTeacher ? "Очередь разборов" : "Прогресс синхронизирован";
     $("studentAccountTools").classList.toggle("hidden", !user || isTeacher);
-    $("teacherCabinetBtn").classList.toggle("hidden", !isTeacher);
+    $("teacherCabinetLink").classList.toggle("hidden", !isTeacher);
     $("emailVerificationPanel").classList.toggle("hidden", !user || user.emailVerified);
     if (!user) ctx.resetAccountViews();
     ctx.renderProgress();
@@ -67,7 +78,7 @@ export function createAccountAuthController(ctx) {
   let focusBeforeModal = null;
 
   function anyModalOpen() {
-    return [$("authModal"), $("progressModal"), $("teacherModal")].some(modal => !modal.classList.contains("hidden"));
+    return !$("authModal").classList.contains("hidden");
   }
 
   function openModal(modal) {
@@ -83,8 +94,7 @@ export function createAccountAuthController(ctx) {
   }
 
   function closeModal(modal) {
-    // Escape закрывает все три диалога подряд, поэтому повторный вызов на уже
-    // закрытом диалоге не должен второй раз трогать фокус.
+    // Повторный вызов на уже закрытом диалоге не должен второй раз трогать фокус.
     if (modal.classList.contains("hidden")) return;
     modal.classList.add("hidden");
     if (anyModalOpen()) return;
@@ -109,10 +119,11 @@ export function createAccountAuthController(ctx) {
       const payload = await api(`/api/auth/${mode}`, { method: "POST", body: JSON.stringify(credentials) });
       setUser(payload.user);
       ctx.switchProgressScope(user, { adoptGuest: mode === "register" });
+      let syncError = null;
+      try { await syncProgress(); } catch (error) { syncError = error; }
       await ctx.refreshMaterials();
       renderAuth();
-      try { await syncProgress(); } catch (_) { $("progressSyncStatus").textContent = "Нет связи · сохранено в браузере"; }
-      try { await ctx.refreshAccountData(); } catch (_) {}
+      if (syncError) showProgressSyncError(syncError);
       closeModal($("authModal"));
       toast(mode === "login" ? "Вход выполнен" : "Аккаунт создан");
       $("authForm").reset();
@@ -135,29 +146,36 @@ export function createAccountAuthController(ctx) {
   }
 
   function scheduleProgressSync() {
+    if (!user) return;
     clearTimeout(syncTimer);
-    $("progressSyncStatus").textContent = "Сохраняем на сервере…";
-    syncTimer = setTimeout(() => pushProgress().catch(() => {
-      $("progressSyncStatus").textContent = "Нет связи · сохранено в браузере";
-    }), 350);
+    const operation = progressHydrated ? pushProgress : syncProgress;
+    $("progressSyncStatus").textContent = progressHydrated ? "Сохраняем на сервере…" : "Проверяем связь с сервером…";
+    syncTimer = setTimeout(() => operation().catch(showProgressSyncError), 350);
   }
 
-  async function pushProgress() {
-    if (!user) return;
+  async function pushProgress(expectedGeneration = authGeneration) {
+    const expectedUserId = user?.id;
+    if (!user || !progressHydrated || expectedGeneration !== authGeneration) return;
     await api("/api/progress", { method: "PUT", body: JSON.stringify({ progress: ctx.getProgress() }) });
+    if (expectedGeneration !== authGeneration || user?.id !== expectedUserId) return;
     $("progressSyncStatus").textContent = `Синхронизировано · ${user.email}`;
   }
 
   async function syncProgress() {
     if (!user) return;
+    const expectedGeneration = authGeneration;
+    const expectedUserId = user.id;
     const payload = await api("/api/progress");
+    if (expectedGeneration !== authGeneration || user?.id !== expectedUserId) return;
     ctx.setProgress(mergeProgress(ctx.getProgress(), payload.progress));
     ctx.saveProgressLocal(false);
-    await pushProgress();
+    progressHydrated = true;
+    await pushProgress(expectedGeneration);
   }
 
   return {
     get user() { return user; },
+    get progressHydrated() { return progressHydrated; },
     setUser,
     initAuth,
     renderAuth,

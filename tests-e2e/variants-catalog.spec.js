@@ -57,12 +57,31 @@ async function signInAsOwner(context) {
 test("guest catalog exposes only the open 2026 variant", async ({ page }) => {
   await page.goto("/variants.html");
   await expect(page.locator(".variant-card")).toHaveCount(1);
+  await expect(page.locator("#catalogAccessNotice")).toHaveText("После регистрации доступны остальные варианты и личный архив записей Зарегистрироваться →");
+  await expect(page.locator(".catalog-panel")).toHaveCSS("border-radius", "16px");
+  await expect(page.locator(".year-filter").first()).toHaveCSS("border-radius", "999px");
+  const activeYear = page.locator(".year-filter.active");
+  await expect(activeYear).toHaveCSS("background-color", "rgb(92, 14, 14)");
+  await expect(activeYear).toHaveCSS("background-image", "none");
   await expect(page.locator("#createMaterialLink")).toHaveCount(0);
   await page.locator("#variantSearch").fill("официальный");
   await expect(page.locator(".variant-card")).toHaveCount(1);
-  await page.locator(".variant-open").click();
-  await expect(page).toHaveURL(/variant=open-2026/);
-  await expect(page.locator("#variantSelect")).toHaveValue("open-2026");
+  const openVariant = page.locator(".variant-open").first();
+  await expect(openVariant).toHaveCSS("background-color", "rgb(244, 236, 219)");
+  await expect(openVariant).toHaveCSS("box-shadow", "none");
+  await openVariant.hover();
+  await expect(openVariant).toHaveCSS("background-color", "rgb(232, 211, 138)");
+  await openVariant.click();
+  await expect(page).toHaveURL(/\/variant-preview\.html\?variant=open-2026$/);
+  await expect(page.locator(".variant-preview-gallery img")).toHaveCount(6);
+  expect(await page.content()).not.toContain("минимальный возраст");
+  await page.getByRole("link", { name: "Перейти к тренировке" }).click();
+  await expect(page).toHaveURL(/\/index\.html\?variant=open-2026$/);
+  const selectedMaterial = page.getByRole("region", { name: "Официальный вариант 2026" });
+  await expect(selectedMaterial).toContainText("ФИПИ · официальный материал 2026");
+  await expect(selectedMaterial).toContainText("14 минут");
+  await expect(selectedMaterial.getByRole("link", { name: "Сменить материал" })).toHaveAttribute("href", "variants.html");
+  await expect(page.getByRole("radiogroup", { name: "Выбор материала" })).toHaveCount(0);
 });
 
 test("registered user publishes a standalone task and opens it from catalog", async ({ browser }) => {
@@ -102,7 +121,7 @@ test("registered user publishes a standalone task and opens it from catalog", as
 
   const page = await context.newPage();
   await page.goto("/");
-  await expect(page.locator("#variantSelect option").first()).toHaveValue("open-2026");
+  await expect(page.getByRole("region", { name: "Официальный вариант 2026" })).toBeVisible();
   await page.locator("#soundToggle").click();
   await expect(page.locator("#soundToggle")).toHaveAttribute("aria-pressed", "false");
   await page.locator("#authButton").click();
@@ -110,28 +129,57 @@ test("registered user publishes a standalone task and opens it from catalog", as
   await expect(page.locator(".progress-row")).toHaveCount(0);
   await page.locator("#authCloseBtn").click();
   await page.goto("/variants.html");
+  await expect(page.locator("#catalogAccessNotice")).toHaveCount(0);
   await expect(page.locator("#createMaterialLink")).toHaveCount(0);
   await page.locator("#variantSearch").fill("Авторское описание");
   await expect(page.locator(".variant-card")).toHaveCount(1);
   await expect(page.locator(".variant-kind")).toHaveText("Отдельное задание 2");
   await page.locator(".variant-open").click();
+  await expect(page).toHaveURL(new RegExp(`/variant-preview\\.html\\?variant=${slug}$`));
+  await expect(page.locator(".variant-preview-task")).toHaveCount(1);
+  await expect(page.locator(".variant-preview-gallery img")).toHaveCount(3);
+  await page.getByRole("link", { name: "Перейти к тренировке" }).click();
+  await expect(page).toHaveURL(new RegExp(`/index\\.html\\?variant=${slug}$`));
+  await expect(page.getByRole("region", { name: "Авторское описание фотографии" })).toBeVisible();
+
+  await page.goto("/");
   await expect(page).toHaveURL(new RegExp(`variant=${slug}`));
-  await expect(page.locator("#variantSelect")).toHaveValue(slug);
-  await expect(page.locator("#variantSelect + .project-select-trigger .project-select-value")).toHaveCSS("white-space", "nowrap");
+  await expect(page.getByRole("region", { name: "Авторское описание фотографии" })).toBeVisible();
 
   await page.goto("/variant-editor.html");
   await expect(page.locator("[data-account-link]")).toContainText(email);
   await expect(page.locator("#editorTitle")).toHaveText("Новый материал");
-  await expect(page.locator("select:not([data-project-select='ready'])")).toHaveCount(0);
-  await page.locator(".project-select-trigger").first().click();
-  const materialMenu = page.locator(".project-select-menu").first();
-  await expect(materialMenu).toBeVisible();
-  const selectedOption = materialMenu.locator('[aria-selected="true"]');
-  await materialMenu.locator('[data-value="task"]').hover();
-  await expect(selectedOption).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
-  await page.locator('.project-select-option[data-value="task"]').click();
-  await expect(page.locator("#materialKind")).toHaveValue("task");
+  await expect(page.locator(".materials-sidebar")).toHaveCSS("border-radius", "16px");
+  await expect(page.locator(".editor-panel")).toHaveCSS("border-radius", "16px");
+  await expect(page.locator("#newMaterialBtn")).toHaveCSS("background-color", "rgb(244, 236, 219)");
+  await expect(page.locator("#newMaterialBtn")).toHaveCSS("background-image", "none");
+  await expect(page.locator(".task-editor").first()).toHaveCSS("border-radius", "12px");
+
+  await page.locator(`[data-edit-material="${slug}"]`).click();
+  await expect(page.locator("#materialTitle")).toHaveValue("Авторское описание фотографии");
+  await page.locator("#saveMaterialBtn").click();
+  await expect(page.locator("#editorMessage")).toHaveText("Черновик сохранён");
+  await expect(page.locator("#materialStatus")).toHaveText("Черновик");
+  await page.locator("#publishMaterialBtn").click();
+  await expect(page.locator("#editorMessage")).toHaveText("Материал опубликован и доступен в каталоге");
+  await expect(page.locator("#materialStatus")).toHaveText("Опубликован");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
+  const sidebarBox = await page.locator(".materials-sidebar").boundingBox();
+  const editorBox = await page.locator(".editor-panel").boundingBox();
+  expect(Math.abs(sidebarBox.x - editorBox.x)).toBeLessThan(2);
+  expect(editorBox.y).toBeGreaterThan(sidebarBox.y);
+  await expect(page.locator("#saveMaterialBtn")).toHaveCSS("min-height", "44px");
+  const materialKind = page.locator("#materialKind");
+  const materialTaskNumber = page.locator("#materialTaskNumber");
+  await expect(materialKind).toBeVisible();
+  await expect(materialKind).toHaveCSS("min-height", "44px");
+  await expect(materialTaskNumber).toHaveCSS("min-height", "44px");
+  await materialKind.selectOption("task");
+  await expect(materialKind).toHaveValue("task");
   await expect(page.locator("#taskNumberField")).toBeVisible();
+  await expect(page.locator(".project-select")).toHaveCount(0);
   await expect(page.locator("#materialTitle")).toHaveCSS("font-family", /Georgia/);
   await context.close();
 });
@@ -174,11 +222,28 @@ test("direct review request preserves its material snapshot after the author del
   await post(student, "/api/auth/register", {
     email: `direct-review-student-${stamp}@example.test`, password: "password123", displayName: "Snapshot Student",
   });
+  const runId = `direct-review-${Date.now()}`;
+  const startedAt = new Date().toISOString();
+  const completedAt = new Date(Date.now() + 1000).toISOString();
   const review = await post(student, "/api/review-requests", {
     kind: "task",
     variantId: slug,
     tasks: [2],
-    run: { id: `direct-review-${Date.now()}`, status: "completed", completedTasks: [2] },
+    run: {
+      id: runId,
+      variantId: slug,
+      variantLabel: "Direct review snapshot",
+      mode: "practice",
+      tasks: [2],
+      completedTasks: [2],
+      currentTask: 2,
+      phase: "answer",
+      fastMode: false,
+      startedAt,
+      status: "completed",
+      completedAt,
+      recordingsCount: 1,
+    },
   });
   const recording = await student.request.post(`/api/review-requests/${review.reviewRequest.id}/recordings?task=2&label=Answer`, {
     headers: { ...originHeaders, "Content-Type": "audio/webm" }, data: createSampleAudio(),

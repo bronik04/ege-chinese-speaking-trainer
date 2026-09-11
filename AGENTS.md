@@ -1,57 +1,64 @@
 # Правила работы с проектом
 
-Этот файл задаёт обязательные ориентиры для разработчиков и AI-агентов. Пользовательская инструкция находится в [README.md](README.md), запуск и эксплуатация — в [DEVELOPMENT.md](DEVELOPMENT.md), устройство системы — в [docs/architecture.md](docs/architecture.md).
+Обязательные ориентиры для разработчиков и AI-агентов. Пользовательская инструкция находится в
+[README.md](README.md), запуск и эксплуатация — в [DEVELOPMENT.md](DEVELOPMENT.md), устройство системы — в
+[docs/architecture.md](docs/architecture.md).
 
 ## Текущая архитектура
 
-- `src/trainer/main.py` содержит FastAPI-приложение; корневой `asgi.py` — совместимая точка входа.
-- `legacy/` — временно сохранённый compatibility HTTP runtime. Основной код, тесты и CI не должны от него зависеть; новые возможности туда не добавляются.
-- `src/trainer/api/routes/` принимает HTTP-запросы и связывает их с контроллерами.
-- `src/trainer/api/schemas.py` содержит Pydantic-контракты, `api/errors.py` — единый формат ошибок.
-- `src/trainer/api/controllers/` оркестрирует HTTP-сценарии; transport, dependencies и origin checks находятся в соседних API-модулях.
-- `src/trainer/domain/` содержит чистые правила предметной области, `src/trainer/services/` — прикладные операции, `src/trainer/infrastructure/` — БД и внешние adapters.
-- `frontend/` содержит страницы, стили и модули vanilla JavaScript.
-- `content/` содержит версионируемые JSON-материалы, `public/` — публичные изображения.
-- `scripts/` содержит операционные CLI и compatibility wrapper; worker реализован в `src/trainer/workers/`.
+- `src/trainer/main.py` содержит FastAPI-приложение; `asgi.py` — совместимая ASGI-точка входа.
+- `src/trainer/api/routes/` принимает HTTP-запросы, `api/controllers/` выполняет сценарии, `api/schemas.py` и
+  `api/errors.py` определяют контракты.
+- `src/trainer/domain/` содержит чистые правила, `src/trainer/services/` — прикладные операции,
+  `src/trainer/infrastructure/` — SQLite и внешние adapters.
+- `frontend/` содержит страницы, стили и vanilla JavaScript; `content/` — JSON-материалы, `public/` — файлы,
+  напрямую доступные браузеру.
+- `scripts/` содержит backup, restore smoke, storage cleanup, import и проверки.
 - `tests/`, `tests-js/`, `tests-e2e/` содержат Python-, JavaScript- и браузерные тесты.
-- `migrations/` содержит Alembic-миграции PostgreSQL; SQLite-миграции находятся в `src/trainer/infrastructure/database/sqlite_migrations.py`.
+- `migrations/` содержит Alembic-ревизии SQLite после замороженного baseline 1–7 в
+  `src/trainer/infrastructure/database/sqlite_migrations.py`.
 
-## Целевая архитектура
-
-Переход выполняется небольшими проверяемыми изменениями, без массового перемещения файлов:
+Целевая структура совпадает с текущими верхнеуровневыми границами:
 
 ```text
-src/trainer/       Python-пакет: api, переходный backend и workers
+src/trainer/       API, domain, services, infrastructure
 frontend/          HTML, CSS и браузерные JavaScript-модули
-content/           версионируемые варианты и справочные материалы
-public/            файлы, напрямую доступные браузеру
-docs/              архитектура, ADR и эксплуатационные инструкции
+content/           версионируемые варианты и справочник
+public/            публичные браузерные файлы
+docs/              архитектура, ADR и runbooks
 var/               локальная БД и пользовательские runtime-данные
 backups/           локальные резервные копии
 tmp/               воспроизводимые временные артефакты
 ```
 
-Направление зависимостей: `API → domain → infrastructure interfaces`. HTTP-статусы, cookies и сериализация принадлежат API; правила аккаунтов, назначений, материалов и оценивания — domain; SQL, S3/R2, SMTP, файловая система и OpenAI — infrastructure.
-
-До физического перехода следуйте тем же границам в существующих каталогах. Не создавайте параллельную реализацию сервиса только ради целевой структуры.
+Направление зависимостей: API оркестрирует domain/services; domain не зависит от HTTP и внешних adapters;
+infrastructure не зависит от API. HTTP-статусы, cookies и сериализация принадлежат API; правила аккаунтов,
+материалов, review requests и оценивания — domain; SQLite, S3/R2, SMTP и filesystem — infrastructure.
 
 ## Как вносить изменения
 
-1. Найдите существующий маршрут, сервис, adapter и тесты через `rg`.
-2. Расширьте существующую реализацию, если её ответственность совпадает с задачей.
-3. Не меняйте публичное поведение без теста, который фиксирует новое требование или регрессию.
+1. Найдите существующий маршрут, контроллер, сервис, adapter и тесты через `rg`.
+2. Расширьте существующую ответственность; не создавайте параллельный сервис ради новой структуры.
+3. Не меняйте публичное поведение без теста, который фиксирует требование или регрессию.
 4. Для API обновляйте schema, route/controller и Python integration test.
-5. Для бизнес-правила добавляйте unit test, не зависящий от HTTP.
-6. Для UI обновляйте JavaScript-тест; при изменении пользовательского сценария — Playwright-тест.
-7. Для схемы БД добавляйте миграцию и проверяйте чистую и обновляемую базу.
-8. Для `content/**/*.json` запускайте `python -m scripts.validate_content` и профильные тесты вариантов или справочника.
-9. Обновляйте документацию и `docs/runbooks/`, если изменились границы модулей, конфигурация или эксплуатация.
+5. Для бизнес-правила добавляйте unit test без зависимости от HTTP.
+6. Для UI обновляйте JavaScript-тест; при изменении сценария — Playwright-тест.
+7. Для схемы БД добавляйте новую Alembic-ревизию и проверяйте чистую, обновляемую и повторно обновляемую
+   SQLite-базу. Не редактируйте baseline 1–7 и опубликованные revisions.
+8. Для `content/**/*.json` запускайте `.venv/bin/python -m scripts.validate_content` и профильные тесты.
+9. Обновляйте документацию и runbooks при изменении архитектуры, конфигурации или эксплуатации.
+
+Старые таблицы групп, назначений и submissions сохраняются для совместимости данных. Новые возможности на них
+не строятся; их удаление требует отдельного ADR и плана миграции данных.
 
 ## Данные и секреты
 
-Коммитить разрешено исходный код, документацию, миграции, тестовые fixtures без реальных данных, `content/` и публичные `public/assets/`.
+Коммитить разрешено исходный код, документацию, миграции, синтетические fixtures, `content/` и публичные
+`public/assets/`.
 
-Не коммитьте `.env`, ключи API, SMTP/S3 credentials, `var/`, `backups/`, пользовательские аудиозаписи, outbox, `.coverage`, `.ruff_cache/`, `test-results/`, `playwright-report/`, `.venv/`, `node_modules/`, `__pycache__/` и содержимое `tmp/`.
+Не коммитьте `.env`, ключи API, SMTP/S3 credentials, `var/`, `backups/`, пользовательские аудиозаписи, outbox,
+`.coverage`, `.ruff_cache/`, `test-results/`, `playwright-report/`, `.venv/`, `node_modules/`, `__pycache__/` и
+содержимое `tmp/`.
 
 ## Обязательная проверка
 
@@ -65,4 +72,6 @@ make check
 make test-e2e
 ```
 
-При изменении Docker сначала запускайте `make docker-check`, `make docker-build` и Compose health smoke. При изменении PostgreSQL, S3/R2 или backup запускайте соответствующий smoke test из [DEVELOPMENT.md](DEVELOPMENT.md). Не объявляйте задачу завершённой без свежего успешного вывода обязательных проверок.
+При изменении Docker запускайте `make docker-check`, `make docker-build` и Compose health smoke. При изменении
+S3/R2 или backup запускайте соответствующий smoke из [DEVELOPMENT.md](DEVELOPMENT.md). Не объявляйте задачу
+завершённой без свежего успешного вывода обязательных проверок.

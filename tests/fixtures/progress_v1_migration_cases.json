@@ -1,0 +1,172 @@
+{
+  "cases": [
+    {
+      "name": "missing optional fields use defaults",
+      "input": {
+        "version": 1
+      },
+      "expected": {
+        "version": 2,
+        "updatedAt": "1970-01-01T00:00:00.000Z",
+        "settings": {
+          "lastVariant": null,
+          "fastMode": false
+        },
+        "runs": [],
+        "activeRun": null
+      }
+    },
+    {
+      "name": "valid completed run survives and unknown fields disappear",
+      "input": {
+        "version": 1,
+        "updatedAt": "2026-09-06T10:15:30+00:00",
+        "settings": {
+          "lastVariant": "open-2026",
+          "fastMode": true,
+          "old": 1
+        },
+        "runs": [
+          {
+            "id": "run-1",
+            "variantId": "open-2026",
+            "variantLabel": "Открытый вариант 2026",
+            "mode": "practice",
+            "tasks": [
+              2
+            ],
+            "completedTasks": [
+              2
+            ],
+            "currentTask": 2,
+            "phase": "answer",
+            "fastMode": true,
+            "startedAt": "2026-09-06T10:00:00Z",
+            "status": "completed",
+            "completedAt": "2026-09-06T10:05:00Z",
+            "recordingsCount": 1,
+            "legacy": "drop"
+          }
+        ],
+        "activeRun": null,
+        "unknown": "drop"
+      },
+      "expected": {
+        "version": 2,
+        "updatedAt": "2026-09-06T10:15:30.000Z",
+        "settings": {
+          "lastVariant": "open-2026",
+          "fastMode": true
+        },
+        "runs": [
+          {
+            "id": "run-1",
+            "variantId": "open-2026",
+            "variantLabel": "Открытый вариант 2026",
+            "mode": "practice",
+            "tasks": [
+              2
+            ],
+            "completedTasks": [
+              2
+            ],
+            "currentTask": 2,
+            "phase": "answer",
+            "fastMode": true,
+            "startedAt": "2026-09-06T10:00:00.000Z",
+            "status": "completed",
+            "completedAt": "2026-09-06T10:05:00.000Z",
+            "recordingsCount": 1
+          }
+        ],
+        "activeRun": null
+      }
+    },
+    {
+      "name": "bad nested entries are salvaged independently",
+      "input": {
+        "version": 1,
+        "updatedAt": "not-a-date",
+        "settings": {
+          "lastVariant": 7,
+          "fastMode": "yes"
+        },
+        "runs": [
+          null,
+          {
+            "id": "broken"
+          }
+        ],
+        "activeRun": {
+          "id": "broken"
+        }
+      },
+      "expected": {
+        "version": 2,
+        "updatedAt": "1970-01-01T00:00:00.000Z",
+        "settings": {
+          "lastVariant": null,
+          "fastMode": false
+        },
+        "runs": [],
+        "activeRun": null
+      }
+    },
+    {
+      "name": "invalid calendar timestamp falls back to epoch",
+      "input": {
+        "version": 1,
+        "updatedAt": "2026-02-30T10:00:00Z"
+      },
+      "expected": {
+        "version": 2,
+        "updatedAt": "1970-01-01T00:00:00.000Z",
+        "settings": {
+          "lastVariant": null,
+          "fastMode": false
+        },
+        "runs": [],
+        "activeRun": null
+      }
+    },
+    {
+      "name": "overflowing timezone timestamp falls back to epoch",
+      "input": {
+        "version": 1,
+        "updatedAt": "9999-12-31T23:59:59-23:59"
+      },
+      "expected": {
+        "version": 2,
+        "updatedAt": "1970-01-01T00:00:00.000Z",
+        "settings": {
+          "lastVariant": null,
+          "fastMode": false
+        },
+        "runs": [],
+        "activeRun": null
+      }
+    },
+    {
+      "name": "boolean is not version one",
+      "input": {
+        "version": true
+      },
+      "expectedError": "invalid_document"
+    },
+    {
+      "name": "legacy history must be a list",
+      "input": {
+        "version": 1,
+        "runs": null
+      },
+      "expectedError": "invalid_document"
+    },
+    {
+      "name": "unknown version is rejected",
+      "input": {
+        "version": 3
+      },
+      "expectedError": "invalid_document"
+    }
+  ]
+}

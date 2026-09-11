@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { confirmReadiness } from "./readiness-helpers.js";
 
 const originHeaders = { Origin: "http://127.0.0.1:8091", "Sec-Fetch-Site": "same-origin" };
 const ownerEmail = "owner@example.test";
@@ -84,6 +85,7 @@ async function registerStudent(page, stamp) {
 
 async function finishTask(page, task) {
   await page.locator(`[data-start="${task}"]`).click();
+  await confirmReadiness(page);
   await page.locator("#mainActionBtn").click();
   await page.locator("#skipBtn").click();
   await page.locator("#skipBtn").click();
@@ -92,6 +94,7 @@ async function finishTask(page, task) {
 
 async function finishTaskOne(page) {
   await page.locator('[data-start="1"]').click();
+  await confirmReadiness(page);
   await page.locator("#mainActionBtn").click();
   await page.locator("#skipBtn").click();
   for (let question = 0; question < 5; question += 1) await page.locator("#skipBtn").click();
@@ -100,6 +103,7 @@ async function finishTaskOne(page) {
 
 async function finishCompleteAttempt(page) {
   await page.locator('[data-start="exam"]').click();
+  await confirmReadiness(page);
   await page.locator("#mainActionBtn").click();
   await page.locator("#skipBtn").click();
   for (let question = 0; question < 5; question += 1) await page.locator("#skipBtn").click();
@@ -112,6 +116,171 @@ async function finishCompleteAttempt(page) {
   await expect(page.locator("#resultScreen")).not.toHaveClass(/hidden/);
 }
 
+test("completed attempt downloads every recording as one zip archive", async ({ browser }) => {
+  const guest = await browser.newContext({ baseURL: "http://127.0.0.1:8091" });
+  const page = await guest.newPage();
+  try {
+    await installRecorder(page);
+    await page.goto("/");
+    await finishCompleteAttempt(page);
+
+    await expect(page.locator("#recordingsList .download-link")).toHaveCount(7);
+    const downloadPromise = page.waitForEvent("download");
+    await page.locator("#downloadAllRecordingsBtn").click();
+    const download = await downloadPromise;
+
+    expect(download.suggestedFilename()).toMatch(/^ege-chinese-recordings-\d{4}-\d{2}-\d{2}\.zip$/);
+    const entries = JSON.parse(execFileSync(process.env.E2E_PYTHON || ".venv/bin/python", [
+      "-c",
+      "import json, sys, zipfile\nwith zipfile.ZipFile(sys.argv[1]) as archive:\n assert archive.testzip() is None\n print(json.dumps([{'name': item.filename, 'size': item.file_size} for item in archive.infolist()]))",
+      await download.path(),
+    ], { encoding: "utf8" }));
+    expect(entries.map(entry => entry.name)).toEqual([
+      "zadanie-1-vopros-1.webm",
+      "zadanie-1-vopros-2.webm",
+      "zadanie-1-vopros-3.webm",
+      "zadanie-1-vopros-4.webm",
+      "zadanie-1-vopros-5.webm",
+      "zadanie-2.webm",
+      "zadanie-3.webm",
+    ]);
+    expect(entries.every(entry => entry.size > 0)).toBe(true);
+  } finally {
+    await guest.close();
+  }
+});
+
+test("recording archive button reports preparation state", async ({ browser }) => {
+  const guest = await browser.newContext({ baseURL: "http://127.0.0.1:8091" });
+  const page = await guest.newPage();
+  try {
+    await installRecorder(page);
+    await page.goto("/");
+    await finishCompleteAttempt(page);
+    await page.evaluate(() => {
+      let pendingArchiveBytes;
+      Blob.prototype.arrayBuffer = () => {
+        pendingArchiveBytes ||= new Promise(resolve => { window.resolveArchiveBytes = resolve; });
+        return pendingArchiveBytes;
+      };
+    });
+
+    const downloadPromise = page.waitForEvent("download");
+    await page.locator("#downloadAllRecordingsBtn").click();
+    await expect(page.locator("#downloadAllRecordingsBtn")).toBeDisabled();
+    await expect(page.locator("#downloadAllRecordingsBtn")).toHaveText("Готовим архив…");
+    await page.evaluate(() => window.resolveArchiveBytes(new ArrayBuffer(1)));
+    await downloadPromise;
+    await expect(page.locator("#downloadAllRecordingsBtn")).toBeEnabled();
+    await expect(page.locator("#downloadAllRecordingsBtn")).toHaveText("Скачать все записи");
+  } finally {
+    await guest.close();
+  }
+});
+
+test("recording archive failure restores the download button", async ({ browser }) => {
+  const guest = await browser.newContext({ baseURL: "http://127.0.0.1:8091" });
+  const page = await guest.newPage();
+  try {
+    await installRecorder(page);
+    await page.goto("/");
+    await finishCompleteAttempt(page);
+    await page.evaluate(() => {
+      Blob.prototype.arrayBuffer = async () => { throw new Error("archive failed"); };
+    });
+
+    await page.locator("#downloadAllRecordingsBtn").click();
+
+    await expect(page.locator("#toast")).toHaveText("Не удалось подготовить архив. Попробуйте ещё раз");
+    await expect(page.locator("#downloadAllRecordingsBtn")).toBeEnabled();
+    await expect(page.locator("#downloadAllRecordingsBtn")).toHaveText("Скачать все записи");
+  } finally {
+    await guest.close();
+  }
+});
+
+test("recording archive action stays hidden when no audio was recorded", async ({ browser }) => {
+  const guest = await browser.newContext({ baseURL: "http://127.0.0.1:8091" });
+  const page = await guest.newPage();
+  try {
+    await installRecorder(page, { skipStops: [1, 2, 3, 4, 5, 6, 7] });
+    await page.goto("/");
+    await finishCompleteAttempt(page);
+
+    await expect(page.locator("#downloadAllRecordingsBtn")).toHaveClass(/hidden/);
+  } finally {
+    await guest.close();
+  }
+});
+
+test("personal archive", async ({ browser }) => {
+  const stamp = Date.now();
+  const guest = await browser.newContext({ baseURL: "http://127.0.0.1:8091" });
+  const student = await browser.newContext({ baseURL: "http://127.0.0.1:8091" });
+  const guestPage = await guest.newPage();
+  const studentPage = await student.newPage();
+  let guestUploads = 0;
+  let studentUploads = 0;
+  await guest.route("**/api/personal-recordings?*", route => {
+    if (route.request().method() === "POST") guestUploads += 1;
+    return route.continue();
+  });
+  await student.route("**/api/personal-recordings?*", route => {
+    if (route.request().method() === "POST") studentUploads += 1;
+    return route.continue();
+  });
+  try {
+    await installRecorder(guestPage);
+    await guestPage.goto("/");
+    await finishTask(guestPage, 2);
+    expect(guestUploads).toBe(0);
+
+    await installRecorder(studentPage);
+    await studentPage.goto("/");
+    await registerStudent(studentPage, stamp);
+    await finishTask(studentPage, 2);
+    await expect(studentPage.locator("#submissionStatus")).toContainText("сохранены");
+    expect(studentUploads).toBe(1);
+    await studentPage.goto("/history.html");
+    await studentPage.locator(".history-entry summary").click();
+    await expect(studentPage.locator(".history-audio-item")).toContainText("Удалится");
+    await expect(studentPage.locator(".history-audio-item audio")).toHaveAttribute("src", /^\/api\/personal-recordings\/\d+$/);
+  } finally {
+    await guest.close();
+    await student.close();
+  }
+});
+
+test("personal archive retries an older failed run when a new run finishes", async ({ browser }) => {
+  const stamp = Date.now();
+  const student = await browser.newContext({ baseURL: "http://127.0.0.1:8091" });
+  const page = await student.newPage();
+  let uploads = 0;
+  const uploadedRuns = [];
+  await student.route("**/api/personal-recordings?*", route => {
+    if (route.request().method() !== "POST") return route.continue();
+    uploads += 1;
+    uploadedRuns.push(new URL(route.request().url()).searchParams.get("runId"));
+    return uploads === 1 ? route.abort() : route.continue();
+  });
+  try {
+    await installRecorder(page);
+    await page.goto("/");
+    await registerStudent(page, stamp);
+    await finishTask(page, 2);
+    await expect(page.locator("#retryArchiveBtn")).toBeVisible();
+    await page.locator("#restartBtn").click();
+    await finishTask(page, 3);
+    await expect(page.locator("#retryArchiveBtn")).toBeHidden();
+    await expect(page.locator("#submissionStatus")).toContainText("сохранены");
+    expect(uploads).toBe(3);
+    expect(uploadedRuns[0]).toBe(uploadedRuns[1]);
+    expect(uploadedRuns[2]).not.toBe(uploadedRuns[0]);
+  } finally {
+    await student.close();
+  }
+});
+
 test("student submits a single task only after an explicit review request", async ({ browser }) => {
   const stamp = Date.now();
   const teacher = await browser.newContext({ baseURL: "http://127.0.0.1:8091" });
@@ -122,7 +291,6 @@ test("student submits a single task only after an explicit review request", asyn
     await installRecorder(page);
     await page.goto("/");
     await registerStudent(page, stamp);
-    await page.locator("#fastMode").check({ force: true });
     await finishTask(page, 2);
     expect((await (await teacher.request.get("/api/teacher/review-requests")).json()).requests).toEqual([]);
     await page.getByLabel("Одно задание").check();
@@ -144,12 +312,13 @@ test("student submits a complete attempt with every completed task", async ({ br
     await installRecorder(page);
     await page.goto("/");
     await registerStudent(page, stamp);
-    await page.locator("#fastMode").check({ force: true });
     await finishCompleteAttempt(page);
     await page.getByLabel("Всю попытку").check();
     await page.getByRole("button", { name: "Отправить всю попытку" }).click();
-    await expect(page.locator("#studentReviewRequestsList .review-request-card")).toHaveCount(1);
-    await expect(page.locator("#studentReviewRequestsList")).toContainText("Задания 1, 2, 3");
+    await page.goto("/history.html");
+    await page.locator(".history-entry summary").click();
+    await expect(page.locator(".history-review-item")).toHaveCount(1);
+    await expect(page.locator(".history-review-item")).toContainText("Задания 1, 2, 3");
   } finally {
     await student.close();
   }
@@ -168,7 +337,6 @@ test("student cannot create an uploading request from an incompletely recorded t
     await installRecorder(page, { skipStops: [5] });
     await page.goto("/");
     await registerStudent(page, stamp);
-    await page.locator("#fastMode").check({ force: true });
     await finishTaskOne(page);
 
     await expect(page.locator("#reviewTaskSelect option")).toHaveCount(0);
@@ -193,7 +361,6 @@ test("whole attempt excludes tasks with an incomplete required recording set", a
     await installRecorder(page, { skipStops: [5] });
     await page.goto("/");
     await registerStudent(page, stamp);
-    await page.locator("#fastMode").check({ force: true });
     await finishCompleteAttempt(page);
 
     await expect(page.locator("#reviewTaskSelect option")).toHaveText(["Задание 2", "Задание 3"]);
@@ -218,17 +385,12 @@ test("owner scores queued review without groups, assignments, or comments", asyn
     await installRecorder(studentPage);
     await studentPage.goto("/");
     await registerStudent(studentPage, stamp);
-    await studentPage.locator("#fastMode").check({ force: true });
     await finishTask(studentPage, 2);
     await studentPage.getByRole("button", { name: "Отправить одно задание" }).click();
     await expect(studentPage.locator("#reviewRequestMessage")).toContainText("отправлена");
 
-    await teacherPage.goto("/");
-    await teacherPage.locator("#authButton").click();
-    await expect(teacherPage.locator("#authModal")).not.toHaveClass(/hidden/);
-    await expect(teacherPage.locator("#accountTitle")).toHaveText("Очередь разборов");
-    await teacherPage.getByRole("button", { name: "Открыть кабинет преподавателя" }).click();
-    await expect(teacherPage.getByRole("dialog", { name: "Очередь разбора" })).toBeVisible();
+    await teacherPage.goto("/teacher.html");
+    await expect(teacherPage.getByRole("heading", { name: "Очередь разбора", exact: true })).toBeVisible();
     await teacherPage.locator("#reviewStudentFilter").fill(`student-${stamp}@example.test`);
     const queuePayload = await (await teacher.request.get("/api/teacher/review-requests")).json();
     const submitted = new Date(queuePayload.requests.find(item => item.studentEmail === `student-${stamp}@example.test`).submittedAt * 1000);
@@ -240,6 +402,11 @@ test("owner scores queued review without groups, assignments, or comments", asyn
     await teacherPage.locator("#reviewDateFilter").fill(submittedDate);
     await teacherPage.getByRole("button", { name: "Применить" }).click();
     await expect(teacherPage.locator("#teacherReviewRequests")).toContainText("E2E Student");
+    const requestCard = teacherPage.locator(".teacher-review-request-card").first();
+    await expect(requestCard).toHaveCSS("border-radius", "12px");
+    await expect(requestCard.locator("h3")).toHaveCSS("overflow-wrap", "anywhere");
+    await expect(requestCard.locator(".primary-btn")).toHaveCSS("background-color", "rgb(244, 236, 219)");
+    await expect(requestCard.locator(".primary-btn")).toHaveCSS("background-image", "none");
     await expect(teacherPage.locator("#teacherReviewRequests audio")).toHaveCount(1);
     await teacherPage.getByRole("button", { name: "История заявок" }).click();
     await expect(teacherPage.locator(".review-material-snapshot")).toContainText("Выберите и опишите фотографию");
@@ -252,9 +419,8 @@ test("owner scores queued review without groups, assignments, or comments", asyn
     await teacherPage.getByRole("button", { name: "Сохранить оценку" }).click();
     await expect(teacherPage.locator("#teacherReviewRequests")).toContainText("7/7");
 
-    await studentPage.reload();
-    await studentPage.locator("#authButton").click();
-    await expect(studentPage.locator("#studentReviewRequestsList")).toContainText("Разобрано: 7/7");
+    await studentPage.goto("/history.html");
+    await expect(studentPage.locator(".history-entry summary")).toContainText("Разобрано: 7/7");
     await expect(teacherPage.getByRole("button", { name: "Создать группу" })).toHaveCount(0);
     await expect(teacherPage.getByRole("button", { name: "Назначить" })).toHaveCount(0);
     await expect(teacherPage.getByLabel("Комментарий")).toHaveCount(0);
@@ -275,7 +441,6 @@ test("owner history includes the student's earlier reviews outside the queue fil
     await installRecorder(studentPage);
     await studentPage.goto("/");
     await registerStudent(studentPage, stamp);
-    await studentPage.locator("#fastMode").check({ force: true });
     await finishTask(studentPage, 2);
     await studentPage.getByRole("button", { name: "Отправить одно задание" }).click();
     await expect(studentPage.locator("#reviewRequestMessage")).toContainText("отправлена");
@@ -284,14 +449,17 @@ test("owner history includes the student's earlier reviews outside the queue fil
     await studentPage.getByRole("button", { name: "Отправить одно задание" }).click();
     await expect(studentPage.locator("#reviewRequestMessage")).toContainText("отправлена");
 
-    await teacherPage.goto("/");
-    await teacherPage.locator("#authButton").click();
-    await teacherPage.getByRole("button", { name: "Открыть кабинет преподавателя" }).click();
+    await teacherPage.goto("/teacher.html");
     await teacherPage.locator("#reviewStudentFilter").fill(`student-${stamp}@example.test`);
     await teacherPage.locator("#reviewTaskFilter").selectOption("3");
     await teacherPage.getByRole("button", { name: "Применить" }).click();
-    await expect(teacherPage.getByRole("button", { name: "История заявок" })).toHaveCount(1);
-    await teacherPage.getByRole("button", { name: "История заявок" }).click();
+    const historyButton = teacherPage.getByRole("button", { name: "История заявок" });
+    await expect(historyButton).toHaveCount(1);
+    const requestId = await historyButton.getAttribute("data-student-review-history");
+    await historyButton.click();
+    await expect(teacherPage).toHaveURL(new RegExp(`teacher\\.html\\?request=${requestId}$`));
+    await expect(teacherPage.locator(".attempt-history")).toContainText(" · ");
+    await teacherPage.reload();
     await expect(teacherPage.locator(".attempt-history")).toContainText(" · ");
   } finally {
     await teacher.close();
@@ -320,7 +488,6 @@ test("student retries a failed upload without creating a duplicate review reques
     await installRecorder(page);
     await page.goto("/");
     await registerStudent(page, stamp);
-    await page.locator("#fastMode").check({ force: true });
     await finishTask(page, 2);
     await page.getByRole("button", { name: "Отправить одно задание" }).click();
     await expect(page.getByRole("button", { name: "Повторить отправку" })).toBeVisible();
@@ -356,7 +523,6 @@ test("student starts a new run after a failed upload without reusing its review 
     await installRecorder(page);
     await page.goto("/");
     await registerStudent(page, stamp);
-    await page.locator("#fastMode").check({ force: true });
     await finishTask(page, 2);
     await page.getByRole("button", { name: "Отправить одно задание" }).click();
     await expect(page.getByRole("button", { name: "Повторить отправку" })).toBeVisible();
@@ -401,7 +567,6 @@ test("concurrent runs keep delayed uploads and completion on their own review re
     await installRecorder(page);
     await page.goto("/");
     await registerStudent(page, stamp);
-    await page.locator("#fastMode").check({ force: true });
     await finishTask(page, 2);
     await page.getByRole("button", { name: "Отправить одно задание" }).click();
     await firstUploadStarted;

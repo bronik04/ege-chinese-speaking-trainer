@@ -49,7 +49,10 @@ test("student registers, signs out and signs back in through the account form", 
   const email = `ui-login-${Date.now()}@example.test`;
   await page.goto("/");
   await page.locator("#authButton").click();
+  await expect(page.locator("#registrationArchiveDisclosure")).toBeHidden();
   await page.locator("#registerTab").click();
+  await expect(page.locator("#registrationArchiveDisclosure")).toBeVisible();
+  await expect(page.locator("#registrationArchiveDisclosure")).toHaveText("Ответы сохраняются в личном архиве на 6 месяцев, затем удаляются автоматически.");
   await page.locator("#authName").fill("UI Student");
   await page.locator("#authEmail").fill(email);
   await page.locator("#authPassword").fill("original123");
@@ -63,6 +66,7 @@ test("student registers, signs out and signs back in through the account form", 
 
   await page.locator("#authButton").click();
   await page.locator("#loginTab").click();
+  await expect(page.locator("#registrationArchiveDisclosure")).toBeHidden();
   await page.locator("#authEmail").fill(email);
   await page.locator("#authPassword").fill("original123");
   await page.locator("#authSubmitBtn").click();
@@ -87,6 +91,62 @@ test("student resets a password through the emailed token", async ({ browser }) 
   await post(login, "/api/auth/login", { email, password: "replacement123" });
   await account.close();
   await login.close();
+});
+
+test("student account links to a separate security page", async ({ page }) => {
+  const email = `security-page-${Date.now()}@example.test`;
+  await register(page.context(), email, "Security Student");
+
+  await page.goto("/");
+  await page.locator("#authButton").click();
+  await expect(page.locator("#emailVerificationPanel")).toBeVisible();
+  await expect(page.locator("#accountSecurityLink")).toHaveAttribute("href", "security.html");
+  await expect(page.locator("#showAuditBtn, #showDeleteAccountBtn, #deleteAccountForm")).toHaveCount(0);
+
+  await page.locator("#accountSecurityLink").click();
+  await expect(page).toHaveURL(/\/security\.html$/);
+  await expect(page.getByRole("heading", { name: "Безопасность аккаунта" })).toBeVisible();
+  await expect(page.locator("#securityAccountEmail")).toHaveText(email);
+  await expect(page.locator("#auditList")).toContainText("Аккаунт создан");
+});
+
+test("unverified student requests verification from the account notice", async ({ page }) => {
+  const email = `verification-notice-${Date.now()}@example.test`;
+  await register(page.context(), email);
+
+  await page.goto("/");
+  await page.locator("#authButton").click();
+  await page.locator("#sendVerificationBtn").click();
+
+  await expect(page.locator("#emailVerificationMessage")).toHaveText("Локальная ссылка сохранена в var/outbox.log");
+});
+
+test("student deletes the account from the security page", async ({ page }) => {
+  const email = `security-delete-${Date.now()}@example.test`;
+  await register(page.context(), email);
+
+  await page.goto("/security.html");
+  await expect(page.locator("#deleteAccountForm")).toBeHidden();
+  await page.locator("#showDeleteAccountBtn").click();
+  await expect(page.locator("#deleteAccountForm")).toBeVisible();
+  await page.locator("#deleteAccountPassword").fill("original123");
+  page.once("dialog", dialog => dialog.accept());
+  await page.locator("#deleteAccountForm").getByRole("button", { name: "Удалить аккаунт навсегда" }).click();
+
+  await expect(page.getByRole("heading", { name: "Аккаунт удалён" })).toBeVisible();
+  await expect(page.locator("#securityAccount")).toBeHidden();
+  await expect(page.locator("#securityDeleted")).toBeFocused();
+  await expect(page.locator("[data-account-label]")).toHaveText("Войти");
+});
+
+test("security page visually separates routine and destructive controls", async ({ page }) => {
+  await register(page.context(), `security-layout-${Date.now()}@example.test`);
+  await page.goto("/security.html");
+
+  await expect(page.locator("#securityAccount")).toHaveCSS("display", "grid");
+  await expect(page.locator("#showDeleteAccountBtn")).toHaveCSS("background-color", "rgb(255, 245, 242)");
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
 });
 
 test("unverified owner cannot open privileged APIs", async ({ browser }) => {
@@ -124,6 +184,55 @@ test("student deletes the account and can no longer sign in", async ({ browser }
   await login.close();
 });
 
+test("owner account links to a separate teacher workspace", async ({ browser }) => {
+  const teacher = await browser.newContext({ baseURL });
+  await registerOwner(teacher);
+  const page = await teacher.newPage();
+  await page.goto("/");
+  await page.locator("#authButton").click();
+
+  const cabinetLink = page.locator("#teacherCabinetLink");
+  await expect(cabinetLink).toBeVisible();
+  await expect(cabinetLink).toHaveAttribute("href", "teacher.html");
+  await cabinetLink.click();
+
+  await expect(page).toHaveURL(/\/teacher\.html$/);
+  await expect(page.getByRole("heading", { name: "Очередь разбора", exact: true })).toBeVisible();
+  await expect(page.locator("#teacherModal")).toHaveCount(0);
+
+  await page.goto("/teacher.html?request=999999");
+  await expect(page.locator("#teacherReviewMessage")).toContainText("Запрос не найден");
+  await expect(page).toHaveURL(/\/teacher\.html$/);
+
+  const deletion = await teacher.request.delete("/api/account", {
+    headers: originHeaders,
+    data: { password: "original123" },
+  });
+  expect(deletion.ok(), await deletion.text()).toBeTruthy();
+  await teacher.close();
+});
+
+test("guest and student cannot open the teacher workspace", async ({ browser }) => {
+  const guest = await browser.newContext({ baseURL });
+  const student = await browser.newContext({ baseURL });
+  await register(student, `teacher-access-${Date.now()}@example.test`);
+
+  for (const context of [guest, student]) {
+    const page = await context.newPage();
+    let queueRequests = 0;
+    page.on("request", request => {
+      if (new URL(request.url()).pathname.startsWith("/api/teacher/review-requests")) queueRequests += 1;
+    });
+    await page.goto("/teacher.html");
+    await expect(page.locator("#authModal")).toBeVisible();
+    await expect(page.locator("#teacherWorkspace")).toHaveCount(0);
+    expect(queueRequests).toBe(0);
+  }
+
+  await guest.close();
+  await student.close();
+});
+
 test("student and owner cabinets have no assignment controls", async ({ browser }) => {
   const stamp = Date.now();
   const teacher = await browser.newContext({ baseURL });
@@ -135,11 +244,24 @@ test("student and owner cabinets have no assignment controls", async ({ browser 
   await teacherPage.goto("/");
   await studentPage.goto("/");
   await teacherPage.locator("#authButton").click();
-  await teacherPage.locator("#teacherCabinetBtn").click();
+  await teacherPage.locator("#teacherCabinetLink").click();
   await studentPage.locator("#authButton").click();
+  await expect(studentPage.locator("#logoutBtn")).toHaveCSS("background-color", "rgb(244, 236, 219)");
+  await expect(studentPage.locator("#logoutBtn")).toHaveCSS("box-shadow", "none");
+  await expect(studentPage.locator("#accountSecurityLink")).toBeVisible();
   await expect(teacherPage.locator("#teacherMaterialEditorLink")).toBeVisible();
   await expect(teacherPage.locator("#teacherMaterialEditorLink")).toHaveAttribute("href", "variant-editor.html");
-  await expect(teacherPage.locator("select:not([data-project-select='ready'])")).toHaveCount(0);
+  await expect(teacherPage.locator("#teacherModal")).toHaveCount(0);
+  await expect(teacherPage.locator(".teacher-review-section")).toHaveCSS("border-radius", "16px");
+  await expect(teacherPage.locator(".teacher-materials-entry")).toHaveCSS("border-radius", "16px");
+  await expect(teacherPage.locator("#reviewRequestFilters")).toHaveCSS("border-radius", "12px");
+  await teacherPage.setViewportSize({ width: 390, height: 844 });
+  expect(await teacherPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
+  for (const selector of ["#reviewTaskFilter", "#reviewStatusFilter"]) {
+    await expect(teacherPage.locator(selector)).toBeVisible();
+    await expect(teacherPage.locator(selector)).toHaveCSS("min-height", "44px");
+  }
+  await expect(teacherPage.locator(".project-select")).toHaveCount(0);
   for (const page of [teacherPage, studentPage]) {
     await expect(page.locator("#groupName, #joinGroupCode, #assignmentDue, #createAssignmentBtn, #exportCsvBtn, #exportPdfBtn")).toHaveCount(0);
     await expect(page.locator("[data-copy-code], [data-resend-assignment], [data-start-assignment]")).toHaveCount(0);

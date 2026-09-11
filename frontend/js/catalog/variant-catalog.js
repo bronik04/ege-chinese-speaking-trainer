@@ -21,9 +21,12 @@ export function yearFiltersMarkup(years, activeYear = "all") {
   return buttons.map(item => `<button class="year-filter${item.value === String(activeYear) ? " active" : ""}" type="button" data-year="${item.value}" aria-pressed="${item.value === String(activeYear)}">${item.label}</button>`).join("");
 }
 
-export function catalogMarkup(variants) {
+export function catalogMarkup(variants, { restricted = false } = {}) {
   if (!variants.length) return '<p class="catalog-empty">По этому запросу вариантов пока нет.</p>';
-  return variants.map(variant => {
+  const accessNotice = restricted
+    ? '<aside class="catalog-access-notice" id="catalogAccessNotice" role="note">После регистрации доступны остальные варианты и личный архив записей <a href="index.html?account=1">Зарегистрироваться →</a></aside>'
+    : "";
+  return accessNotice + variants.map(variant => {
     const taskNumbers = variant.kind === "task" ? [variant.taskNumber] : [1, 2, 3];
     const tasks = taskNumbers.map(number => {
       const title = variant.tasks?.[String(number)]?.title || `Задание ${number}`;
@@ -39,12 +42,12 @@ export function catalogMarkup(variants) {
     const kindLabel = variant.kind === "task"
       ? `Отдельное задание ${variant.taskNumber}`
       : variant.official === false ? "Авторский вариант" : variantKind(variant.id);
-    const href = `index.html?variant=${encodeURIComponent(variant.id)}`;
+    const href = `variant-preview.html?${new URLSearchParams({ variant: variant.id })}`;
     return `<article class="variant-card" data-variant="${escapeHtml(variant.id)}">
       <div class="variant-card-media"><img src="${image}" alt="" loading="lazy"><span class="variant-year">${escapeHtml(variant.year)}</span></div>
       <div class="variant-card-copy"><p class="variant-kind">${kindLabel}</p><h3>${escapeHtml(variant.label)}</h3>
       <p class="variant-source">${escapeHtml(variant.source)}</p><ol class="variant-tasks">${tasks}</ol>
-      <footer class="variant-card-footer"><span class="variant-duration">≈ ${escapeHtml(pluralize(variant.totalMinutes, "минута", "минуты", "минут"))}</span><a class="variant-open" href="${href}">Открыть →</a></footer></div>
+      <footer class="variant-card-footer"><span class="variant-duration">≈ ${escapeHtml(pluralize(variant.totalMinutes, "минута", "минуты", "минут"))}</span><a class="variant-open" href="${escapeHtml(href)}">Предпросмотр →</a></footer></div>
     </article>`;
   }).join("");
 }

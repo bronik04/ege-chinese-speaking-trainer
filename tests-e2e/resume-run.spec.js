@@ -1,0 +1,438 @@
+import { expect, test } from "@playwright/test";
+import { chooseAndConfirmReadiness, confirmReadiness, installWorkingMicrophone } from "./readiness-helpers.js";
+
+test.beforeEach(async ({ page }) => {
+  await installWorkingMicrophone(page);
+});
+
+const storedProgress = {
+  version: 2,
+  updatedAt: "2026-09-10T08:03:00.000Z",
+  settings: { lastVariant: "open-2026", fastMode: false },
+  runs: [],
+  activeRun: {
+    id: "interrupted-exam",
+    variantId: "open-2026",
+    variantLabel: "Официальный вариант 2026",
+    mode: "exam",
+    tasks: [1, 2, 3],
+    completedTasks: [1],
+    currentTask: 1,
+    phase: "answer",
+    fastMode: false,
+    startedAt: "2026-09-10T08:00:00.000Z",
+  },
+};
+
+const studentUser = {
+  id: 91,
+  email: "resume-student@example.test",
+  displayName: "Resume Student",
+  role: "student",
+  emailVerified: true,
+};
+
+async function installAccountProgressApi(page, remoteProgress) {
+  const writes = [];
+  await page.route("**/api/auth/me", route => route.fulfill({ json: { user: studentUser } }));
+  await page.route("**/api/progress", route => {
+    if (route.request().method() === "PUT") {
+      writes.push(route.request().postDataJSON().progress);
+      return route.fulfill({ json: { ok: true, updatedAt: 1_789_000_000 } });
+    }
+    return route.fulfill({ json: { progress: remoteProgress, updatedAt: 1_789_000_000 } });
+  });
+  return writes;
+}
+
+async function seedInterruptedRun(page, progress = storedProgress) {
+  await page.addInitScript(value => {
+    localStorage.setItem("egeChineseProgressV2", JSON.stringify(value));
+  }, progress);
+}
+
+test("student continues an interrupted exam from the first unfinished task", async ({ page }) => {
+  await seedInterruptedRun(page);
+  await page.goto("/");
+
+  await expect(page.locator("#resumeRunPanel")).toBeVisible();
+  await expect(page.locator("#resumeRunPanel")).toContainText("Официальный вариант 2026");
+  await expect(page.locator("#resumeRunPanel")).toContainText("Задание 2");
+  let progress = await page.evaluate(() => JSON.parse(localStorage.getItem("egeChineseProgressV2")));
+  expect(progress.runs).toEqual([]);
+  expect(progress.activeRun.id).toBe("interrupted-exam");
+
+  await page.locator("#continueRunBtn").click();
+  await confirmReadiness(page);
+
+  await expect(page.locator("#runnerScreen")).toBeVisible();
+  await expect(page.locator("#taskBadge")).toHaveText("Задание 2");
+  await expect(page.locator("#phaseCaption")).toHaveText("До начала");
+  await expect(page.locator("#taskPaper")).toHaveClass(/locked/);
+  await expect(page.locator("#timerValue")).toHaveText("02:00");
+  progress = await page.evaluate(() => JSON.parse(localStorage.getItem("egeChineseProgressV2")));
+  expect(progress.activeRun).toMatchObject({
+    id: "interrupted-exam",
+    completedTasks: [1],
+    currentTask: 2,
+    phase: "idle",
+  });
+});
+
+test("starting an interrupted exam again archives the old run and creates a new one", async ({ page }) => {
+  await seedInterruptedRun(page);
+  await page.goto("/");
+
+  await page.locator("#restartInterruptedRunBtn").click();
+  await confirmReadiness(page);
+
+  await expect(page.locator("#runnerScreen")).toBeVisible();
+  await expect(page.locator("#taskBadge")).toHaveText("Задание 1");
+  const progress = await page.evaluate(() => JSON.parse(localStorage.getItem("egeChineseProgressV2")));
+  expect(progress.runs).toHaveLength(1);
+  expect(progress.runs[0]).toMatchObject({ id: "interrupted-exam", status: "interrupted", recordingsCount: 0 });
+  expect(progress.activeRun.id).not.toBe("interrupted-exam");
+  expect(progress.activeRun).toMatchObject({
+    mode: "exam",
+    completedTasks: [],
+    currentTask: 1,
+    phase: "idle",
+  });
+});
+
+test("an interrupted run with an unavailable material moves to history", async ({ page }) => {
+  await seedInterruptedRun(page, {
+    ...storedProgress,
+    settings: { ...storedProgress.settings, lastVariant: "removed-material" },
+    activeRun: {
+      ...storedProgress.activeRun,
+      variantId: "removed-material",
+      variantLabel: "Удалённый вариант",
+    },
+  });
+  await page.goto("/");
+
+  await expect(page.locator("#resumeRunPanel")).toHaveClass(/hidden/);
+  await expect(page.locator("#toast")).toHaveText("Незавершённый вариант больше недоступен. Попытка сохранена в истории");
+  const progress = await page.evaluate(() => JSON.parse(localStorage.getItem("egeChineseProgressV2")));
+  expect(progress.activeRun).toBeNull();
+  expect(progress.runs).toHaveLength(1);
+  expect(progress.runs[0]).toMatchObject({
+    id: "interrupted-exam",
+    status: "interrupted",
+    recordingsCount: 0,
+  });
+});
+
+test("choosing another training archives the offered interrupted run", async ({ page }) => {
+  await seedInterruptedRun(page);
+  await page.goto("/");
+
+  await chooseAndConfirmReadiness(page, '[data-start="3"]');
+
+  await expect(page.locator("#runnerScreen")).toBeVisible();
+  await expect(page.locator("#taskBadge")).toHaveText("Задание 3");
+  const progress = await page.evaluate(() => JSON.parse(localStorage.getItem("egeChineseProgressV2")));
+  expect(progress.runs).toHaveLength(1);
+  expect(progress.runs[0]).toMatchObject({ id: "interrupted-exam", status: "interrupted" });
+  expect(progress.activeRun).toMatchObject({ mode: "practice", tasks: [3], currentTask: 3 });
+});
+
+test("an interrupted run from server survives initial account hydration", async ({ page }) => {
+  const writes = await installAccountProgressApi(page, storedProgress);
+
+  await page.goto("/");
+
+  await expect(page.locator("#resumeRunPanel")).toBeVisible();
+  await expect(page.locator("#resumeRunPanel")).toContainText("Задание 2");
+  const accountProgress = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), `egeChineseProgressV2:user:${studentUser.id}`);
+  expect(accountProgress.activeRun.id).toBe("interrupted-exam");
+  await expect.poll(() => writes.length).toBeGreaterThan(0);
+  expect(writes.at(-1).activeRun.id).toBe("interrupted-exam");
+});
+
+test("a failed account catalog refresh preserves an unverified interrupted material", async ({ page }) => {
+  const privateProgress = {
+    ...storedProgress,
+    settings: { ...storedProgress.settings, lastVariant: "private-material" },
+    activeRun: {
+      ...storedProgress.activeRun,
+      variantId: "private-material",
+      variantLabel: "Личный вариант",
+    },
+  };
+  await installAccountProgressApi(page, privateProgress);
+  let catalogRequests = 0;
+  await page.route("**/api/materials", route => {
+    catalogRequests += 1;
+    if (catalogRequests === 1) return route.continue();
+    return route.fulfill({ status: 503, json: { detail: "temporary failure" } });
+  });
+
+  await page.goto("/");
+
+  await expect.poll(() => catalogRequests).toBe(2);
+  await expect(page.locator("#resumeRunPanel")).toHaveClass(/hidden/);
+  const accountProgress = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), `egeChineseProgressV2:user:${studentUser.id}`);
+  expect(accountProgress.activeRun.id).toBe("interrupted-exam");
+  expect(accountProgress.runs).toEqual([]);
+});
+
+test("repeated restart clicks archive only the original interrupted run", async ({ page }) => {
+  const delayedId = "delayed-material";
+  const delayedProgress = {
+    ...storedProgress,
+    settings: { ...storedProgress.settings, lastVariant: "open-2026" },
+    activeRun: {
+      ...storedProgress.activeRun,
+      variantId: delayedId,
+      variantLabel: "Отложенный вариант",
+    },
+  };
+  await installAccountProgressApi(page, delayedProgress);
+  await page.route("**/api/materials", route => route.fulfill({ json: {
+    materials: [
+      { id: "open-2026", year: 2026, label: "Официальный вариант 2026" },
+      { id: delayedId, year: 2026, label: "Отложенный вариант" },
+    ],
+    canCreate: false,
+  } }));
+  await page.route(`**/api/materials/${delayedId}`, async route => {
+    await new Promise(resolve => setTimeout(resolve, 200));
+    const response = await page.request.get("/api/materials/open-2026");
+    const payload = await response.json();
+    return route.fulfill({ json: { material: { ...payload.material, id: delayedId, label: "Отложенный вариант" } } });
+  });
+
+  await page.goto("/");
+  await expect(page.locator("#resumeRunPanel")).toBeVisible();
+  await page.evaluate(() => {
+    const button = document.getElementById("restartInterruptedRunBtn");
+    button.click();
+    button.click();
+  });
+  await expect(page.locator("#beginReadyRunBtn")).toBeEnabled();
+  await page.evaluate(() => {
+    const button = document.getElementById("beginReadyRunBtn");
+    button.click();
+    button.click();
+  });
+
+  await expect(page.locator("#runnerScreen")).toBeVisible();
+  const accountProgress = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), `egeChineseProgressV2:user:${studentUser.id}`);
+  expect(accountProgress.runs).toHaveLength(1);
+  expect(accountProgress.runs[0].id).toBe("interrupted-exam");
+  expect(accountProgress.activeRun.id).not.toBe("interrupted-exam");
+});
+
+test("a failed catalog refresh after login hides the previous guest offer", async ({ page }) => {
+  await seedInterruptedRun(page);
+  await page.route("**/api/auth/me", route => route.fulfill({
+    status: 401,
+    json: { detail: "Authentication required", code: "authentication_required" },
+  }));
+  await page.route("**/api/auth/login", route => route.fulfill({ json: { user: studentUser } }));
+  await page.route("**/api/progress", route => {
+    if (route.request().method() === "PUT") return route.fulfill({ json: { ok: true, updatedAt: 1_789_000_000 } });
+    return route.fulfill({ json: { progress: null, updatedAt: null } });
+  });
+  let catalogRequests = 0;
+  await page.route("**/api/materials", route => {
+    catalogRequests += 1;
+    if (catalogRequests === 1) return route.continue();
+    return route.fulfill({ status: 503, json: { detail: "temporary failure" } });
+  });
+
+  await page.goto("/");
+  await expect(page.locator("#resumeRunPanel")).toBeVisible();
+  await page.locator("#authButton").click();
+  await page.locator("#authEmail").fill(studentUser.email);
+  await page.locator("#authPassword").fill("password123");
+  await page.locator("#authSubmitBtn").click();
+
+  await expect(page.locator("#authButtonText")).toHaveText(studentUser.email);
+  await expect(page.locator("#resumeRunPanel")).toHaveClass(/hidden/);
+});
+
+test("a failed catalog refresh after logout hides the previous account offer", async ({ page }) => {
+  await installAccountProgressApi(page, storedProgress);
+  await page.route("**/api/auth/logout", route => route.fulfill({ json: { ok: true } }));
+  let catalogRequests = 0;
+  await page.route("**/api/materials", route => {
+    catalogRequests += 1;
+    if (catalogRequests < 3) return route.continue();
+    return route.fulfill({ status: 503, json: { detail: "temporary failure" } });
+  });
+
+  await page.goto("/");
+  await expect(page.locator("#resumeRunPanel")).toBeVisible();
+  await page.locator("#authButton").click();
+  await page.locator("#logoutBtn").click();
+
+  await expect(page.locator("#authButtonText")).toHaveText("Войти");
+  await expect(page.locator("#resumeRunPanel")).toHaveClass(/hidden/);
+});
+
+test("a later progress change safely retries failed account hydration", async ({ page }) => {
+  await page.route("**/api/auth/me", route => route.fulfill({ json: { user: studentUser } }));
+  let progressGets = 0;
+  const writes = [];
+  await page.route("**/api/progress", route => {
+    if (route.request().method() === "PUT") {
+      writes.push(route.request().postDataJSON().progress);
+      return route.fulfill({ json: { ok: true, updatedAt: 1_789_000_000 } });
+    }
+    progressGets += 1;
+    if (progressGets === 1) return route.fulfill({ status: 503, json: { detail: "temporary failure" } });
+    return route.fulfill({ json: { progress: null, updatedAt: null } });
+  });
+
+  await page.goto("/");
+  await expect(page.locator("#progressSyncStatus")).toContainText("Нет связи");
+  await chooseAndConfirmReadiness(page, '[data-start="3"]');
+
+  await expect.poll(() => progressGets).toBe(2);
+  await expect.poll(() => writes.length).toBeGreaterThan(0);
+  expect(writes.at(-1).activeRun).toMatchObject({ mode: "practice", tasks: [3], currentTask: 3 });
+  await expect(page.locator("#progressSyncStatus")).toContainText("Синхронизировано");
+});
+
+test("a delayed hydration response cannot write account progress into guest storage", async ({ page }) => {
+  const guestProgress = {
+    ...storedProgress,
+    updatedAt: "2026-01-01T08:03:00.000Z",
+    activeRun: { ...storedProgress.activeRun, id: "guest-original" },
+  };
+  const remoteProgress = {
+    ...storedProgress,
+    updatedAt: "2099-01-01T08:03:00.000Z",
+    activeRun: { ...storedProgress.activeRun, id: "account-remote" },
+  };
+  await seedInterruptedRun(page, guestProgress);
+  await page.route("**/api/auth/me", route => route.fulfill({ json: { user: studentUser } }));
+  await page.route("**/api/auth/logout", route => route.fulfill({ json: { ok: true } }));
+  let releaseRetry;
+  const retryGate = new Promise(resolve => { releaseRetry = resolve; });
+  let progressGets = 0;
+  await page.route("**/api/progress", async route => {
+    if (route.request().method() === "PUT") return route.fulfill({ json: { ok: true, updatedAt: 1_789_000_000 } });
+    progressGets += 1;
+    if (progressGets === 1) return route.fulfill({ status: 503, json: { detail: "temporary failure" } });
+    await retryGate;
+    return route.fulfill({ json: { progress: remoteProgress, updatedAt: 1_789_000_000 } });
+  });
+
+  await page.goto("/");
+  await chooseAndConfirmReadiness(page, '[data-start="3"]');
+  await expect.poll(() => progressGets).toBe(2);
+  await page.locator("#authButton").click();
+  await page.locator("#logoutBtn").click();
+  await expect(page.locator("#authButtonText")).toHaveText("Войти");
+
+  const retryResponse = page.waitForResponse(response => response.url().endsWith("/api/progress") && response.request().method() === "GET" && response.status() === 200);
+  releaseRetry();
+  await retryResponse;
+  await page.waitForTimeout(100);
+
+  const savedGuest = await page.evaluate(() => JSON.parse(localStorage.getItem("egeChineseProgressV2")));
+  expect(savedGuest.activeRun.id).toBe("guest-original");
+  expect(savedGuest.runs).toEqual([]);
+});
+
+test("a delayed resume material response cannot escape the account scope", async ({ page }) => {
+  const privateMaterialId = "private-material";
+  const privateProgress = {
+    ...storedProgress,
+    settings: { ...storedProgress.settings, lastVariant: "open-2026" },
+    activeRun: {
+      ...storedProgress.activeRun,
+      variantId: privateMaterialId,
+      variantLabel: "Личный вариант",
+    },
+  };
+  await installAccountProgressApi(page, privateProgress);
+  await page.route("**/api/auth/logout", route => route.fulfill({ json: { ok: true } }));
+  let catalogRequests = 0;
+  await page.route("**/api/materials", route => {
+    catalogRequests += 1;
+    const materials = catalogRequests === 3
+      ? [{ id: "open-2026", year: 2026, label: "Официальный вариант 2026" }]
+      : [
+          { id: "open-2026", year: 2026, label: "Официальный вариант 2026" },
+          { id: privateMaterialId, year: 2026, label: "Личный вариант" },
+        ];
+    return route.fulfill({ json: { materials, canCreate: false } });
+  });
+  let releaseMaterial;
+  const materialGate = new Promise(resolve => { releaseMaterial = resolve; });
+  let privateMaterialRequested = false;
+  await page.route(`**/api/materials/${privateMaterialId}`, async route => {
+    privateMaterialRequested = true;
+    await materialGate;
+    const response = await page.request.get("/api/materials/open-2026");
+    const payload = await response.json();
+    return route.fulfill({ json: { material: { ...payload.material, id: privateMaterialId, label: "Личный вариант" } } });
+  });
+
+  await page.goto("/");
+  await expect(page.locator("#resumeRunPanel")).toBeVisible();
+  await page.locator("#continueRunBtn").click();
+  await expect(page.locator("#beginReadyRunBtn")).toBeEnabled();
+  await page.locator("#beginReadyRunBtn").click();
+  await expect.poll(() => privateMaterialRequested).toBe(true);
+  await page.locator("#authButton").click();
+  await page.locator("#logoutBtn").click();
+  await expect(page.locator("#authButtonText")).toHaveText("Войти");
+  await expect.poll(() => catalogRequests).toBe(3);
+
+  releaseMaterial();
+  await page.waitForResponse(response => response.url().endsWith(`/api/materials/${privateMaterialId}`));
+  await page.waitForTimeout(100);
+
+  await expect(page.locator("#selectedMaterialTitle")).toHaveText("Официальный вариант 2026");
+  await expect(page).not.toHaveURL(new RegExp(`variant=${privateMaterialId}`));
+  await expect(page.locator("#runnerScreen")).toHaveClass(/hidden/);
+});
+
+test("a failed resume material load keeps readiness retryable", async ({ page }) => {
+  const privateMaterialId = "unavailable-private-material";
+  const privateProgress = {
+    ...storedProgress,
+    settings: { ...storedProgress.settings, lastVariant: "open-2026" },
+    activeRun: {
+      ...storedProgress.activeRun,
+      variantId: privateMaterialId,
+      variantLabel: "Временно недоступный вариант",
+    },
+  };
+  await installAccountProgressApi(page, privateProgress);
+  await page.route("**/api/materials", route => route.fulfill({ json: {
+    materials: [
+      { id: "open-2026", year: 2026, label: "Официальный вариант 2026" },
+      { id: privateMaterialId, year: 2026, label: "Временно недоступный вариант" },
+    ],
+    canCreate: false,
+  } }));
+  await page.route(`**/api/materials/${privateMaterialId}`, route => route.fulfill({
+    status: 503,
+    json: { detail: "temporary failure" },
+  }));
+
+  await page.goto("/");
+  await expect(page.locator("#resumeRunPanel")).toBeVisible();
+  await expect(page.locator('[data-start="3"]')).toBeEnabled();
+  await page.locator("#continueRunBtn").click();
+  await confirmReadiness(page);
+
+  await expect(page.locator("#toast")).toHaveText("Не удалось загрузить выбранный вариант");
+  await expect(page.locator("#readinessScreen")).toBeVisible();
+  await expect(page.locator("#beginReadyRunBtn")).toBeEnabled();
+  await expect(page.locator("#selectedMaterialTitle")).toHaveText("Официальный вариант 2026");
+  const progress = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), `egeChineseProgressV2:user:${studentUser.id}`);
+  expect(progress.activeRun.id).toBe("interrupted-exam");
+  expect(progress.runs).toEqual([]);
+
+  await page.locator("#cancelReadyRunBtn").click();
+  await expect(page.locator("#resumeRunPanel")).toBeVisible();
+  await expect(page.locator('[data-start="3"]')).toBeEnabled();
+});

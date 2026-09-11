@@ -4,11 +4,19 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Literal
 
+from trainer.domain.progress import CompletedProgressRun, ProgressValidationError, parse_completed_run
+
 
 @dataclass(frozen=True)
 class ReviewRequestSelection:
     kind: Literal["task", "attempt"]
     tasks: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class ValidatedReviewRequest:
+    selection: ReviewRequestSelection
+    run: CompletedProgressRun
 
 
 def validate_review_selection(kind: object, tasks: object) -> ReviewRequestSelection:
@@ -23,6 +31,26 @@ def validate_review_selection(kind: object, tasks: object) -> ReviewRequestSelec
     if kind == "task" and len(tasks) != 1:
         raise ValueError("Для разбора задания выберите ровно одно задание")
     return ReviewRequestSelection(kind=kind, tasks=tuple(sorted(tasks)))
+
+
+def validate_review_request(
+    kind: object,
+    tasks: object,
+    variant_id: object,
+    run: object,
+) -> ValidatedReviewRequest:
+    selection = validate_review_selection(kind, tasks)
+    try:
+        completed_run = parse_completed_run(run)
+    except ProgressValidationError as error:
+        raise ValueError("Некорректные данные попытки") from error
+    if completed_run.status != "completed":
+        raise ValueError("Для разбора можно отправить только завершённую попытку")
+    if completed_run.variant_id != variant_id:
+        raise ValueError("Вариант попытки не совпадает с выбранным вариантом")
+    if not set(selection.tasks).issubset(completed_run.completed_tasks):
+        raise ValueError("Выбранные задания отсутствуют среди завершённых")
+    return ValidatedReviewRequest(selection, completed_run)
 
 
 def required_recording_positions(tasks: Iterable[int]) -> set[tuple[int, int | None]]:

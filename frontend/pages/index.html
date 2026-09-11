@@ -13,70 +13,52 @@
   <link rel="stylesheet" href="/styles/base.css">
 </head>
 <body>
-  <div class="page-motif" aria-hidden="true" lang="zh">语</div>
   <header class="site-header">
-    <div class="header-primary">
-      <a class="brand" href="#" aria-label="На главную"><img class="brand-logo" src="/assets/logo.svg" alt="" width="48" height="48"><span><b lang="zh">口试</b><small>устная часть · китайский язык</small></span></a>
-    </div>
-    <div class="header-actions">
-      <nav class="site-nav" aria-label="Разделы сайта"><a class="header-link" id="referenceLink" href="reference.html">Справочник</a><a class="header-link" href="variants.html">Все варианты</a></nav><button class="sound-toggle" id="soundToggle" type="button" aria-pressed="true" aria-label="Выключить звук"><svg class="sound-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z"></path><path class="sound-waves" d="M16 8c1.4 1.1 1.4 6.9 0 8M19 5c3.2 2.8 3.2 11.2 0 14"></path></svg><span class="sound-track" aria-hidden="true"><span></span></span></button>
+    <a class="brand" href="/" aria-label="На главную"><span class="brand-mark" lang="zh">口试</span><span class="brand-divider" aria-hidden="true"></span><span class="brand-name"><b>Устная часть</b><small>китайский язык</small></span></a>
+    <nav class="site-nav" aria-label="Разделы сайта"><a class="header-link" href="/" aria-current="page">Тренажёр</a><a class="header-link" href="variants.html">Варианты</a><a class="header-link" href="history.html">История</a><a class="header-link" id="referenceLink" href="reference.html">Справочник</a></nav>
+    <div class="header-actions"><button class="sound-toggle" id="soundToggle" type="button" aria-pressed="true" aria-label="Выключить звук"><svg class="sound-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z"></path><path class="sound-waves" d="M16 8c1.4 1.1 1.4 6.9 0 8M19 5c3.2 2.8 3.2 11.2 0 14"></path></svg></button>
       <button class="account-btn" id="authButton" type="button"><span class="account-dot"></span><span id="authButtonText">Войти</span></button>
     </div>
   </header>
 
   <main class="app-shell">
     <section id="homeScreen" class="screen home-screen">
-      <div class="hero-copy">
-        <p class="eyebrow" id="heroVariant">ЕГЭ · устная часть китайского языка</p>
-        <h1 class="hero-couplet">
-          <span class="hero-chinese" lang="zh">熟能生巧</span>
-          <span class="hero-gloss">
-            <span class="hero-reading" lang="zh-Latn">shú néng shēng qiǎo</span>
-            <span class="hero-translation">Мастерство приходит с практикой.</span>
-          </span>
-        </h1>
-        <p class="hero-text">Тренируйте устную речь в формате ЕГЭ: от подготовки и записи ответа до разбора результата и работы с преподавателем.</p>
-        <div class="facts" aria-label="Формат экзамена">
-          <span><b>3</b> задания</span>
-          <span><b id="totalMinutes">14</b> <span id="totalMinutesLabel">минут</span></span>
-          <span><b id="variantCount">7</b> <span id="variantCountLabel">вариантов</span></span>
-        </div>
-      </div>
-
-      <div class="mode-panel">
-        <label class="variant-picker" for="variantSelect">
-          <span><small>Текущий материал</small><b id="variantSource">Выберите вариант</b></span>
-          <select id="variantSelect" aria-label="Выбор варианта"></select>
-        </label>
-        <div class="mode-card exam-card">
-          <span class="mode-number" lang="zh">完整</span>
-          <div>
-            <p class="eyebrow">Полная симуляция</p>
-            <h2>Экзамен</h2>
-            <p>Все три задания подряд с официальными таймингами и одной итоговой страницей записей.</p>
-          </div>
-          <button class="primary-btn" data-start="exam" type="button" disabled>Начать экзамен <span>→</span></button>
-        </div>
-        <div class="practice-block">
-          <div class="practice-heading">
-            <div><p class="eyebrow">Точечная работа</p><h2>По заданиям</h2></div>
-            <label class="speed-switch"><input id="fastMode" type="checkbox"><span></span> Быстрый режим</label>
-          </div>
+      <div class="hero-row"><span class="hero-idiom" lang="zh">熟能生巧</span><div class="hero-copy"><h1 class="hero-title">Мастерство приходит с практикой.</h1><p class="hero-text">Полный экзамен или одно задание — с официальными таймингами, записью ответа и разбором по критериям.</p><p class="hero-meta"><span class="hero-meta-rule" aria-hidden="true"></span>3 задания · <b id="totalMinutes">14</b> <span id="totalMinutesLabel">минут</span> · <b id="variantCount">7</b> <span id="variantCountLabel">вариантов</span> и банк ФИПИ</p></div></div>
+      <section class="resume-run-panel hidden" id="resumeRunPanel" aria-labelledby="resumeRunTitle">
+        <div><p class="eyebrow">Незавершённая тренировка</p><h2 id="resumeRunTitle">Продолжить с места остановки?</h2><p id="resumeRunDetails"></p><small>Текущее задание начнётся заново с полного времени подготовки. Записи из закрытой вкладки восстановить нельзя.</small></div>
+        <div class="resume-run-actions"><button class="primary-btn" id="continueRunBtn" type="button">Продолжить</button><button class="secondary-btn" id="restartInterruptedRunBtn" type="button">Начать заново</button></div>
+      </section>
+      <div class="home-columns"><section class="material-panel" aria-labelledby="selectedMaterialTitle"><div class="material-heading"><div><p class="eyebrow">Выбранный материал</p><h2 id="selectedMaterialTitle">Загружаем материал…</h2></div><a class="material-catalog-link" href="variants.html" aria-label="Сменить материал">Сменить материал →</a></div><p class="selected-material-source" id="variantSource">Проверяем источник</p><p class="selected-material-duration" id="selectedMaterialDuration">— минут</p></section>
+      <aside class="start-column"><div class="exam-card"><h2>Экзамен</h2><p>Три задания подряд, 14 минут, одна итоговая страница записей.</p><button class="primary-btn gold-btn" data-start="exam" type="button" disabled>Начать экзамен →</button></div><div class="practice-card"><div class="practice-heading"><b>По заданиям</b></div>
           <div class="task-grid">
-            <button class="task-card" data-start="1" type="button" disabled><b>01</b><span>Пять вопросов<small id="task1Timing">1:30 + 5 × 0:20</small></span><i>→</i></button>
-            <button class="task-card" data-start="2" type="button" disabled><b>02</b><span>Описание фото<small id="task2Timing">2:00 + до 2:00</small></span><i>→</i></button>
-            <button class="task-card" data-start="3" type="button" disabled><b>03</b><span id="task3CardTitle">Проектная работа<small id="task3Timing">3:00 + до 3:00</small></span><i>→</i></button>
-          </div>
-        </div>
-        <div class="mic-row">
-          <div><span class="status-dot" id="micDot"></span><b id="micStatus">Микрофон ещё не проверен</b><small>Записи остаются только на этом устройстве</small></div>
-          <button class="secondary-btn" id="checkMicBtn" type="button">Проверить микрофон</button>
-        </div>
-        <section class="student-review-requests hidden" id="studentReviewRequestsPanel">
-          <div><p class="eyebrow">Личная история</p><h2>Мои разборы</h2></div>
-          <div class="review-request-list" id="studentReviewRequestsList"></div>
+            <button class="task-card" data-start="1" type="button" disabled><span class="task-badge">1</span><span class="task-body">Пять вопросов<small id="task1Timing">1:30 + 5 × 0:20</small></span><i aria-hidden="true">→</i></button><button class="task-card" data-start="2" type="button" disabled><span class="task-badge">2</span><span class="task-body">Описание фотографии<small id="task2Timing">2:00 + до 2:00</small></span><i aria-hidden="true">→</i></button><button class="task-card" data-start="3" type="button" disabled><span class="task-badge">3</span><span class="task-body" id="task3CardTitle">Проектная работа<small id="task3Timing">3:00 + до 3:00</small></span><i aria-hidden="true">→</i></button></div><div class="mic-row"><span class="mic-state"><span class="status-dot" id="micDot"></span><b id="micStatus">Микрофон ещё не проверен</b></span><button class="text-btn" id="checkMicBtn" type="button">проверить</button></div></div>
+      </aside></div>
+    </section>
+
+    <section id="readinessScreen" class="screen readiness-screen hidden" aria-labelledby="readinessTitle">
+      <button class="back-btn readiness-back" id="cancelReadyRunBtn" type="button">← Назад к выбору</button>
+      <div class="readiness-heading">
+        <p class="eyebrow">Перед началом</p>
+        <h1 id="readinessTitle" tabindex="-1">Всё готово к тренировке?</h1>
+        <p>Проверьте параметры и микрофон. Задание останется закрытым, пока вы отдельно не запустите таймер подготовки.</p>
+      </div>
+      <div class="readiness-layout">
+        <section class="readiness-summary" aria-labelledby="readinessMaterial">
+          <p class="eyebrow">Выбранный материал</p>
+          <h2 id="readinessMaterial"></h2>
+          <dl class="readiness-facts">
+            <div><dt>Режим</dt><dd id="readinessMode"></dd></div>
+            <div><dt>Что выполняем</dt><dd id="readinessTasks"></dd></div>
+            <div><dt>Примерное время</dt><dd id="readinessDuration"></dd></div>
+          </dl>
+        </section>
+        <section class="readiness-check" aria-labelledby="readinessMicTitle">
+          <span class="status-dot" id="readinessMicDot"></span>
+          <div><p class="eyebrow">Проверка оборудования</p><h2 id="readinessMicTitle">Микрофон</h2><p id="readinessMicStatus" aria-live="polite">Проверяем доступ…</p></div>
+          <button class="secondary-btn" id="retryReadinessMicBtn" type="button">Повторить проверку</button>
         </section>
       </div>
+      <button class="primary-btn readiness-start" id="beginReadyRunBtn" type="button" disabled>Начать тренировку</button>
     </section>
 
     <section id="runnerScreen" class="screen runner-screen hidden">
@@ -111,10 +93,12 @@
         <p class="eyebrow">Тренировка завершена</p>
         <h1 lang="zh">答案都在这里。</h1>
         <p id="submissionStatus">Прослушайте записи и отметьте, что получилось.</p>
+        <button class="text-btn hidden" id="retryArchiveBtn" type="button">Повторить сохранение архива</button>
       </div>
       <div class="result-layout">
         <div class="recordings-panel">
           <h2>Ваши записи</h2>
+          <button class="primary-btn wide hidden recordings-download-all" id="downloadAllRecordingsBtn" type="button">Скачать все записи</button>
           <div id="recordingsList"></div>
           <section class="review-request-panel hidden" id="reviewRequestPanel" aria-labelledby="reviewRequestTitle">
             <p class="eyebrow">Разбор с преподавателем</p>
@@ -140,14 +124,7 @@
     </section>
   </main>
 
-  <footer class="site-footer">
-    <div class="site-footer-inner">
-      <div class="footer-brand"><img src="/assets/logo.svg" alt="" width="48" height="48"><div><b lang="zh">口试</b><span>Подготовка к устной части ЕГЭ по китайскому языку</span></div></div>
-      <div class="footer-about"><p class="eyebrow">Разработка и методика</p><b>Николай Бровкин</b><span>Преподаватель китайского языка</span></div>
-      <div class="footer-links"><a href="mailto:bronik04@gmail.com">bronik04@gmail.com</a><a href="https://github.com/bronik04" target="_blank" rel="noreferrer">GitHub · bronik04</a></div>
-    </div>
-    <p class="footer-bottom">© <span data-current-year></span> <span lang="zh">口试</span> · Учебный проект</p>
-  </footer>
+  <footer class="site-footer"><span>Подготовка к устной части ЕГЭ по китайскому языку</span><span class="footer-author">Николай Бровкин · преподаватель китайского языка</span></footer>
 
   <div class="modal-backdrop hidden" id="authModal">
     <section class="auth-dialog" role="dialog" aria-modal="true" aria-labelledby="authTitle">
@@ -162,6 +139,7 @@
         </div>
         <form id="authForm">
           <label class="register-only hidden" id="authNameLabel">Имя и фамилия<input id="authName" name="displayName" type="text" autocomplete="name" minlength="2" maxlength="80"></label>
+          <p class="registration-archive-disclosure register-only hidden" id="registrationArchiveDisclosure">Ответы сохраняются в личном архиве на 6 месяцев, затем удаляются автоматически.</p>
           <label>Email<input id="authEmail" name="email" type="email" autocomplete="email" required></label>
           <label>Пароль<input id="authPassword" name="password" type="password" autocomplete="current-password" minlength="8" maxlength="128" required></label>
           <button class="primary-btn wide" id="authSubmitBtn" type="submit">Войти</button>
@@ -189,63 +167,18 @@
         <div class="account-security-card hidden" id="emailVerificationPanel">
           <div><b>Email не подтверждён</b><span>Подтвердите адрес, чтобы защитить восстановление доступа.</span></div>
           <button class="secondary-btn" id="sendVerificationBtn" type="button">Отправить письмо</button>
+          <p class="auth-message" id="emailVerificationMessage" aria-live="polite"></p>
         </div>
         <div id="studentAccountTools">
           <div class="account-stat"><b id="accountRuns">0</b><span id="accountRunsLabel">завершённых тренировок</span></div>
-          <section class="account-progress-card"><div><p class="mini-heading">Ваш прогресс</p><b id="progressSummary">Тренировок пока нет</b><small id="progressSyncStatus">Сохраняется в этом браузере</small></div><button class="text-btn" id="openProgressBtn" type="button">История →</button></section>
+          <section class="account-progress-card"><div><p class="mini-heading">Ваш прогресс</p><b id="progressSummary">Тренировок пока нет</b><small id="progressSyncStatus">Сохраняется в этом браузере</small></div><a class="text-btn account-history-link" href="history.html">История →</a></section>
         </div>
         <div class="account-actions">
-          <button class="primary-btn wide hidden" id="teacherCabinetBtn" type="button">Открыть кабинет преподавателя</button>
+          <a class="primary-btn wide hidden" id="teacherCabinetLink" href="teacher.html">Открыть кабинет преподавателя</a>
+          <a class="secondary-btn account-security-link" id="accountSecurityLink" href="security.html">Безопасность аккаунта</a>
           <button class="secondary-btn" id="logoutBtn" type="button">Выйти из аккаунта</button>
         </div>
-        <section class="account-security-section">
-          <p class="mini-heading">Безопасность аккаунта</p>
-          <button class="auth-link" id="showAuditBtn" type="button">Показать журнал действий</button>
-          <div class="audit-list hidden" id="auditList"></div>
-          <button class="auth-link danger-link" id="showDeleteAccountBtn" type="button">Удалить аккаунт</button>
-          <form class="delete-account-form hidden" id="deleteAccountForm">
-            <p>Будут удалены прогресс, заявки на разбор, сохранённые аудиозаписи и загруженные материалы. Отменить это действие нельзя.</p>
-            <label>Текущий пароль<input id="deleteAccountPassword" type="password" autocomplete="current-password" minlength="8" maxlength="128" required></label>
-            <button class="danger-btn" type="submit">Удалить аккаунт навсегда</button>
-          </form>
-          <p class="auth-message" id="accountSecurityMessage" aria-live="polite"></p>
-        </section>
       </div>
-    </section>
-  </div>
-
-  <div class="modal-backdrop hidden" id="teacherModal">
-    <section class="auth-dialog teacher-dialog" role="dialog" aria-modal="true" aria-labelledby="teacherTitle">
-      <button class="modal-close" id="teacherCloseBtn" type="button" aria-label="Закрыть">×</button>
-      <p class="eyebrow">Кабинет преподавателя</p>
-      <h2 id="teacherTitle">Очередь разбора</h2>
-      <p class="auth-lede">Прослушивайте отправленные записи и сохраняйте баллы по критериям.</p>
-      <section class="teacher-materials-entry">
-        <div><p class="eyebrow">Учебные материалы</p><h3>Конструктор вариантов</h3><p>Создавайте полные варианты и отдельные задания, сохраняйте черновики и публикуйте их в каталоге.</p></div>
-        <a class="primary-btn" id="teacherMaterialEditorLink" href="variant-editor.html">Добавить материал →</a>
-      </section>
-      <section class="teacher-review-section">
-        <div class="review-heading"><div><p class="eyebrow">Проверка</p><h2>Заявки учеников</h2></div><b class="queue-count" id="reviewQueueCount">Нет заявок на разбор</b></div>
-        <form class="submission-filters" id="reviewRequestFilters">
-          <label>Ученик<input id="reviewStudentFilter" type="search" placeholder="Имя или email"></label>
-          <label>Задание<select id="reviewTaskFilter"><option value="">Все задания</option><option value="1">Задание 1</option><option value="2">Задание 2</option><option value="3">Задание 3</option></select></label>
-          <label>Статус<select id="reviewStatusFilter"><option value="">Все</option><option value="queued">На разборе</option><option value="reviewed">Разобрано</option></select></label>
-          <label>Дата<input id="reviewDateFilter" type="date"></label>
-          <button class="secondary-btn" type="submit">Применить</button>
-        </form>
-        <p class="auth-message" id="teacherReviewMessage" aria-live="polite"></p>
-        <div class="teacher-submissions" id="teacherReviewRequests"></div>
-      </section>
-    </section>
-  </div>
-
-  <div class="modal-backdrop hidden" id="progressModal">
-    <section class="auth-dialog progress-dialog" role="dialog" aria-modal="true" aria-labelledby="progressTitle">
-      <button class="modal-close" id="progressCloseBtn" type="button" aria-label="Закрыть">×</button>
-      <p class="eyebrow">История</p>
-      <h2 id="progressTitle">Ваши тренировки</h2>
-      <div class="history-list" id="historyList"></div>
-      <button class="secondary-btn history-clear" id="clearHistoryBtn" type="button">Очистить историю</button>
     </section>
   </div>
 

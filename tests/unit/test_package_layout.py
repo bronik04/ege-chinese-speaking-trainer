@@ -24,6 +24,39 @@ class PackageLayoutTest(unittest.TestCase):
         self.assertFalse((root / "server.py").exists())
         self.assertFalse((root / "legacy").exists())
 
+    def test_retired_assignment_runtime_is_removed(self):
+        root = Path(__file__).resolve().parents[2]
+        for relative in (
+            "src/trainer/api/routes/work.py",
+            "src/trainer/api/controllers/work.py",
+            "src/trainer/infrastructure/database/queries/combined.py",
+            "src/trainer/infrastructure/database/queries/assignments.py",
+            "src/trainer/infrastructure/database/queries/groups.py",
+            "src/trainer/infrastructure/database/queries/submissions.py",
+            "src/trainer/infrastructure/database/submissions.py",
+            "src/trainer/infrastructure/exports.py",
+            "src/trainer/services/assignment_assets.py",
+        ):
+            self.assertFalse((root / relative).exists(), relative)
+
+        source = (root / "src/trainer/api/schemas.py").read_text(encoding="utf-8")
+        for name in (
+            "GroupRequest",
+            "JoinGroupRequest",
+            "AssignmentRequest",
+            "AssignmentUpdateRequest",
+            "SubmissionRequest",
+            "SubmissionCompleteRequest",
+            "ReviewRequest",
+        ):
+            self.assertNotIn(f"class {name}(", source)
+
+    def test_review_asset_root_has_current_logical_name(self):
+        from trainer.api import runtime
+
+        self.assertEqual(runtime.REVIEW_ASSET_DIR, runtime.DATA_DIR / "assignment-assets")
+        self.assertFalse(hasattr(runtime, "ASSIGNMENT_ASSET_DIR"))
+
     def test_frontend_content_and_public_files_are_separated(self):
         root = Path(__file__).resolve().parents[2]
         expected = (

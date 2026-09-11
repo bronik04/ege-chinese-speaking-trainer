@@ -5,20 +5,21 @@ from http.cookies import SimpleCookie
 
 from fastapi import Request
 
+from trainer.api import runtime
 from trainer.api.errors import ApiError, default_error_code
 from trainer.api.results import RequestContext
-from trainer.api.runtime import connect
+from trainer.config import account_public_url as configured_account_public_url
+from trainer.config import owner_email
 from trainer.domain.accounts import authorize_role
 from trainer.domain.materials import editor_allowed
-from trainer.services import accounts as account_services
 
 
 def account_public_url() -> str:
-    return os.environ.get("TRAINER_PUBLIC_URL", "").rstrip("/") or "http://127.0.0.1:8080"
+    return configured_account_public_url()
 
 
 def owner_email_from_env() -> str:
-    return os.environ.get("TRAINER_OWNER_EMAIL", "").strip().lower()
+    return owner_email()
 
 
 def validate_account_configuration() -> None:
@@ -40,7 +41,7 @@ def request_context(request: Request) -> RequestContext:
 
 
 def current_user_or_none(request: Request) -> dict | None:
-    return account_services.current_user(connect, session_token(request))
+    return runtime.account_service().current_user(session_token(request))
 
 
 def _require_role(request: Request, role: str) -> dict:

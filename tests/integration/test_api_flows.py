@@ -1,8 +1,11 @@
+import copy
 import json
 import os
 import secrets
+import sqlite3
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -13,11 +16,49 @@ from fastapi.testclient import TestClient
 import asgi
 from trainer import main as trainer_main
 from trainer.api import dependencies, routes, runtime
-from trainer.api.controllers import auth, recordings, review_requests
+from trainer.api.controllers import personal_recordings, recordings, review_requests
 from trainer.api.errors import ApiError
 from trainer.api.results import FileResult, RequestContext
+from trainer.api.schemas import PersonalRecordingUpload
 from trainer.api.security import request_has_same_origin
+from trainer.config import owner_email
 from trainer.domain.accounts import password_hash, password_matches
+from trainer.domain.recording_retention import expires_at
+from trainer.infrastructure.database.personal_recording_repository import SQLitePersonalRecordingRepository
+from trainer.infrastructure.database.queries import review_requests as review_request_queries
+from trainer.infrastructure.database.recording_access_repository import SQLiteRecordingAccessRepository
+from trainer.infrastructure.storage import LocalAudioStorage
+from trainer.services.personal_recordings import UPLOAD_INTENT_GRACE_SECONDS, PersonalRecordingService
+from trainer.services.recording_access import RecordingAccessService
+
+PROGRESS_MIGRATION_CASE = next(
+    case
+    for case in json.loads(
+        (Path(__file__).parents[2] / "tests" / "fixtures" / "progress_v1_migration_cases.json").read_text(
+            encoding="utf-8"
+        )
+    )["cases"]
+    if case["name"] == "valid completed run survives and unknown fields disappear"
+)
+
+
+def review_run(run_id, *, variant_id="demo-2026", tasks=(2,)):
+    run_tasks = list(tasks)
+    return {
+        "id": run_id,
+        "variantId": variant_id,
+        "variantLabel": "Вариант для разбора",
+        "mode": "exam" if run_tasks == [1, 2, 3] else "practice",
+        "tasks": run_tasks,
+        "completedTasks": run_tasks,
+        "currentTask": run_tasks[-1],
+        "phase": "answer",
+        "fastMode": False,
+        "startedAt": "2026-09-07T10:00:00Z",
+        "status": "completed",
+        "completedAt": "2026-09-07T10:30:00Z",
+        "recordingsCount": 1,
+    }
 
 
 class SecurityHelpersTest(unittest.TestCase):
@@ -109,6 +150,92 @@ class FileResponseTest(unittest.IsolatedAsyncioTestCase):
 
 
 class ApiFlowTest(unittest.TestCase):
+    def test_progress_round_trip_replacement_and_isolation(self):
+        student = self.register_student("progress-one")
+        other = self.register_student("progress-two")
+        status, empty, _ = self.request("GET", "/api/progress", cookie=student)
+        self.assertEqual((status, empty), (200, {"progress": None, "updatedAt": None}))
+        legacy = copy.deepcopy(PROGRESS_MIGRATION_CASE["input"])
+        expected = copy.deepcopy(PROGRESS_MIGRATION_CASE["expected"])
+        status, saved, _ = self.request("PUT", "/api/progress", {"progress": legacy}, student)
+        self.assertEqual(status, 200, saved)
+        self.assertEqual(set(saved), {"ok", "updatedAt"})
+        self.assertIs(saved["ok"], True)
+        self.assertIsInstance(saved["updatedAt"], int)
+        status, loaded, _ = self.request("GET", "/api/progress", cookie=student)
+        self.assertEqual((status, loaded), (200, {"progress": expected, "updatedAt": saved["updatedAt"]}))
+        self.assertEqual(self.request("GET", "/api/progress", cookie=other)[1], {"progress": None, "updatedAt": None})
+        self.assertEqual(self.request("PUT", "/api/progress", {"progress": expected}, student)[0], 200)
+        self.assertEqual(self.request("GET", "/api/progress", cookie=student)[1]["progress"], expected)
+
+    def test_progress_invalid_input_does_not_replace_saved_history(self):
+        student = self.register_student("progress-validation")
+        original = copy.deepcopy(PROGRESS_MIGRATION_CASE["expected"])
+        self.assertEqual(self.request("PUT", "/api/progress", {"progress": original}, student)[0], 200)
+        legacy_cases = (
+            ({"version": 1, "runs": None}, "Invalid progress document"),
+            ({"version": 1, "runs": [None] * 201}, "Progress history is too large"),
+        )
+        for document, message in legacy_cases:
+            status, error, _ = self.request("PUT", "/api/progress", {"progress": document}, student)
+            self.assertEqual((status, error["code"], error["message"]), (400, "invalid_request", message))
+
+        bad_extra = copy.deepcopy(original)
+        bad_extra["settings"]["extra"] = True
+        bad_task = copy.deepcopy(original)
+        bad_task["runs"][0]["tasks"] = ["2"]
+        bad_relationship = copy.deepcopy(original)
+        bad_relationship["runs"][0]["currentTask"] = 3
+        invalid_payloads = (
+            {},
+            {"progress": []},
+            {"progress": {}},
+            {"progress": {"version": True}},
+            {"progress": {"version": 1.0}},
+            {"progress": {"version": "1"}},
+            {"progress": {"version": 9}},
+            {"progress": bad_extra},
+            {"progress": bad_task},
+            {"progress": bad_relationship},
+            {"progress": {**original, "version": 2.0}},
+            {"progress": original, "extra": 1},
+        )
+        for payload in invalid_payloads:
+            with self.subTest(payload=payload):
+                status, error, _ = self.request("PUT", "/api/progress", payload, student)
+                self.assertEqual((status, error.get("code")), (422, "request_validation_failed"))
+        self.assertEqual(self.request("GET", "/api/progress", cookie=student)[1]["progress"], original)
+
+    def test_progress_incompatible_storage_returns_conflict_without_overwrite(self):
+        for index, encoded in enumerate(("not-json", "[]", '{"version":9}')):
+            prefix = f"progress-corrupt-{index}"
+            student = self.register_student(prefix)
+            with runtime.connect() as database:
+                user_id = database.execute(
+                    "SELECT id FROM users WHERE email LIKE ? ORDER BY id DESC LIMIT 1", (f"{prefix}-%",)
+                ).fetchone()["id"]
+                database.execute(
+                    "INSERT INTO user_progress(user_id,progress_json,updated_at) VALUES (?,?,?)",
+                    (user_id, encoded, 1000),
+                )
+            status, error, _ = self.request("GET", "/api/progress", cookie=student)
+            self.assertEqual(
+                (status, error["code"], error["message"]),
+                (409, "progress_data_incompatible", "Сохранённый прогресс имеет несовместимый формат"),
+            )
+            with runtime.connect() as database:
+                stored = database.execute(
+                    "SELECT progress_json FROM user_progress WHERE user_id=?", (user_id,)
+                ).fetchone()["progress_json"]
+            self.assertEqual(stored, encoded)
+
+    def test_progress_auth_and_role_restrictions_remain(self):
+        owner = self.verified_owner_cookie()
+        for method in ("GET", "PUT"):
+            payload = {"progress": {"version": 1}} if method == "PUT" else None
+            self.assertEqual(self.request(method, "/api/progress", payload)[0], 401)
+            self.assertEqual(self.request(method, "/api/progress", payload, owner)[0], 403)
+
     @classmethod
     def setUpClass(cls):
         cls.original_owner_email = os.environ.get("TRAINER_OWNER_EMAIL")
@@ -119,15 +246,15 @@ class ApiFlowTest(unittest.TestCase):
         runtime.DB_PATH = root / "trainer.sqlite3"
         runtime.AUDIO_DIR = root / "audio"
         runtime.MATERIAL_ASSET_DIR = root / "material-assets"
-        runtime.ASSIGNMENT_ASSET_DIR = root / "assignment-assets"
-        auth.MATERIAL_ASSET_DIR = runtime.MATERIAL_ASSET_DIR
-        auth.ASSIGNMENT_ASSET_DIR = runtime.ASSIGNMENT_ASSET_DIR
+        runtime.REVIEW_ASSET_DIR = root / "assignment-assets"
         dependencies.DATA_DIR = root
         dependencies.AUDIO_DIR = runtime.AUDIO_DIR
         recordings.DATA_DIR = root
         recordings.AUDIO_DIR = runtime.AUDIO_DIR
-        cls.original_validate_duration = review_requests.validate_duration
-        review_requests.validate_duration = lambda path, task: 1.0
+        cls.original_validate_duration = runtime.validate_duration
+        runtime.validate_duration = lambda path, task: 1.0
+        cls.original_personal_validate_duration = runtime.validate_personal_recording_duration
+        runtime.validate_personal_recording_duration = lambda path, task: 1.0
         cls.client_context = TestClient(asgi.app)
         cls.client = cls.client_context.__enter__()
         cls.origin = "http://testserver"
@@ -135,7 +262,8 @@ class ApiFlowTest(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.client_context.__exit__(None, None, None)
-        review_requests.validate_duration = cls.original_validate_duration
+        runtime.validate_duration = cls.original_validate_duration
+        runtime.validate_personal_recording_duration = cls.original_personal_validate_duration
         if cls.original_owner_email is None:
             os.environ.pop("TRAINER_OWNER_EMAIL", None)
         else:
@@ -271,6 +399,99 @@ class ApiFlowTest(unittest.TestCase):
         self.assertEqual(status, 201)
         return self.cookie_from(headers)
 
+    def test_review_request_run_contract_separates_shape_and_relationship_errors(self):
+        student_cookie = self.register_student("review-run-contract")
+        status, error, _ = self.request(
+            "POST",
+            "/api/review-requests",
+            {
+                "kind": "task",
+                "variantId": "demo-2026",
+                "tasks": [2],
+                "run": {"id": "broken"},
+            },
+            student_cookie,
+        )
+        self.assertEqual((status, error["code"]), (422, "request_validation_failed"))
+
+        interrupted = review_run("interrupted")
+        interrupted.update(status="interrupted", completedTasks=[])
+        status, error, _ = self.request(
+            "POST",
+            "/api/review-requests",
+            {
+                "kind": "task",
+                "variantId": "demo-2026",
+                "tasks": [2],
+                "run": interrupted,
+            },
+            student_cookie,
+        )
+        self.assertEqual((status, error["code"]), (400, "invalid_request"))
+        self.assertEqual(error["message"], "Для разбора можно отправить только завершённую попытку")
+
+        mismatch = review_run("mismatch")
+        status, error, _ = self.request(
+            "POST",
+            "/api/review-requests",
+            {
+                "kind": "task",
+                "variantId": "other-2026",
+                "tasks": [2],
+                "run": mismatch,
+            },
+            student_cookie,
+        )
+        self.assertEqual((status, error["code"]), (400, "invalid_request"))
+        self.assertEqual(error["message"], "Вариант попытки не совпадает с выбранным вариантом")
+
+    def test_review_request_persists_canonical_run_and_legacy_rows_remain_listable(self):
+        student_cookie = self.register_student("review-run-storage")
+        source = review_run("canonical-storage")
+        source.update(
+            startedAt="2026-09-07T13:00:00+03:00",
+            completedAt="2026-09-07T13:30:00+03:00",
+        )
+        status, created, _ = self.request(
+            "POST",
+            "/api/review-requests",
+            {"kind": "task", "variantId": "demo-2026", "tasks": [2], "run": source},
+            student_cookie,
+        )
+        self.assertEqual(status, 201, created)
+        request_id = created["reviewRequest"]["id"]
+        with runtime.connect() as database:
+            stored = json.loads(
+                database.execute("SELECT run_json FROM review_requests WHERE id=?", (request_id,)).fetchone()[0]
+            )
+            self.assertEqual(stored["startedAt"], "2026-09-07T10:00:00.000Z")
+            self.assertEqual(stored["completedAt"], "2026-09-07T10:30:00.000Z")
+
+        status, canonical_list, _ = self.request("GET", "/api/student/review-requests", cookie=student_cookie)
+        self.assertEqual(status, 200, canonical_list)
+        canonical_item = next(item for item in canonical_list["requests"] if item["id"] == request_id)
+        self.assertEqual(canonical_item["runId"], "canonical-storage")
+
+        with runtime.connect() as database:
+            database.execute("UPDATE review_requests SET run_json=? WHERE id=?", ('{"legacy":true}', request_id))
+
+        status, listed, _ = self.request("GET", "/api/student/review-requests", cookie=student_cookie)
+
+        self.assertEqual(status, 200, listed)
+        legacy_item = next(item for item in listed["requests"] if item["id"] == request_id)
+        self.assertIsNone(legacy_item["runId"])
+        with runtime.connect() as database:
+            database.execute("UPDATE review_requests SET run_json=? WHERE id=?", ("{", request_id))
+        status, malformed_list, _ = self.request("GET", "/api/student/review-requests", cookie=student_cookie)
+        self.assertEqual(status, 200, malformed_list)
+        malformed_item = next(item for item in malformed_list["requests"] if item["id"] == request_id)
+        self.assertIsNone(malformed_item["runId"])
+        with runtime.connect() as database:
+            self.assertEqual(
+                database.execute("SELECT run_json FROM review_requests WHERE id=?", (request_id,)).fetchone()[0],
+                "{",
+            )
+
     def test_student_queues_single_task_for_owner_review(self):
         owner_cookie = self.verified_owner_cookie()
         student_cookie = self.register_student("review-single")
@@ -283,7 +504,7 @@ class ApiFlowTest(unittest.TestCase):
                 "kind": "task",
                 "variantId": "demo-2026",
                 "tasks": [2],
-                "run": {"id": "review-task-2", "status": "completed", "completedTasks": [2]},
+                "run": review_run("review-task-2"),
             },
             student_cookie,
         )
@@ -302,6 +523,11 @@ class ApiFlowTest(unittest.TestCase):
         )
         self.assertEqual(status, 201, recording)
         recording_id = recording["recording"]["id"]
+        with runtime.connect() as database:
+            created_at, recording_expires_at = database.execute(
+                "SELECT created_at,expires_at FROM review_request_recordings WHERE id=?", (recording_id,)
+            ).fetchone()
+        self.assertEqual(recording_expires_at, expires_at(created_at))
 
         status, hidden_detail, _ = self.request(
             "GET", f"/api/teacher/review-requests/{request_id}", cookie=other_student_cookie
@@ -318,9 +544,11 @@ class ApiFlowTest(unittest.TestCase):
         self.assertEqual(status, 200)
         queued = next(item for item in owner_queue["requests"] if item["id"] == request_id)
         self.assertEqual(queued["status"], "queued")
+        self.assertNotIn("runId", queued)
         status, history, _ = self.request("GET", "/api/student/review-requests", cookie=student_cookie)
         self.assertEqual(status, 200)
         queued_student_item = next(item for item in history["requests"] if item["id"] == request_id)
+        self.assertEqual(queued_student_item["runId"], "review-task-2")
         self.assertNotIn("total", queued_student_item)
         self.assertNotIn("maximum", queued_student_item)
 
@@ -360,6 +588,235 @@ class ApiFlowTest(unittest.TestCase):
         self.assertEqual(status, 200, corrected)
         self.assertEqual((corrected["reviewRequest"]["total"], corrected["reviewRequest"]["maximum"]), (4, 7))
 
+        with runtime.connect() as database:
+            database.execute("UPDATE review_request_recordings SET expires_at=100 WHERE id=?", (recording_id,))
+        access_service = RecordingAccessService(
+            SQLiteRecordingAccessRepository(runtime.connect),
+            owner_email=owner_email(),
+            clock=lambda: 100,
+        )
+        with (
+            patch.object(
+                runtime,
+                "recording_access_service",
+                return_value=access_service,
+            ),
+            patch.object(review_request_queries.time, "time", return_value=100),
+        ):
+            self.assertEqual(self.request_bytes(f"/api/review-recordings/{recording_id}", student_cookie)[0], 404)
+            self.assertEqual(self.request_bytes(f"/api/review-recordings/{recording_id}", owner_cookie)[0], 404)
+            status, expired_history, _ = self.request("GET", "/api/student/review-requests", cookie=student_cookie)
+            expired_item = next(item for item in expired_history["requests"] if item["id"] == request_id)
+            self.assertEqual(expired_item["items"][0]["recordings"], [])
+            status, expired_detail, _ = self.request(
+                "GET", f"/api/teacher/review-requests/{request_id}", cookie=owner_cookie
+            )
+            self.assertEqual(expired_detail["reviewRequest"]["items"][0]["recordings"], [])
+
+    def test_personal_recordings_are_private_owner_bound_and_expire(self):
+        student_cookie = self.register_student("personal-recording")
+        other_student_cookie = self.register_student("personal-recording-other")
+        upload_path = (
+            "/api/personal-recordings?runId=run-1&variantId=demo-2026&taskNumber=2&questionNumber=1&label=Answer"
+        )
+
+        status, payload = self.request_audio(upload_path, b"0123456789", student_cookie)
+        self.assertEqual(status, 201, payload)
+        recording = payload["recording"]
+        self.assertEqual(
+            set(recording),
+            {"id", "runId", "variantId", "taskNumber", "questionNumber", "label", "createdAt", "expiresAt"},
+        )
+        recording_id = recording["id"]
+
+        with runtime.connect() as database:
+            storage_key = database.execute(
+                "SELECT storage_key FROM personal_recordings WHERE id=?", (recording_id,)
+            ).fetchone()["storage_key"]
+            cleanup_jobs = database.execute(
+                "SELECT COUNT(*) FROM storage_cleanup_jobs WHERE audio_keys_json LIKE ?",
+                (f'%"{storage_key}"%',),
+            ).fetchone()[0]
+        self.assertEqual(cleanup_jobs, 0)
+
+        status, listed, _ = self.request("GET", "/api/personal-recordings", cookie=student_cookie)
+        self.assertEqual(status, 200, listed)
+        self.assertEqual(listed["recordings"], [recording])
+        self.assertNotIn("storageKey", json.dumps(listed))
+
+        status, body, mime_type = self.request_bytes(f"/api/personal-recordings/{recording_id}", student_cookie)
+        self.assertEqual((status, body, mime_type), (200, b"0123456789", "audio/webm"))
+        self.assertEqual(self.request("GET", "/api/personal-recordings")[0], 401)
+        self.assertEqual(self.request_bytes(f"/api/personal-recordings/{recording_id}", other_student_cookie)[0], 404)
+
+        status, duplicate = self.request_audio(upload_path, b"second", student_cookie)
+        self.assertEqual(status, 409, duplicate)
+        self.assertEqual(duplicate["code"], "personal_recording_exists")
+
+        status, invalid_metadata, _ = self.request(
+            "POST",
+            "/api/personal-recordings?runId=run-2&variantId=demo-2026&taskNumber=2&label=Answer",
+            cookie=student_cookie,
+        )
+        self.assertEqual(status, 422, invalid_metadata)
+        self.client.cookies.clear()
+        invalid_mime = self.client.post(
+            "/api/personal-recordings?runId=run-2&variantId=demo-2026&taskNumber=2&questionNumber=1&label=Answer",
+            content=b"not-audio",
+            headers={
+                "Content-Type": "text/plain",
+                "Origin": self.origin,
+                "Sec-Fetch-Site": "same-origin",
+                "Cookie": student_cookie,
+            },
+        )
+        self.assertEqual(invalid_mime.status_code, 415, invalid_mime.json())
+
+        status, invalid_position = self.request_audio(
+            "/api/personal-recordings?runId=run-3&variantId=demo-2026&taskNumber=2&questionNumber=2&label=Answer",
+            b"invalid-position",
+            student_cookie,
+        )
+        self.assertEqual(status, 400, invalid_position)
+
+        with runtime.connect() as database:
+            row = database.execute(
+                "SELECT storage_key,created_at,expires_at FROM personal_recordings WHERE id=?", (recording_id,)
+            ).fetchone()
+            database.execute("UPDATE personal_recordings SET expires_at=0 WHERE id=?", (recording_id,))
+        self.assertTrue(row["storage_key"].startswith("personal-recordings/"))
+        self.assertTrue((runtime.AUDIO_DIR / row["storage_key"]).is_file())
+        self.assertFalse((runtime.ROOT / "public" / row["storage_key"]).exists())
+        self.assertEqual(row["expires_at"], expires_at(row["created_at"]))
+        self.assertEqual(self.request_bytes(f"/api/personal-recordings/{recording_id}", student_cookie)[0], 404)
+
+    def test_personal_recording_has_durable_cleanup_intent_before_storage_write(self):
+        payload = PersonalRecordingUpload(
+            runId="durable-run",
+            variantId="demo-2026",
+            taskNumber=2,
+            questionNumber=1,
+            label="Answer",
+        )
+        user = {"id": 1, "email": "student@example.test", "role": "student"}
+        with runtime.connect() as database:
+            jobs_before = database.execute("SELECT COUNT(*) FROM storage_cleanup_jobs").fetchone()[0]
+
+        class FailingFinalizeRepository(SQLitePersonalRecordingRepository):
+            def finalize_recording(self, *args, **kwargs):
+                raise sqlite3.OperationalError("metadata insert failed")
+
+        service = PersonalRecordingService(
+            FailingFinalizeRepository(runtime.connect),
+            LocalAudioStorage(runtime.AUDIO_DIR),
+            temporary_root=runtime.DATA_DIR / "tmp",
+            max_audio_body=runtime.MAX_AUDIO_BODY,
+            duration_validator=lambda path, task: 1.0,
+            upload_intent_grace_seconds=UPLOAD_INTENT_GRACE_SECONDS,
+        )
+
+        with (
+            patch.object(personal_recordings.runtime, "personal_recording_service", return_value=service),
+            self.assertRaises(sqlite3.OperationalError),
+        ):
+            personal_recordings.personal_recording_create(
+                payload,
+                b"durable-audio",
+                "audio/webm",
+                user,
+                RequestContext(client_ip="127.0.0.1", user_agent="test"),
+            )
+
+        with runtime.connect() as database:
+            jobs = database.execute("SELECT audio_keys_json FROM storage_cleanup_jobs").fetchall()
+        self.assertEqual(len(jobs), jobs_before + 1)
+        self.assertIn("personal-recordings/1/", jobs[-1]["audio_keys_json"])
+
+    def test_personal_recording_upload_intent_is_not_processed_while_metadata_is_committing(self):
+        with runtime.connect() as database:
+            user_id = database.execute(
+                "INSERT INTO users(email,password_hash,display_name,role,created_at) VALUES (?,?,?,?,?)",
+                (f"personal-cleanup-{secrets.token_hex(4)}@example.test", "hash", "Student", "student", 1),
+            ).lastrowid
+        user = {"id": user_id, "role": "student"}
+        payload = PersonalRecordingUpload(
+            runId="concurrent-cleanup-run",
+            variantId="demo-2026",
+            taskNumber=2,
+            questionNumber=1,
+            label="Answer",
+        )
+        cleanup_summaries = []
+
+        class CleanupDuringPutStorage(LocalAudioStorage):
+            def put(self, storage_key, source, mime_type):
+                super().put(storage_key, source, mime_type)
+                cleanup_summaries.append(runtime.storage_cleanup_service().process_batch(now=int(time.time())))
+
+        service = PersonalRecordingService(
+            SQLitePersonalRecordingRepository(runtime.connect),
+            CleanupDuringPutStorage(runtime.AUDIO_DIR),
+            temporary_root=runtime.DATA_DIR / "tmp",
+            max_audio_body=runtime.MAX_AUDIO_BODY,
+            duration_validator=lambda path, task: 1.0,
+            upload_intent_grace_seconds=UPLOAD_INTENT_GRACE_SECONDS,
+        )
+
+        with patch.object(personal_recordings.runtime, "personal_recording_service", return_value=service):
+            result = personal_recordings.personal_recording_create(
+                payload,
+                b"concurrent-audio",
+                "audio/webm",
+                user,
+                RequestContext(client_ip="127.0.0.1", user_agent="test"),
+            )
+
+        with runtime.connect() as database:
+            row = database.execute(
+                "SELECT storage_key FROM personal_recordings WHERE id=?", (result.payload["recording"]["id"],)
+            ).fetchone()
+            intent_count = database.execute(
+                "SELECT COUNT(*) FROM storage_cleanup_jobs WHERE audio_keys_json LIKE ?",
+                (f'%"{row["storage_key"]}"%',),
+            ).fetchone()[0]
+        self.assertEqual((cleanup_summaries[0].completed, cleanup_summaries[0].failed), (0, 0))
+        self.assertGreaterEqual(cleanup_summaries[0].pending, 1)
+        self.assertEqual(intent_count, 0)
+        self.assertTrue((runtime.AUDIO_DIR / row["storage_key"]).is_file())
+
+    def test_personal_recording_removes_temporary_file_when_cleanup_intent_fails(self):
+        payload = PersonalRecordingUpload(
+            runId="failed-intent-run",
+            variantId="demo-2026",
+            taskNumber=2,
+            questionNumber=1,
+            label="Answer",
+        )
+        temporary_directory = runtime.DATA_DIR / "tmp"
+        before = set(temporary_directory.glob("personal-recording-*"))
+        repository = SQLitePersonalRecordingRepository(runtime.connect)
+        service = PersonalRecordingService(
+            repository,
+            LocalAudioStorage(runtime.AUDIO_DIR),
+            temporary_root=temporary_directory,
+            max_audio_body=runtime.MAX_AUDIO_BODY,
+            duration_validator=lambda path, task: 1.0,
+            upload_intent_grace_seconds=UPLOAD_INTENT_GRACE_SECONDS,
+        )
+        with (
+            patch.object(repository, "create_upload_intent", side_effect=sqlite3.OperationalError("database down")),
+            patch.object(personal_recordings.runtime, "personal_recording_service", return_value=service),
+            self.assertRaises(sqlite3.OperationalError),
+        ):
+            personal_recordings.personal_recording_create(
+                payload,
+                b"temporary-audio",
+                "audio/webm",
+                {"id": 1, "role": "student"},
+                RequestContext(client_ip="127.0.0.1", user_agent="test"),
+            )
+        self.assertEqual(set(temporary_directory.glob("personal-recording-*")), before)
+
     def test_student_queues_complete_attempt_for_owner_review(self):
         owner_cookie = self.verified_owner_cookie()
         student_cookie = self.register_student("review-attempt")
@@ -370,7 +827,7 @@ class ApiFlowTest(unittest.TestCase):
                 "kind": "attempt",
                 "variantId": "demo-2026",
                 "tasks": [1, 2],
-                "run": {"id": "review-attempt-1-2", "status": "completed", "completedTasks": [1, 2]},
+                "run": review_run("review-attempt-1-2", tasks=(1, 2, 3)),
             },
             student_cookie,
         )
@@ -427,7 +884,7 @@ class ApiFlowTest(unittest.TestCase):
                 "kind": "task",
                 "variantId": "demo-2026",
                 "tasks": [2],
-                "run": {"id": "review-discard", "status": "completed", "completedTasks": [2]},
+                "run": review_run("review-discard"),
             },
             student_cookie,
         )
@@ -465,7 +922,7 @@ class ApiFlowTest(unittest.TestCase):
         with runtime.connect() as database:
             self.assertIsNone(database.execute("SELECT id FROM review_requests WHERE id=?", (request_id,)).fetchone())
         self.assertFalse((runtime.AUDIO_DIR / audio_key).exists())
-        self.assertTrue(all(not (runtime.ASSIGNMENT_ASSET_DIR / key).exists() for key in asset_keys))
+        self.assertTrue(all(not (runtime.REVIEW_ASSET_DIR / key).exists() for key in asset_keys))
 
         status, queued_created, _ = self.request(
             "POST",
@@ -474,7 +931,7 @@ class ApiFlowTest(unittest.TestCase):
                 "kind": "task",
                 "variantId": "demo-2026",
                 "tasks": [2],
-                "run": {"id": "review-no-discard", "status": "completed", "completedTasks": [2]},
+                "run": review_run("review-no-discard"),
             },
             student_cookie,
         )
@@ -498,7 +955,7 @@ class ApiFlowTest(unittest.TestCase):
                 "kind": "task",
                 "variantId": "demo-2026",
                 "tasks": [2],
-                "run": {"id": "discard-complete-race", "status": "completed", "completedTasks": [2]},
+                "run": review_run("discard-complete-race"),
             },
             student_cookie,
         )
@@ -543,6 +1000,15 @@ class ApiFlowTest(unittest.TestCase):
 
             def __exit__(self, *arguments):
                 return self.database.__exit__(*arguments)
+
+            def commit(self):
+                return self.database.commit()
+
+            def rollback(self):
+                return self.database.rollback()
+
+            def close(self):
+                return self.database.close()
 
             def execute(self, statement, parameters=()):
                 if statement.strip().startswith("DELETE FROM review_requests"):
@@ -611,7 +1077,7 @@ class ApiFlowTest(unittest.TestCase):
                 "kind": "task",
                 "variantId": "demo-2026",
                 "tasks": [2],
-                "run": {"id": "discard-upload-race", "status": "completed", "completedTasks": [2]},
+                "run": review_run("discard-upload-race"),
             },
             student_cookie,
         )
@@ -656,6 +1122,15 @@ class ApiFlowTest(unittest.TestCase):
 
             def __exit__(self, *arguments):
                 return self.database.__exit__(*arguments)
+
+            def commit(self):
+                return self.database.commit()
+
+            def rollback(self):
+                return self.database.rollback()
+
+            def close(self):
+                return self.database.close()
 
             def execute(self, statement, parameters=()):
                 if statement.strip().startswith("DELETE FROM review_requests"):
@@ -715,13 +1190,8 @@ class ApiFlowTest(unittest.TestCase):
         self.assertNotIn("result", upload_outcome)
         self.assertIsInstance(upload_outcome.get("error"), ApiError)
         self.assertEqual(upload_outcome["error"].code, "review_request_not_found")
+        runtime.storage_cleanup_service().process_batch()
         with runtime.connect() as database:
-            review_requests.process_cleanup_jobs(
-                database,
-                audio_root=runtime.AUDIO_DIR,
-                material_root=runtime.MATERIAL_ASSET_DIR,
-                assignment_root=runtime.ASSIGNMENT_ASSET_DIR,
-            )
             self.assertIsNone(database.execute("SELECT id FROM review_requests WHERE id=?", (request_id,)).fetchone())
         self.assertEqual(list((runtime.AUDIO_DIR / f"review-requests/{request_id}").glob("*")), [])
 
@@ -734,7 +1204,7 @@ class ApiFlowTest(unittest.TestCase):
                 "kind": "task",
                 "variantId": "demo-2026",
                 "tasks": [2],
-                "run": {"id": "review-race", "status": "completed", "completedTasks": [2]},
+                "run": review_run("review-race"),
             },
             student_cookie,
         )
@@ -786,6 +1256,15 @@ class ApiFlowTest(unittest.TestCase):
 
             def __exit__(self, *arguments):
                 return self.database.__exit__(*arguments)
+
+            def commit(self):
+                return self.database.commit()
+
+            def rollback(self):
+                return self.database.rollback()
+
+            def close(self):
+                return self.database.close()
 
             def execute(self, statement, parameters=()):
                 if self.execute_calls == 0 and statement.strip() == "BEGIN IMMEDIATE":
@@ -867,16 +1346,16 @@ class ApiFlowTest(unittest.TestCase):
         self.assertEqual(status, 201)
         cookie = self.cookie_from(headers)
 
-        original = auth.process_cleanup_jobs
+        original = runtime._process_storage_cleanup
 
-        def failing_cleanup(*_arguments, **_kwargs):
+        def failing_cleanup():
             raise OSError("storage down")
 
-        auth.process_cleanup_jobs = failing_cleanup
+        runtime._process_storage_cleanup = failing_cleanup
         try:
             status, _, _ = self.request("DELETE", "/api/account", {"password": "password123"}, cookie)
         finally:
-            auth.process_cleanup_jobs = original
+            runtime._process_storage_cleanup = original
 
         self.assertEqual(status, 200)
         with runtime.connect() as database:
@@ -889,7 +1368,8 @@ class ApiFlowTest(unittest.TestCase):
         other_student_cookie = self.register_student("review-delete-other")
         with runtime.connect() as database:
             student_id = database.execute(
-                "SELECT id FROM users WHERE email LIKE 'review-delete-%' ORDER BY id DESC LIMIT 1"
+                """SELECT id FROM users WHERE email LIKE 'review-delete-%'
+                   AND email NOT LIKE 'review-delete-other-%' ORDER BY id DESC LIMIT 1"""
             ).fetchone()["id"]
             material_id = database.execute(
                 """INSERT INTO materials(slug,owner_id,kind,task_number,title,year,source,status,content_json,
@@ -932,7 +1412,7 @@ class ApiFlowTest(unittest.TestCase):
                 "kind": "task",
                 "variantId": slug,
                 "tasks": [2],
-                "run": {"id": "delete-review", "status": "completed", "completedTasks": [2]},
+                "run": review_run("delete-review", variant_id=slug),
             },
             student_cookie,
         )
@@ -956,10 +1436,34 @@ class ApiFlowTest(unittest.TestCase):
             ).fetchone()
             review_asset_id = review_asset["id"]
             asset_key = review_asset["storage_key"]
+            personal_key = f"personal-recordings/{student_id}/account-delete.webm"
+            database.execute(
+                """INSERT INTO personal_recordings(student_id,run_id,variant_id,task_number,question_number,
+                   label,storage_key,mime_type,size_bytes,duration_seconds,created_at,expires_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    student_id,
+                    "account-delete",
+                    "demo-2026",
+                    2,
+                    1,
+                    "Личный ответ",
+                    personal_key,
+                    "audio/webm",
+                    1,
+                    1.0,
+                    1,
+                    expires_at(1),
+                ),
+            )
         review_audio_path = runtime.AUDIO_DIR / audio_key
-        review_asset_path = runtime.ASSIGNMENT_ASSET_DIR / asset_key
+        review_asset_path = runtime.REVIEW_ASSET_DIR / asset_key
+        personal_audio_path = runtime.AUDIO_DIR / personal_key
+        personal_audio_path.parent.mkdir(parents=True, exist_ok=True)
+        personal_audio_path.write_bytes(b"personal-audio")
         self.assertTrue(review_audio_path.is_file())
         self.assertTrue(review_asset_path.is_file())
+        self.assertTrue(personal_audio_path.is_file())
 
         status, _, _ = self.request_bytes(f"/api/review-assets/{review_asset_id}", owner_cookie)
         self.assertEqual(status, 404)
@@ -978,10 +1482,28 @@ class ApiFlowTest(unittest.TestCase):
         status, _, _ = self.request_bytes(f"/api/review-assets/{review_asset_id}", other_student_cookie)
         self.assertEqual(status, 404)
 
-        status, deleted, _ = self.request("DELETE", "/api/account", {"password": "student123"}, student_cookie)
+        cleanup_job = {}
+        original_cleanup = runtime._process_storage_cleanup
+
+        def inspect_cleanup():
+            with runtime.connect() as database:
+                cleanup_job["audio"] = json.loads(
+                    database.execute(
+                        "SELECT audio_keys_json FROM storage_cleanup_jobs ORDER BY id DESC LIMIT 1"
+                    ).fetchone()[0]
+                )
+            return original_cleanup()
+
+        runtime._process_storage_cleanup = inspect_cleanup
+        try:
+            status, deleted, _ = self.request("DELETE", "/api/account", {"password": "student123"}, student_cookie)
+        finally:
+            runtime._process_storage_cleanup = original_cleanup
         self.assertEqual(status, 200, deleted)
+        self.assertIn(personal_key, cleanup_job["audio"])
         self.assertFalse(review_audio_path.exists())
         self.assertFalse(review_asset_path.exists())
+        self.assertFalse(personal_audio_path.exists())
 
     def test_review_recording_upload_uses_audio_body_limit(self):
         self.assertEqual(
@@ -1031,13 +1553,8 @@ class ApiFlowTest(unittest.TestCase):
 
     def test_legacy_assignment_routes_are_not_active(self):
         student_cookie = self.register_student("retired-routes")
-        progress = {
-            "version": 1,
-            "updatedAt": "2026-08-19T12:00:00.000Z",
-            "settings": {"fastMode": False},
-            "activeRun": None,
-            "runs": [{"id": "direct-progress", "status": "completed", "completedTasks": [1]}],
-        }
+        progress = copy.deepcopy(PROGRESS_MIGRATION_CASE["input"])
+        expected = copy.deepcopy(PROGRESS_MIGRATION_CASE["expected"])
         for path, payload in (
             ("/api/teacher/groups", {"name": "Retired group"}),
             ("/api/groups/join", {"code": "ABC123"}),
@@ -1055,7 +1572,7 @@ class ApiFlowTest(unittest.TestCase):
         self.assertEqual(status, 200, written)
         status, restored, _ = self.request("GET", "/api/progress", cookie=student_cookie)
         self.assertEqual(status, 200, restored)
-        self.assertEqual(restored["progress"], progress)
+        self.assertEqual(restored["progress"], expected)
 
     def test_owner_registration_derives_teacher_role(self):
         original_owner_email = os.environ.get("TRAINER_OWNER_EMAIL")
@@ -1132,6 +1649,28 @@ class ApiFlowTest(unittest.TestCase):
         )
         self.assertNotIn("transcript_status", source)
         self.assertNotIn("enqueue_transcription", source)
+
+    def test_recording_file_routes_require_authentication(self):
+        for path in (
+            "/api/recordings/999",
+            "/api/review-recordings/999",
+            "/api/review-assets/999",
+        ):
+            with self.subTest(path=path):
+                self.assertEqual(self.request("GET", path)[0], 401)
+
+    def test_legacy_recording_remains_private_to_assignment_participants(self):
+        recording_id, student_cookie = self.create_recording()
+        other_student_cookie = self.register_student("legacy-recording-other")
+
+        self.assertEqual(
+            self.request_bytes(f"/api/recordings/{recording_id}", student_cookie)[0],
+            200,
+        )
+        self.assertEqual(
+            self.request_bytes(f"/api/recordings/{recording_id}", other_student_cookie)[0],
+            404,
+        )
 
     def test_recording_supports_range_requests(self):
         recording_id, cookie = self.create_recording()

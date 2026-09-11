@@ -1,7 +1,7 @@
 import { api } from "../shared/api.js";
-import { enhanceProjectSelects, syncProjectSelects } from "../shared/project-select.js";
 import { escapeHtml } from "../shared/progress.js";
 import "../shared/site-shell.js";
+import { editableMaterialContent } from "./material-content.js";
 
 const $ = id => document.getElementById(id);
 let currentId = null;
@@ -30,7 +30,6 @@ function showTasks() {
   document.querySelectorAll("[data-task-editor]").forEach(section => {
     section.classList.toggle("hidden", kind === "task" && Number(section.dataset.taskEditor) !== selected);
   });
-  syncProjectSelects();
 }
 
 function collectContent() {
@@ -44,11 +43,11 @@ function collectContent() {
     ...content["3"], title: $("task3Title").value.trim(),
     imageLabels: [...document.querySelectorAll("[data-task3-label]")].map(input => input.value.trim()),
   };
-  if ($("materialKind").value === "task") {
-    const number = $("materialTaskNumber").value;
-    return { [number]: content[number] };
-  }
-  return content;
+  return editableMaterialContent(
+    $("materialKind").value,
+    Number($("materialTaskNumber").value),
+    content,
+  );
 }
 
 function requestPayload() {
@@ -190,7 +189,6 @@ async function deleteMaterial() {
 
 async function initialize() {
   renderAssetFields();
-  enhanceProjectSelects();
   try {
     await api("/api/auth/me");
     await loadMine();

@@ -6,6 +6,12 @@ from scripts.check_repository_hygiene import check_repository
 
 
 class RepositoryHygieneTest(unittest.TestCase):
+    def test_allows_tracked_path_deleted_from_worktree(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+
+            self.assertEqual(check_repository(root, ["deleted-file.js"]), [])
+
     def test_rejects_common_private_key_markers(self):
         markers = ("", "ENCRYPTED ", "RSA ", "EC ", "DSA ", "OPENSSH ")
         with tempfile.TemporaryDirectory() as directory:

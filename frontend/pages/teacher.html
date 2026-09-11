@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Очередь разбора устной части ЕГЭ по китайскому языку для преподавателя.">
+  <meta name="theme-color" content="#5C0E0E">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <title>Кабинет преподавателя · 口试</title>
+  <link rel="preload" href="/assets/fonts/cormorant-garamond-cyrillic-400-600-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/assets/fonts/pt-serif-cyrillic-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/styles/fonts.css">
+  <link rel="stylesheet" href="/styles/base.css">
+  <link rel="stylesheet" href="/styles/pages/teacher.css">
+</head>
+<body>
+  <div class="page-motif" aria-hidden="true" lang="zh">师</div>
+  <header class="site-header"><a class="brand" href="index.html" aria-label="На главную"><span class="brand-mark" lang="zh">口试</span><span class="brand-divider" aria-hidden="true"></span><span class="brand-name"><b>Устная часть</b><small>китайский язык</small></span></a><nav class="site-nav" aria-label="Разделы сайта"><a class="header-link" href="index.html">Тренажёр</a><a class="header-link" href="variants.html">Варианты</a><a class="header-link" href="history.html">История</a><a class="header-link" href="reference.html">Справочник</a></nav><div class="header-actions"><a class="account-btn global-account" data-account-link href="index.html?account=1"><span class="account-dot"></span><span data-account-label>Войти</span></a></div></header>
+
+  <main class="app-shell teacher-shell">
+    <header class="teacher-hero">
+      <div><p class="eyebrow">Кабинет преподавателя</p><h1>Очередь разбора</h1></div>
+      <p id="teacherAccessMessage" aria-live="polite">Проверяем доступ…</p>
+    </header>
+    <div class="teacher-workspace hidden" id="teacherWorkspace">
+      <section class="teacher-materials-entry">
+        <div><p class="eyebrow">Учебные материалы</p><h2>Конструктор вариантов</h2><p>Создавайте полные варианты и отдельные задания, сохраняйте черновики и публикуйте их в каталоге.</p></div>
+        <a class="primary-btn" id="teacherMaterialEditorLink" href="variant-editor.html">Добавить материал →</a>
+      </section>
+      <section class="teacher-review-section">
+        <div class="review-heading"><div><p class="eyebrow">Проверка</p><h2>Заявки учеников</h2></div><b class="queue-count" id="reviewQueueCount">Нет заявок на разбор</b></div>
+        <form class="submission-filters" id="reviewRequestFilters">
+          <label>Ученик<input id="reviewStudentFilter" type="search" placeholder="Имя или email"></label>
+          <label>Задание<select id="reviewTaskFilter"><option value="">Все задания</option><option value="1">Задание 1</option><option value="2">Задание 2</option><option value="3">Задание 3</option></select></label>
+          <label>Статус<select id="reviewStatusFilter"><option value="">Все</option><option value="queued">На разборе</option><option value="reviewed">Разобрано</option></select></label>
+          <label>Дата<input id="reviewDateFilter" type="date"></label>
+          <button class="secondary-btn" type="submit">Применить</button>
+        </form>
+        <p class="auth-message" id="teacherReviewMessage" aria-live="polite"></p>
+        <div class="teacher-submissions" id="teacherReviewRequests"></div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="site-footer"><span>Подготовка к устной части ЕГЭ по китайскому языку</span><span class="footer-author">Николай Бровкин · преподаватель китайского языка</span></footer>
+  <div class="toast hidden" id="toast" role="status"></div>
+  <script type="module" src="/js/teacher/teacher-page.js"></script>
+</body>
+</html>

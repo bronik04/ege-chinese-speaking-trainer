@@ -2,49 +2,43 @@
 
 ## Что копируется
 
-- SQLite: `trainer.sqlite3`, `audio/`, `material-assets/` и `assignment-assets/` (копии изображений в снимках назначений).
-- PostgreSQL: custom-format `trainer.pgdump`; аудио и assets резервируются отдельно согласно storage backend.
-- S3/R2: включите versioning или provider backup; `scripts/backup.py` не копирует bucket.
+Локальный backup содержит SQLite `trainer.sqlite3` и архивы `audio/`, `material-assets/` и
+`assignment-assets/`. `assignment-assets/` сохраняет историческое физическое имя и содержит приватные
+snapshot-изображения; каталог обязателен при восстановлении экземпляра, на котором создавались review requests.
 
-Backup должен храниться вне хоста приложения. Пароли БД, AWS keys и `.env` в backup не включаются.
+Для S3/R2 включите versioning или provider backup: `scripts/backup.py` не копирует bucket. Backup хранится вне
+хоста приложения и имеет не менее строгие права, чем production storage. `.env` и credentials в него не входят.
 
 ## Создание
 
-SQLite в Docker:
+Локально:
 
 ```bash
-docker compose exec app python scripts/backup.py --data-dir /app/var --output-dir /app/backups --keep 14
+.venv/bin/python -m scripts.backup --data-dir var --output-dir backups --keep 14
 ```
 
-PostgreSQL использует `DATABASE_URL` и `pg_dump` из image:
+В Docker:
 
 ```bash
-docker compose -f compose.yml -f compose.scale.yml exec app python scripts/backup.py --data-dir /app/var --output-dir /app/backups --keep 14
+docker compose exec app python -m scripts.backup --data-dir /app/var --output-dir /app/backups --keep 14
 ```
 
 После создания перенесите timestamp-каталог на другой хост и зафиксируйте checksum.
 
-## Восстановление SQLite
+## Восстановление
 
-1. Остановите app и worker.
-2. Сохраните текущий `var/` как rollback-копию.
-3. В пустом каталоге разместите `trainer.sqlite3` и распакуйте `audio.tar.gz`, `material-assets.tar.gz` и `assignment-assets.tar.gz`. Обязателен только файл БД: копия, снятая до появления очередного архива, восстанавливается без него.
-4. Проверьте `PRAGMA integrity_check`, права файлов и наличие аудио/assets.
-5. Запустите app, проверьте `/api/health`, вход, каталог, одну аудиозапись и изображение задания в выданном назначении.
+1. Остановите app и сохраните текущий `var/` как rollback-копию.
+2. Восстанавливайте в новый пустой каталог, не поверх рабочей директории.
+3. Скопируйте `trainer.sqlite3` и распакуйте имеющиеся `audio.tar.gz`, `material-assets.tar.gz` и
+   `assignment-assets.tar.gz`. Старый backup может не содержать более новые каталоги, но файл БД обязателен.
+4. Выполните `PRAGMA integrity_check` и проверьте владельца/права файлов.
+5. Переключите `TRAINER_DATA_DIR`, запустите app и проверьте `/api/health`, вход, каталог, одну запись и одно
+   snapshot-изображение в review request.
 
-Автоматизированная проверка того же потока:
-
-```bash
-python -m scripts.sqlite_restore_smoke
-```
-
-## Восстановление PostgreSQL
-
-Восстанавливайте в новую пустую БД через `pg_restore --no-owner`, проверьте Alembic head, таблицы и контрольные записи, затем
-переключайте `DATABASE_URL`. Проверка на отдельной тестовой БД:
+Автоматизированный smoke того же потока:
 
 ```bash
-TEST_DATABASE_URL=postgresql://trainer:password@127.0.0.1:5432/trainer_test python -m scripts.postgres_restore_smoke
+.venv/bin/python -m scripts.sqlite_restore_smoke
 ```
 
-Если проверка не прошла, не перезаписывайте исходную БД: верните прежний `DATABASE_URL`/каталог и зафиксируйте причину.
+Если проверка не прошла, не перезаписывайте исходный `var/`: верните прежний каталог и сохраните логи причины.
