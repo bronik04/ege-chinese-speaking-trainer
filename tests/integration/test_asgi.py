@@ -45,6 +45,9 @@ class FastApiSmokeTest(unittest.TestCase):
         self.assertEqual(self.client.get("/reference.html").status_code, 200)
         self.assertEqual(self.client.get("/styles/pages/reference.css").status_code, 200)
         for path in (
+            "/variant-preview.html",
+            "/js/catalog/variant-preview-page.js",
+            "/styles/pages/variant-preview.css",
             "/history.html",
             "/js/history/history-page.js",
             "/styles/pages/history.css",
