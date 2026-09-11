@@ -382,6 +382,8 @@ for (const scenario of [
     await expect(page.locator("#runnerScreen")).toHaveClass(/hidden/);
     await expect(page.locator("#readinessScreen")).toHaveClass(/hidden/);
     await expect(page.locator("#selectedMaterialTitle")).toHaveText("Официальный вариант 2026");
+    await expect(page.locator('[data-start="exam"]')).toBeEnabled();
+    await expect(page.locator('[data-start="1"]')).toBeEnabled();
     await expect(page).not.toHaveURL(new RegExp(`variant=${delayed.materialId}`));
     const progress = await page.evaluate(() => JSON.parse(localStorage.getItem("egeChineseProgressV2")));
     expect(progress.activeRun).toEqual(delayed.interrupted.activeRun);

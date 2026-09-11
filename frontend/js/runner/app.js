@@ -288,6 +288,7 @@ function resetReadiness() {
 function cancelReadiness() {
   const returnFocus = readinessReturnFocus;
   resetReadiness();
+  if (variant) setStartButtonsEnabled(true);
   showScreen("home");
   renderResumeRunOffer();
   if (returnFocus?.isConnected && !returnFocus.disabled) returnFocus.focus();
