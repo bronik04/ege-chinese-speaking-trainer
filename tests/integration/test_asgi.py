@@ -115,6 +115,18 @@ class FastApiSmokeTest(unittest.TestCase):
                 with TestClient(asgi.app):
                     pass
 
+    def test_example_environment_satisfies_public_startup_requirements(self):
+        example_path = Path(__file__).resolve().parents[2] / ".env.example"
+        example_environment = {
+            key: value
+            for line in example_path.read_text().splitlines()
+            if line and not line.startswith("#")
+            for key, value in [line.split("=", 1)]
+        }
+
+        with patch.dict(os.environ, example_environment, clear=True):
+            dependencies.validate_account_configuration()
+
     def test_registration_rejects_obsolete_role_field(self):
         response = self.client.post(
             "/api/auth/register",
