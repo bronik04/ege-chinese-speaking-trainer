@@ -161,7 +161,7 @@ test("teacher history does not offer attempt comparison", async ({ page }) => {
 });
 
 test("every public page links to the dedicated history page", async ({ page }) => {
-  for (const path of ["/", "/variants.html", "/reference.html", "/variant-editor.html", "/history.html"]) {
+  for (const path of ["/", "/variants.html", "/variant-preview.html?variant=open-2026", "/reference.html", "/variant-editor.html", "/history.html"]) {
     await page.goto(path);
     const link = page.locator('.site-nav a[href="history.html"]');
     await expect(link).toHaveText("История");

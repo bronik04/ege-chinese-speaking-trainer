@@ -240,6 +240,9 @@ test("variant catalog filters and escapes exam metadata", () => {
   const html = catalogMarkup([variants[0]]);
   assert.doesNotMatch(html, /<script>|<Demo>/);
   assert.match(html, /&lt;script&gt;|&lt;Demo&gt;/);
+  assert.match(html, /href="variant-preview\.html\?variant=demo-2026"/);
+  assert.match(html, />Предпросмотр →<\/a>/);
+  assert.doesNotMatch(html, /href="index\.html\?variant=/);
 });
 
 test("restricted variant catalog offers registration without blocking the open material", () => {
@@ -250,7 +253,7 @@ test("restricted variant catalog offers registration without blocking the open m
   assert.match(markup, /id="catalogAccessNotice"/);
   assert.match(markup, /После регистрации доступны остальные варианты и личный архив записей/);
   assert.match(markup, /href="index\.html\?account=1"/);
-  assert.match(markup, /href="index\.html\?variant=open-2026"/);
+  assert.match(markup, /href="variant-preview\.html\?variant=open-2026"/);
   assert.doesNotMatch(catalogMarkup([], { restricted: true }), /catalogAccessNotice/);
   assert.doesNotMatch(catalogMarkup([{ id: "open-2026", year: 2026, label: "Open", source: "ФИПИ", totalMinutes: 14, tasks: {} }]), /catalogAccessNotice/);
 });

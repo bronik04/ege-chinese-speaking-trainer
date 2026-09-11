@@ -72,7 +72,11 @@ test("guest catalog exposes only the open 2026 variant", async ({ page }) => {
   await openVariant.hover();
   await expect(openVariant).toHaveCSS("background-color", "rgb(232, 211, 138)");
   await openVariant.click();
-  await expect(page).toHaveURL(/variant=open-2026/);
+  await expect(page).toHaveURL(/\/variant-preview\.html\?variant=open-2026$/);
+  await expect(page.locator(".variant-preview-gallery img")).toHaveCount(6);
+  expect(await page.content()).not.toContain("минимальный возраст");
+  await page.getByRole("link", { name: "Перейти к тренировке" }).click();
+  await expect(page).toHaveURL(/\/index\.html\?variant=open-2026$/);
   const selectedMaterial = page.getByRole("region", { name: "Официальный вариант 2026" });
   await expect(selectedMaterial).toContainText("ФИПИ · официальный материал 2026");
   await expect(selectedMaterial).toContainText("14 минут");
@@ -131,7 +135,11 @@ test("registered user publishes a standalone task and opens it from catalog", as
   await expect(page.locator(".variant-card")).toHaveCount(1);
   await expect(page.locator(".variant-kind")).toHaveText("Отдельное задание 2");
   await page.locator(".variant-open").click();
-  await expect(page).toHaveURL(new RegExp(`variant=${slug}`));
+  await expect(page).toHaveURL(new RegExp(`/variant-preview\\.html\\?variant=${slug}$`));
+  await expect(page.locator(".variant-preview-task")).toHaveCount(1);
+  await expect(page.locator(".variant-preview-gallery img")).toHaveCount(3);
+  await page.getByRole("link", { name: "Перейти к тренировке" }).click();
+  await expect(page).toHaveURL(new RegExp(`/index\\.html\\?variant=${slug}$`));
   await expect(page.getByRole("region", { name: "Авторское описание фотографии" })).toBeVisible();
 
   await page.goto("/");

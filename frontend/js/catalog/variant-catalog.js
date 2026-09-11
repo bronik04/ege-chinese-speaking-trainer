@@ -42,12 +42,12 @@ export function catalogMarkup(variants, { restricted = false } = {}) {
     const kindLabel = variant.kind === "task"
       ? `Отдельное задание ${variant.taskNumber}`
       : variant.official === false ? "Авторский вариант" : variantKind(variant.id);
-    const href = `index.html?variant=${encodeURIComponent(variant.id)}`;
+    const href = `variant-preview.html?${new URLSearchParams({ variant: variant.id })}`;
     return `<article class="variant-card" data-variant="${escapeHtml(variant.id)}">
       <div class="variant-card-media"><img src="${image}" alt="" loading="lazy"><span class="variant-year">${escapeHtml(variant.year)}</span></div>
       <div class="variant-card-copy"><p class="variant-kind">${kindLabel}</p><h3>${escapeHtml(variant.label)}</h3>
       <p class="variant-source">${escapeHtml(variant.source)}</p><ol class="variant-tasks">${tasks}</ol>
-      <footer class="variant-card-footer"><span class="variant-duration">≈ ${escapeHtml(pluralize(variant.totalMinutes, "минута", "минуты", "минут"))}</span><a class="variant-open" href="${href}">Открыть →</a></footer></div>
+      <footer class="variant-card-footer"><span class="variant-duration">≈ ${escapeHtml(pluralize(variant.totalMinutes, "минута", "минуты", "минут"))}</span><a class="variant-open" href="${escapeHtml(href)}">Предпросмотр →</a></footer></div>
     </article>`;
   }).join("");
 }
